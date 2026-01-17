@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.env
+
+# Claude Code local settings
+.claude/
+
+# Python version file (uv/pyenv)
+.python-version
+
+# Generated/temp files
+files/
+output/
+forge/
+nul
+generated_*.txt
+
+# IDE
+.idea/
+.vscode/
