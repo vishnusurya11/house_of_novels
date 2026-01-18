@@ -9,8 +9,11 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Project root directory (for resolving relative paths)
+PROJECT_ROOT = Path(__file__).parent.parent
+
 # Load .env file from project root
-env_path = Path(__file__).parent.parent / ".env"
+env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
 
 # OpenRouter Configuration
@@ -86,13 +89,13 @@ DEFAULT_FORGE_DIR = "forge"
 
 # ComfyUI Configuration for Phase 5 (Media Generation)
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"
-DEFAULT_COMFYUI_TIMEOUT = 300  # 5 minutes per generation
+DEFAULT_COMFYUI_TIMEOUT = 1800  # 30 minutes per generation
 
 # ComfyUI workflow paths (relative to project root)
 COMFYUI_WORKFLOWS = {
     "image": "workflows/z_image_turbo_example.json",
     "video": "workflows/video_ltx2_i2v_distilled.json",
-    "audio": None,  # Future: workflows/audio_gen.json
+    "audio": "workflows/Vibevoice_Single-Speaker.json",
 }
 
 # ComfyUI output directory (where images/videos are saved)
@@ -103,21 +106,44 @@ COMFYUI_OUTPUT_DIR = r"D:\Projects\KingdomOfViSuReNa\alpha\ComfyUI_windows_porta
 VIDEO_GENERATION_TIMEOUT = 1800  # seconds
 
 # Generation step control (binary string)
-# Position: 0=static_images, 1=shot_frames, 2=videos, 3=audio, 4=editing
+# Position: 0=audio, 1=static_images, 2=scene_images, 3=videos, 4=editing
 # Value: 1=run, 0=skip
 # Examples:
 #   "11111" = Run everything (default)
-#   "11100" = Static + frames + videos, skip audio/editing
-#   "10000" = Only static images (fastest)
-#   "11000" = Static + frames only (skip slow video gen)
-GENERATION_STEPS = "11111"
+#   "11100" = Audio + static images + scene images (current default)
+#   "01100" = Static + scene images (skip audio)
+#   "10000" = Only audio generation
+#   "00100" = Only scene images
+#   "00001" = Only editing (assume media exists)
+GENERATION_STEPS = "11101"
+
+# Audio generation timeout (30 minutes per generation)
+AUDIO_GENERATION_TIMEOUT = 1800  # seconds
+
+
+def get_workflow_path(workflow_type: str) -> Path:
+    """Get absolute path to a ComfyUI workflow file.
+
+    Args:
+        workflow_type: Type of workflow ("image", "video", or "audio")
+
+    Returns:
+        Absolute Path to the workflow JSON file
+
+    Raises:
+        ValueError: If workflow_type is not found in COMFYUI_WORKFLOWS
+    """
+    relative_path = COMFYUI_WORKFLOWS.get(workflow_type)
+    if not relative_path:
+        raise ValueError(f"Unknown workflow type: {workflow_type}. Available: {list(COMFYUI_WORKFLOWS.keys())}")
+    return PROJECT_ROOT / relative_path
 
 
 def should_run_step(step_index: int) -> bool:
     """Check if a generation step should run based on GENERATION_STEPS config.
 
     Args:
-        step_index: 0=static_images, 1=shot_frames, 2=videos, 3=audio, 4=editing
+        step_index: 0=audio, 1=static_images, 2=shot_frames, 3=videos, 4=editing
 
     Returns:
         True if the step should run, False otherwise

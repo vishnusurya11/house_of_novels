@@ -82,15 +82,15 @@ uv run python -m src.phases.phase0_codex
 uv run python -m src.phases.phase0_codex --output-dir forge/20260105143022
 
 # Phase 1: Generate story outline (requires codex from Phase 0)
-uv run python -m src.phases.phase1_outline forge\20260113222641\codex_20260113222641.json
+uv run python -m src.phases.phase1_outline forge\20260116191326\codex_20260116191326.json
 uv run python -m src.phases.phase1_outline forge/20260105143022/codex_20260105143022.json --scope flash
 
 # Phase 2: Generate characters & locations (requires Phase 1)
-uv run python -m src.phases.phase2_characters forge\20260113222641\codex_20260113222641.json
+uv run python -m src.phases.phase2_characters forge\20260116191326\codex_20260116191326.json
 uv run python -m src.phases.phase2_characters forge/20260105143022/codex_20260105143022.json --fix-names
 
 # Phase 3: Write narrative prose (requires Phases 1-2)
-uv run python -m src.phases.phase3_narrative forge\20260113222641\codex_20260113222641.json
+uv run python -m src.phases.phase3_narrative forge\20260116191326\codex_20260116191326.json
 
 # Phase 3 with specific steps (act-by-act control)
 uv run python -m src.phases.phase3_narrative forge/20260105143022/codex_20260105143022.json --steps 1    # Act 1 only
@@ -102,14 +102,32 @@ uv run python -m src.phases.phase3b_storyboard forge\20260113222641\codex_202601
 uv run python -m src.phases.phase3b_storyboard forge/20260105143022/codex_20260105143022.json --max-revisions 3
 
 # Phase 4: Generate image/video prompts (requires Phase 3)
-uv run python -m src.phases.phase4_prompts forge/20260113195058/codex_20260113195058.json
+uv run python -m src.phases.phase4_prompts forge/20260116191326/codex_20260116191326.json
 
 # Phase 4 with specific steps (granular control)
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 1    # Characters only
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 1 2  # Characters + Locations
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 3    # Posters only
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 4 5  # Shot frames + Video prompts
+
+
+
+
+# phse 5
+uv run python -m src.phases.phase5_generation forge/20260116191326/codex_20260116191326.json
+
+
+uv run python -m src.phases.phase5_generation forge/20260116191326/codex_20260116191326.json --steps 3
+
+
+
+# phase 6
+
+
+
 ```
+
+
 
 **Re-run any phase**: Just pass the same codex path to regenerate that phase with different options:
 ```bash

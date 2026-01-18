@@ -32,8 +32,9 @@ from src.story_agents.image_prompt_agents import (
     StoryPosterPromptAgent,
     StoryPosterCriticAgent,
 )
-from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
-from src.story_agents.video_prompt_agents import generate_video_prompt
+from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt
+# from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
+# from src.story_agents.video_prompt_agents import generate_video_prompt
 from src.visual_styles import get_default_style
 from src.config import DEFAULT_MODEL
 
@@ -45,8 +46,9 @@ class Phase4PromptsResult:
     character_prompt_count: int
     location_prompt_count: int
     poster_prompt_count: int
-    shot_frame_prompt_count: int  # Step 4: First/last frame prompts per shot
-    video_prompt_count: int  # Step 5: LTX screenplay video prompts per shot
+    scene_image_prompt_count: int  # Step 4: Scene image prompts (NEW)
+    shot_frame_prompt_count: int  # Step 5: First/last frame prompts per shot (COMMENTED OUT)
+    video_prompt_count: int  # Step 6: LTX screenplay video prompts per shot (COMMENTED OUT)
     success: bool
     error: Optional[str] = None
 
@@ -242,7 +244,10 @@ def run_phase4_prompts(
                     "error": str(e),
                 })
 
-        print(f"\n>>> Step 1 complete: {char_prompt_count} character prompts generated")
+        # Save after Step 1 to preserve progress
+        codex["story"]["characters"] = characters
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 1 complete: {char_prompt_count} character prompts generated (saved)")
     elif 1 in steps_to_run:
         print("\n>>> Step 1: No characters found, skipping character prompts")
     else:
@@ -301,7 +306,10 @@ def run_phase4_prompts(
                     "error": str(e),
                 })
 
-        print(f"\n>>> Step 2 complete: {loc_prompt_count} location prompts generated")
+        # Save after Step 2 to preserve progress
+        codex["story"]["locations"] = locations
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 2 complete: {loc_prompt_count} location prompts generated (saved)")
     elif 2 in steps_to_run:
         print("\n>>> Step 2: No locations found, skipping location prompts")
     else:
@@ -419,211 +427,124 @@ def run_phase4_prompts(
                 outline["poster_prompts"] = []
                 phase4_metadata["poster_prompts"] = {"error": str(fallback_e)}
 
-        # Update outline in story
+        # Update outline in story and save after Step 3
         story["outline"] = outline
-        print(f"\n>>> Step 3 complete: {poster_prompt_count} poster prompts generated")
+        codex["story"]["outline"] = outline
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 3 complete: {poster_prompt_count} poster prompts generated (saved)")
     elif 3 in steps_to_run:
         print("\n>>> Step 3: No outline title found, skipping poster prompts")
     else:
         print("\n>>> Step 3: Skipped (not in requested steps)")
 
     # =========================================================================
-    # Step 4: Shot Frame Prompts (First/Last frame for video generation)
+    # Step 4: Scene Image Prompts (One representative image per scene)
     # =========================================================================
-    shot_frame_count = 0
+    scene_image_prompt_count = 0
     narrative = story.get("narrative", {})
     acts = narrative.get("acts", [])
 
-    # Count total shots for progress reporting
-    total_shots = 0
+    # Count total scenes for progress reporting
+    total_scenes = 0
     for act in acts:
-        for scene in act.get("scenes", []):
-            total_shots += len(scene.get("shots", []))
+        total_scenes += len(act.get("scenes", []))
 
-    if 4 in steps_to_run and total_shots > 0:
-        print(f"\n>>> Step 4: Generating shot frame prompts...")
-        print(f"    Total shots to process: {total_shots}")
+    if 4 in steps_to_run and total_scenes > 0:
+        print(f"\n>>> Step 4: Generating scene image prompts...")
+        print(f"    Total scenes to process: {total_scenes}")
 
-        phase4_metadata["shot_frame_prompts"] = []
-        shot_index = 0
+        phase4_metadata["scene_image_prompts"] = []
+        scene_index = 0
 
         for act_idx, act in enumerate(acts):
             act_num = act.get("act_number", act_idx + 1)
 
             for scene_idx, scene in enumerate(act.get("scenes", [])):
+                scene_index += 1
                 scene_num = scene.get("scene_number", scene_idx + 1)
                 scene_location = scene.get("location", "Unknown")
-                scene_text = scene.get("text", "")
 
-                shots = scene.get("shots", [])
-                if not shots:
-                    continue
+                print(f"\n    [{scene_index}/{total_scenes}] Act {act_num}, Scene {scene_num} ({scene_location})...")
 
-                print(f"\n    Act {act_num}, Scene {scene_num} ({scene_location}): {len(shots)} shots")
+                try:
+                    result = generate_scene_image_prompt(
+                        scene_data=scene,
+                        act_number=act_num,
+                        codex=codex,
+                        visual_style=visual_style,
+                        model=model,
+                        max_revisions=2,
+                    )
 
-                for shot_idx, shot in enumerate(shots):
-                    shot_index += 1
-                    shot_num = shot.get("shot_number", shot_idx + 1)
+                    # Add scene image prompt to scene data
+                    scene["scene_image_prompt"] = {
+                        "prompt": result["prompt"],
+                        "location_name": result["location_name"],
+                        "characters_in_scene": result["characters_in_scene"],
+                        "scene_summary": result["scene_summary"],
+                        "composition_notes": result["composition_notes"],
+                        "mood_lighting": result["mood_lighting"],
+                        "revision_count": result["revision_count"],
+                        "final_scores": result["final_scores"],
+                    }
 
-                    print(f"      [{shot_index}/{total_shots}] Shot {shot_num}...")
+                    # Store metadata
+                    phase4_metadata["scene_image_prompts"].append({
+                        "act": act_num,
+                        "scene": scene_num,
+                        "location": scene_location,
+                        "characters": scene.get("characters", []),
+                        "revision_count": result["revision_count"],
+                        "final_scores": result["final_scores"],
+                        "critique_history": result["critique_history"],
+                    })
 
-                    # Build scene context from previous shots
-                    prev_shots = shots[:shot_idx]
-                    scene_context = f"Scene location: {scene_location}. "
-                    if prev_shots:
-                        last_action = prev_shots[-1].get("action", "")
-                        scene_context += f"Previous shot ended with: {last_action}"
-                    else:
-                        scene_context += "Opening shot of scene."
+                    scene_image_prompt_count += 1
+                    avg_score = result["final_scores"]["overall"]
+                    print(f"        Score: {avg_score:.1f}/10 (revisions: {result['revision_count']})")
 
-                    try:
-                        result = generate_shot_frame_prompts(
-                            shot_data=shot,
-                            codex=codex,
-                            scene_context=scene_context,
-                            visual_style=visual_style,
-                            model=model,
-                            max_revisions=2,
-                        )
+                except Exception as e:
+                    print(f"        ERROR: {e}")
+                    phase4_metadata["scene_image_prompts"].append({
+                        "act": act_num,
+                        "scene": scene_num,
+                        "error": str(e),
+                    })
 
-                        # Add frame prompts to shot data (at same level as shot_number)
-                        shot["firstframe_prompt"] = result["firstframe_prompt"]
-                        shot["lastframe_prompt"] = result["lastframe_prompt"]
-
-                        # Store metadata
-                        phase4_metadata["shot_frame_prompts"].append({
-                            "act": act_num,
-                            "scene": scene_num,
-                            "shot": shot_num,
-                            "location": shot.get("location", ""),
-                            "characters": shot.get("characters_in_frame", []),
-                            "revision_count": result["revision_count"],
-                            "final_scores": result["final_scores"],
-                            "critique_history": result["critique_history"],
-                        })
-
-                        shot_frame_count += 1
-                        avg_score = result["final_scores"]["overall"]
-                        print(f"        Score: {avg_score:.1f}/10 (revisions: {result['revision_count']})")
-
-                    except Exception as e:
-                        print(f"        ERROR: {e}")
-                        phase4_metadata["shot_frame_prompts"].append({
-                            "act": act_num,
-                            "scene": scene_num,
-                            "shot": shot_num,
-                            "error": str(e),
-                        })
-
-        # Update narrative with modified shots
+        # Update narrative with modified scenes and save after Step 4
         codex["story"]["narrative"] = narrative
+        save_codex(codex, codex_path)
 
-        print(f"\n>>> Step 4 complete: {shot_frame_count} shot frame prompts generated")
+        print(f"\n>>> Step 4 complete: {scene_image_prompt_count} scene image prompts generated (saved)")
     elif 4 in steps_to_run:
-        print("\n>>> Step 4: No shots found in narrative, skipping frame prompts")
-        print("    (Run Phase 3b storyboard generation first)")
+        print("\n>>> Step 4: No scenes found in narrative, skipping scene image prompts")
+        print("    (Run Phase 3 narrative generation first)")
     else:
         print("\n>>> Step 4: Skipped (not in requested steps)")
 
     # =========================================================================
-    # Step 5: Video Prompts (LTX Screenplay Format)
+    # Step 5: Shot Frame Prompts (COMMENTED OUT)
+    # =========================================================================
+    shot_frame_count = 0
+    # NOTE: Shot frame prompts are commented out for now
+    # Uncomment when ready to generate first/last frame prompts for video shots
+    #
+    # if 5 in steps_to_run:
+    #     # ... shot frame prompt generation code ...
+    #     pass
+    print("\n>>> Step 5 (Shot Frame Prompts): COMMENTED OUT")
+
+    # =========================================================================
+    # Step 6: Video Prompts (COMMENTED OUT)
     # =========================================================================
     video_prompt_count = 0
-
-    # Re-fetch narrative in case Step 4 modified it
-    narrative = codex.get("story", {}).get("narrative", {})
-    acts = narrative.get("acts", [])
-
-    # Count total shots for progress
-    total_shots = 0
-    for act in acts:
-        for scene in act.get("scenes", []):
-            total_shots += len(scene.get("shots", []))
-
-    if 5 in steps_to_run and total_shots > 0:
-        print(f"\n>>> Step 5: Generating LTX video prompts...")
-        print(f"    Total shots to process: {total_shots}")
-
-        phase4_metadata["video_prompts"] = []
-        shot_index = 0
-
-        for act_idx, act in enumerate(acts):
-            act_num = act.get("act_number", act_idx + 1)
-
-            for scene_idx, scene in enumerate(act.get("scenes", [])):
-                scene_num = scene.get("scene_number", scene_idx + 1)
-                scene_location = scene.get("location", "Unknown")
-
-                shots = scene.get("shots", [])
-                if not shots:
-                    continue
-
-                print(f"\n    Act {act_num}, Scene {scene_num} ({scene_location}): {len(shots)} shots")
-
-                for shot_idx, shot in enumerate(shots):
-                    shot_index += 1
-                    shot_num = shot.get("shot_number", shot_idx + 1)
-
-                    print(f"      [{shot_index}/{total_shots}] Shot {shot_num}...")
-
-                    # Build scene context from previous shots
-                    prev_shots = shots[:shot_idx]
-                    scene_context = f"Scene location: {scene_location}. "
-                    if prev_shots:
-                        last_action = prev_shots[-1].get("action", "")
-                        scene_context += f"Previous shot ended with: {last_action}"
-                    else:
-                        scene_context += "Opening shot of scene."
-
-                    try:
-                        result = generate_video_prompt(
-                            shot_data=shot,
-                            codex=codex,
-                            scene_context=scene_context,
-                            visual_style=visual_style,
-                            model=model,
-                            max_revisions=2,
-                        )
-
-                        # Add video prompt to shot data (same level as shot_number)
-                        shot["video_prompt"] = result["video_prompt"]
-
-                        # Store metadata
-                        phase4_metadata["video_prompts"].append({
-                            "act": act_num,
-                            "scene": scene_num,
-                            "shot": shot_num,
-                            "location": shot.get("location", ""),
-                            "characters": shot.get("characters_in_frame", []),
-                            "slugline": result["slugline"],
-                            "dialogue_included": result["dialogue_included"],
-                            "revision_count": result["revision_count"],
-                            "final_scores": result["final_scores"],
-                            "critique_history": result["critique_history"],
-                        })
-
-                        video_prompt_count += 1
-                        avg_score = result["final_scores"]["overall"]
-                        print(f"        Score: {avg_score:.1f}/10 (revisions: {result['revision_count']})")
-
-                    except Exception as e:
-                        print(f"        ERROR: {e}")
-                        phase4_metadata["video_prompts"].append({
-                            "act": act_num,
-                            "scene": scene_num,
-                            "shot": shot_num,
-                            "error": str(e),
-                        })
-
-        # Update narrative with modified shots
-        codex["story"]["narrative"] = narrative
-
-        print(f"\n>>> Step 5 complete: {video_prompt_count} video prompts generated")
-    elif 5 in steps_to_run:
-        print("\n>>> Step 5: No shots found in narrative, skipping video prompts")
-        print("    (Run Phase 3b storyboard generation first)")
-    else:
-        print("\n>>> Step 5: Skipped (not in requested steps)")
+    # NOTE: Video prompts are commented out for now
+    # Uncomment when ready to generate LTX screenplay video prompts
+    #
+    # if 6 in steps_to_run:
+    #     # ... video prompt generation code ...
+    #     pass
+    print("\n>>> Step 6 (Video Prompts): COMMENTED OUT")
 
     # Update codex
     codex["story"]["characters"] = characters
@@ -636,8 +557,9 @@ def run_phase4_prompts(
     print(f"    Character prompts: {char_prompt_count}")
     print(f"    Location prompts: {loc_prompt_count}")
     print(f"    Poster prompts: {poster_prompt_count}")
-    print(f"    Shot frame prompts: {shot_frame_count}")
-    print(f"    Video prompts: {video_prompt_count}")
+    print(f"    Scene image prompts: {scene_image_prompt_count}")
+    print(f"    Shot frame prompts: {shot_frame_count} (commented out)")
+    print(f"    Video prompts: {video_prompt_count} (commented out)")
     print(f">>> Saved to: {codex_path}")
 
     return Phase4PromptsResult(
@@ -645,6 +567,7 @@ def run_phase4_prompts(
         character_prompt_count=char_prompt_count,
         location_prompt_count=loc_prompt_count,
         poster_prompt_count=poster_prompt_count,
+        scene_image_prompt_count=scene_image_prompt_count,
         shot_frame_prompt_count=shot_frame_count,
         video_prompt_count=video_prompt_count,
         success=True,
@@ -689,8 +612,9 @@ def main():
     print(f"    Character prompts: {result.character_prompt_count}")
     print(f"    Location prompts: {result.location_prompt_count}")
     print(f"    Poster prompts: {result.poster_prompt_count}")
-    print(f"    Shot frame prompts: {result.shot_frame_prompt_count}")
-    print(f"    Video prompts: {result.video_prompt_count}")
+    print(f"    Scene image prompts: {result.scene_image_prompt_count}")
+    print(f"    Shot frame prompts: {result.shot_frame_prompt_count} (commented out)")
+    print(f"    Video prompts: {result.video_prompt_count} (commented out)")
 
 
 if __name__ == "__main__":

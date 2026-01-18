@@ -257,6 +257,11 @@ def run_phase1_outline(
             acts.append(act3)
             print(f"    Act 3: {len(act3.scenes)} scenes")
 
+            # Validate all acts have scenes
+            for i, act in enumerate(acts):
+                if not act.scenes:
+                    raise ValueError(f"Act {i+1} has 0 scenes - beat sheet may have empty act{i+1}_beats")
+
             # Create complete outline
             outline_data = {
                 "title": f"Story based on: {story_prompt[:50]}...",

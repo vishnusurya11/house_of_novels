@@ -172,7 +172,7 @@ def run_phase3_narrative(
 
         acts = outline.get("acts", [])
         if len(acts) < 1:
-            print("ERROR: No acts found in outline")
+            raise ValueError("No acts found in outline. Run Phase 1 first.")
         else:
             act1 = acts[0]
             act1_scenes = act1.get("scenes", [])
@@ -197,6 +197,7 @@ def run_phase3_narrative(
                     "characters": scene.get("characters", []),
                     "time": "continuous",
                     "text": prose,
+                    "paragraphs": prose.split("\n\n"),
                     "sentences": split_into_sentences(prose)
                 })
 
@@ -228,7 +229,7 @@ def run_phase3_narrative(
 
         acts = outline.get("acts", [])
         if len(acts) < 2:
-            print("ERROR: Act 2 not found in outline")
+            raise ValueError("Act 2 not found in outline. Outline must have at least 2 acts.")
         else:
             act2 = acts[1]
             act2_scenes = act2.get("scenes", [])
@@ -262,6 +263,7 @@ def run_phase3_narrative(
                     "characters": scene.get("characters", []),
                     "time": "continuous",
                     "text": prose,
+                    "paragraphs": prose.split("\n\n"),
                     "sentences": split_into_sentences(prose)
                 })
 
@@ -294,7 +296,7 @@ def run_phase3_narrative(
 
         acts = outline.get("acts", [])
         if len(acts) < 3:
-            print("ERROR: Act 3 not found in outline")
+            raise ValueError("Act 3 not found in outline. Outline must have 3 acts.")
         else:
             act3 = acts[2]
             act3_scenes = act3.get("scenes", [])
@@ -328,6 +330,7 @@ def run_phase3_narrative(
                     "characters": scene.get("characters", []),
                     "time": "continuous",
                     "text": prose,
+                    "paragraphs": prose.split("\n\n"),
                     "sentences": split_into_sentences(prose)
                 })
 

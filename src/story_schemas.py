@@ -730,3 +730,53 @@ class SceneListSchema(BaseModel):
     scenes: list[SceneSchema] = Field(
         ..., description="List of scenes"
     )
+
+
+# =============================================================================
+# Phase 4 Step 4: Scene Image Prompt Schemas
+# =============================================================================
+
+class SceneImagePromptSchema(BaseModel):
+    """Structured output for scene image prompt generation."""
+    prompt: str = Field(
+        ...,
+        description="Detailed 300-500 word image prompt with physical descriptions (NO character names)"
+    )
+    location_name: str = Field(..., description="Location name from codex")
+    characters_in_scene: list[str] = Field(..., description="Character names present in scene (for tracking)")
+    scene_summary: str = Field(..., description="Brief summary of what happens in scene")
+    composition_notes: str = Field(..., description="Notes on framing, focus, composition")
+    mood_lighting: str = Field(..., description="Lighting and atmosphere description")
+
+
+class SceneImageCritiqueSchema(BaseModel):
+    """Critique for scene image prompts."""
+    character_accuracy_score: int = Field(
+        ..., ge=1, le=10,
+        description="Physical descriptions match codex character profiles"
+    )
+    location_accuracy_score: int = Field(
+        ..., ge=1, le=10,
+        description="Setting matches codex location profile"
+    )
+    no_names_score: int = Field(
+        ..., ge=1, le=10,
+        description="Score 10 if NO character names used, Score 1 if ANY names found"
+    )
+    visual_detail_score: int = Field(
+        ..., ge=1, le=10,
+        description="Sufficient detail for image generation"
+    )
+    composition_score: int = Field(
+        ..., ge=1, le=10,
+        description="Good framing and focus"
+    )
+    overall_score: float = Field(..., description="Average of all scores")
+    needs_revision: bool = Field(
+        ...,
+        description="True if any score < 7 or no_names_score < 10"
+    )
+    suggestions: list[str] = Field(
+        default=[],
+        description="Specific improvements needed"
+    )

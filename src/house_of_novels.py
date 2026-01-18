@@ -199,33 +199,35 @@ def generate_novel(
         print(f"\n>>> Character prompts: {result.character_prompt_count}")
         print(f">>> Location prompts: {result.location_prompt_count}")
         print(f">>> Poster prompts: {result.poster_prompt_count}")
-        print(f">>> Shot frame prompts: {result.shot_frame_prompt_count}")
-        print(f">>> Video prompts: {result.video_prompt_count}")
+        print(f">>> Scene image prompts: {result.scene_image_prompt_count}")
 
-    # Phase 5: Generation (ComfyUI image/video)
-    # Run Steps 1 (static images), 2 (shot frames), and 3 (videos) by default
+    # Phase 5: Generation (ComfyUI audio/images)
+    # Run Steps 1 (audio TTS) and 2 (static images) by default
+    # Steps 3 (shot frames) and 4 (videos) are currently disabled
     if "generation" in phases:
         result = run_phase5_generation(codex_path, steps=[1, 2, 3])
         completed_phases.append("generation")
-        print(f"\n>>> Character portraits: {result.character_portrait_count}")
+        print(f"\n>>> Audio files: {result.audio_count}")
+        print(f">>> Character portraits: {result.character_portrait_count}")
         print(f">>> Location images: {result.location_image_count}")
         print(f">>> Poster images: {result.poster_count}")
-        print(f">>> Shot frames: {result.shot_frame_count}")
-        print(f">>> Videos: {result.video_count}")
+        print(f">>> Scene images: {result.scene_image_count}")
 
-    # Phase 6: Editing (combine videos into final movie)
-    # Check config position 4 for editing step
+    # Phase 6: Editing (combine audio hierarchically)
+    # Steps: 1=sentence->scene, 2=scene->act, 3=act->full story
     if "editing" in phases:
         if should_run_step(4):
             print("\n" + "=" * 60)
-            print("PHASE 6: VIDEO EDITING")
+            print("PHASE 6: AUDIO EDITING")
             print("=" * 60)
-            result = run_phase6_editing(codex_path)
+            result = run_phase6_editing(codex_path, steps=[1, 2, 3])
             completed_phases.append("editing")
             if result.success:
-                print(f"\n>>> Final video: {result.output_path}")
-                print(f">>> Duration: {result.total_duration:.1f}s")
-                print(f">>> Videos combined: {result.video_count}")
+                print(f"\n>>> Scene audio files: {result.scene_audio_count}")
+                print(f">>> Act audio files: {result.act_audio_count}")
+                if result.full_audio_path:
+                    print(f">>> Full story audio: {result.full_audio_path}")
+                    print(f">>> Total duration: {result.audio_duration:.1f}s")
             else:
                 print(f"\n>>> Editing failed: {result.error}")
         else:

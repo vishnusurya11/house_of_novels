@@ -1,0 +1,52 @@
+{
+  "15": {
+    "inputs": {
+      "audio": "D:\\Projects\\KingdomOfViSuReNa\\alpha\\house_of_novels\\audio_inputs\\man_voice_2_LONG.mp3",
+      "audioUI": ""
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "44": {
+    "inputs": {
+      "text": "\\\"What if I’m chasing shadows instead of truths?\\\" She paused, her gaze darting to the flickering shadows, as if they might hold the answer to her torment.",
+      "model": "VibeVoice-Large",
+      "attention_type": "auto",
+      "quantize_llm": "full precision",
+      "free_memory_after_generate": true,
+      "diffusion_steps": 20,
+      "seed": 42,
+      "cfg_scale": 1.3,
+      "use_sampling": false,
+      "temperature": 0.95,
+      "top_p": 0.95,
+      "max_words_per_chunk": 250,
+      "voice_speed_factor": 1,
+      "voice_to_clone": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "VibeVoiceSingleSpeakerNode",
+    "_meta": {
+      "title": "VibeVoice Single Speaker"
+    }
+  },
+  "45": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "quality": "V0",
+      "audioUI": "",
+      "audio": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio (MP3)"
+    }
+  }
+}
