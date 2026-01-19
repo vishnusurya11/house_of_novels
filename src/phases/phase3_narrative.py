@@ -11,10 +11,11 @@ Usage (standalone):
 
 import sys
 import json
+import time
 import argparse
 import re
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # Add parent directory to path for proper package imports
@@ -40,6 +41,7 @@ class Phase3Result:
     total_scenes: int
     success: bool
     error: Optional[str] = None
+    step_timings: dict = field(default_factory=dict)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -164,11 +166,15 @@ def run_phase3_narrative(
     if 5 in steps_to_run:
         reviser = ReviserAgent(model=model)
 
+    # Step timing tracking
+    step_timings = {}
+
     # STEP 1: Write Act 1 Prose
     if 1 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 1: Write Act 1 Prose")
         print(f"{'='*60}")
+        step_start = time.time()
 
         acts = outline.get("acts", [])
         if len(acts) < 1:
@@ -218,14 +224,16 @@ def run_phase3_narrative(
                 narrative_acts.append(act1_narrative)
 
             codex["story"]["narrative"]["acts"] = narrative_acts
+            step_timings["step1_act1"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Act 1 saved ({len(narrative_scenes)} scenes)")
+            print(f">>> Act 1 saved ({len(narrative_scenes)} scenes) ({step_timings['step1_act1']:.1f}s)")
 
     # STEP 2: Write Act 2 Prose
     if 2 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 2: Write Act 2 Prose")
         print(f"{'='*60}")
+        step_start = time.time()
 
         acts = outline.get("acts", [])
         if len(acts) < 2:
@@ -285,14 +293,16 @@ def run_phase3_narrative(
                 narrative_acts.append(act2_narrative)
 
             codex["story"]["narrative"]["acts"] = narrative_acts
+            step_timings["step2_act2"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Act 2 saved ({len(narrative_scenes)} scenes)")
+            print(f">>> Act 2 saved ({len(narrative_scenes)} scenes) ({step_timings['step2_act2']:.1f}s)")
 
     # STEP 3: Write Act 3 Prose
     if 3 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 3: Write Act 3 Prose")
         print(f"{'='*60}")
+        step_start = time.time()
 
         acts = outline.get("acts", [])
         if len(acts) < 3:
@@ -352,14 +362,16 @@ def run_phase3_narrative(
                 narrative_acts.append(act3_narrative)
 
             codex["story"]["narrative"]["acts"] = narrative_acts
+            step_timings["step3_act3"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Act 3 saved ({len(narrative_scenes)} scenes)")
+            print(f">>> Act 3 saved ({len(narrative_scenes)} scenes) ({step_timings['step3_act3']:.1f}s)")
 
     # STEP 4: Style & Continuity Critique
     if 4 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 4: Style & Continuity Critique")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Reload codex to get latest narrative
         codex = load_codex(codex_path)
@@ -388,8 +400,9 @@ def run_phase3_narrative(
             }
             codex["story_metadata"]["phase3_narrative"]["critiques"] = critique_data
 
+            step_timings["step4_critique"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Critiques saved to metadata")
+            print(f">>> Critiques saved to metadata ({step_timings['step4_critique']:.1f}s)")
             print(f"    Style issues: {len(style_critique.model_dump().get('issues', []))}")
             print(f"    Continuity issues: {len(continuity_critique.model_dump().get('issues', []))}")
 
@@ -398,6 +411,7 @@ def run_phase3_narrative(
         print(f"\n{'='*60}")
         print("STEP 5: Revision & Final Narrative")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Reload codex to get latest data
         codex = load_codex(codex_path)
@@ -470,8 +484,9 @@ def run_phase3_narrative(
                     "title": current_narrative.get("title", ""),
                     "acts": revised_acts,
                 }
+                step_timings["step5_revision"] = round(time.time() - step_start, 2)
                 save_codex(codex, codex_path)
-                print(f">>> Revision complete ({total_scenes_revised} scenes across {len(revised_acts)} acts).")
+                print(f">>> Revision complete ({total_scenes_revised} scenes across {len(revised_acts)} acts) ({step_timings['step5_revision']:.1f}s)")
 
     # Reload final codex state
     codex = load_codex(codex_path)
@@ -494,6 +509,7 @@ def run_phase3_narrative(
         metadata=final_metadata,
         total_scenes=actual_scenes,
         success=True,
+        step_timings=step_timings,
     )
 
 

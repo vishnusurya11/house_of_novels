@@ -12,9 +12,10 @@ Usage (standalone):
 
 import sys
 import json
+import time
 import argparse
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Any
 
 # Add parent directory to path for proper package imports
@@ -43,6 +44,7 @@ class Phase1Result:
     metadata: dict
     success: bool
     error: Optional[str] = None
+    step_timings: dict = field(default_factory=dict)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -151,11 +153,15 @@ def run_phase1_outline(
     if 5 in steps_to_run:
         reviser = ReviserAgent(model=model)
 
+    # Step timing tracking
+    step_timings = {}
+
     # STEP 1: High-Level Story Structure
     if 1 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 1: High-Level Story Structure (Research-Driven)")
         print(f"{'='*60}")
+        step_start = time.time()
 
         print(">>> Researching story structures...")
         research_insights = structure_agent.research_story_structures(
@@ -177,8 +183,9 @@ def run_phase1_outline(
         ]
         codex["story_metadata"]["phase1_outline"]["steps_completed"].append(1)
 
+        step_timings["step1_structure"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
-        print(f">>> Step 1 complete: High-level structure saved")
+        print(f">>> Step 1 complete: High-level structure saved ({step_timings['step1_structure']:.1f}s)")
         print(f"    Theme: {high_level_structure.theme}")
         print(f"    Central Conflict: {high_level_structure.central_conflict[:80]}...")
 
@@ -187,6 +194,7 @@ def run_phase1_outline(
         print(f"\n{'='*60}")
         print("STEP 2: Beat Sheet Generation")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Load high-level structure from codex
         codex = load_codex(codex_path)
@@ -207,8 +215,9 @@ def run_phase1_outline(
             codex["story"]["outline"]["beat_sheet"] = beat_sheet.model_dump()
             codex["story_metadata"]["phase1_outline"]["steps_completed"].append(2)
 
+            step_timings["step2_beats"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 2 complete: Beat sheet saved")
+            print(f">>> Step 2 complete: Beat sheet saved ({step_timings['step2_beats']:.1f}s)")
             print(f"    Act 1 beats: {len(beat_sheet.act1_beats)}")
             print(f"    Act 2 beats: {len(beat_sheet.act2_beats)}")
             print(f"    Act 3 beats: {len(beat_sheet.act3_beats)}")
@@ -218,6 +227,7 @@ def run_phase1_outline(
         print(f"\n{'='*60}")
         print("STEP 3: Scene-by-Scene Outline Generation")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Load beat sheet and high-level structure from codex
         codex = load_codex(codex_path)
@@ -276,15 +286,17 @@ def run_phase1_outline(
             codex["story"]["outline"].update(outline_data)
             codex["story_metadata"]["phase1_outline"]["steps_completed"].append(3)
 
+            step_timings["step3_scenes"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
             total_scenes = sum(len(act.scenes) for act in acts)
-            print(f">>> Step 3 complete: {total_scenes} scenes generated")
+            print(f">>> Step 3 complete: {total_scenes} scenes generated ({step_timings['step3_scenes']:.1f}s)")
 
     # STEP 4: Structure & Pacing Critique
     if 4 in steps_to_run:
         print(f"\n{'='*60}")
         print("STEP 4: Structure & Pacing Critique")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Load complete outline from codex
         codex = load_codex(codex_path)
@@ -309,8 +321,9 @@ def run_phase1_outline(
             codex["story_metadata"]["phase1_outline"]["critiques"] = critique_data
             codex["story_metadata"]["phase1_outline"]["steps_completed"].append(4)
 
+            step_timings["step4_critique"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 4 complete: Critiques saved")
+            print(f">>> Step 4 complete: Critiques saved ({step_timings['step4_critique']:.1f}s)")
             print(f"    Structure issues: {len(structure_critique.issues)}")
             print(f"    Pacing issues: {len(pacing_critique.issues)}")
 
@@ -319,6 +332,7 @@ def run_phase1_outline(
         print(f"\n{'='*60}")
         print("STEP 5: Revision & Final Outline")
         print(f"{'='*60}")
+        step_start = time.time()
 
         # Load critiques and outline from codex
         codex = load_codex(codex_path)
@@ -343,8 +357,9 @@ def run_phase1_outline(
             codex["story"]["outline"].update(revised_outline.model_dump())
             codex["story_metadata"]["phase1_outline"]["steps_completed"].append(5)
 
+            step_timings["step5_revision"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 5 complete: Final outline saved")
+            print(f">>> Step 5 complete: Final outline saved ({step_timings['step5_revision']:.1f}s)")
 
     # Update config
     codex = load_codex(codex_path)
@@ -364,6 +379,7 @@ def run_phase1_outline(
         outline_json=json.dumps(final_outline, indent=2, ensure_ascii=False),
         metadata=final_metadata,
         success=True,
+        step_timings=step_timings,
     )
 
 

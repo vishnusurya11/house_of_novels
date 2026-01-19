@@ -14,9 +14,10 @@ Usage (standalone):
 
 import sys
 import json
+import time
 import argparse
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # Add parent directory to path for proper package imports
@@ -51,6 +52,7 @@ class Phase4PromptsResult:
     video_prompt_count: int  # Step 6: LTX screenplay video prompts per shot (COMMENTED OUT)
     success: bool
     error: Optional[str] = None
+    step_timings: dict = field(default_factory=dict)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -194,11 +196,15 @@ def run_phase4_prompts(
         "location_prompts": [],
     }
 
+    # Step timing
+    step_timings = {}
+
     # =========================================================================
     # Step 1: Character Prompts
     # =========================================================================
     char_prompt_count = 0
     if 1 in steps_to_run and characters:
+        step_start = time.time()
         print(f"\n>>> Step 1: Generating character prompts...")
         print(f"    Characters to process: {len(characters)}")
 
@@ -246,8 +252,9 @@ def run_phase4_prompts(
 
         # Save after Step 1 to preserve progress
         codex["story"]["characters"] = characters
+        step_timings["step1_characters"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
-        print(f"\n>>> Step 1 complete: {char_prompt_count} character prompts generated (saved)")
+        print(f"\n>>> Step 1 complete: {char_prompt_count} character prompts generated ({step_timings['step1_characters']:.1f}s)")
     elif 1 in steps_to_run:
         print("\n>>> Step 1: No characters found, skipping character prompts")
     else:
@@ -258,6 +265,7 @@ def run_phase4_prompts(
     # =========================================================================
     loc_prompt_count = 0
     if 2 in steps_to_run and locations:
+        step_start = time.time()
         print(f"\n>>> Step 2: Generating location prompts...")
         print(f"    Locations to process: {len(locations)}")
 
@@ -308,8 +316,9 @@ def run_phase4_prompts(
 
         # Save after Step 2 to preserve progress
         codex["story"]["locations"] = locations
+        step_timings["step2_locations"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
-        print(f"\n>>> Step 2 complete: {loc_prompt_count} location prompts generated (saved)")
+        print(f"\n>>> Step 2 complete: {loc_prompt_count} location prompts generated ({step_timings['step2_locations']:.1f}s)")
     elif 2 in steps_to_run:
         print("\n>>> Step 2: No locations found, skipping location prompts")
     else:
@@ -322,6 +331,7 @@ def run_phase4_prompts(
     outline = story.get("outline", {})
 
     if 3 in steps_to_run and outline.get("title"):
+        step_start = time.time()
         print(f"\n>>> Step 3: Generating poster/thumbnail prompts...")
         print(f"    Story title: {outline.get('title')}")
 
@@ -430,8 +440,9 @@ def run_phase4_prompts(
         # Update outline in story and save after Step 3
         story["outline"] = outline
         codex["story"]["outline"] = outline
+        step_timings["step3_posters"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
-        print(f"\n>>> Step 3 complete: {poster_prompt_count} poster prompts generated (saved)")
+        print(f"\n>>> Step 3 complete: {poster_prompt_count} poster prompts generated ({step_timings['step3_posters']:.1f}s)")
     elif 3 in steps_to_run:
         print("\n>>> Step 3: No outline title found, skipping poster prompts")
     else:
@@ -450,6 +461,7 @@ def run_phase4_prompts(
         total_scenes += len(act.get("scenes", []))
 
     if 4 in steps_to_run and total_scenes > 0:
+        step_start = time.time()
         print(f"\n>>> Step 4: Generating scene image prompts...")
         print(f"    Total scenes to process: {total_scenes}")
 
@@ -513,9 +525,10 @@ def run_phase4_prompts(
 
         # Update narrative with modified scenes and save after Step 4
         codex["story"]["narrative"] = narrative
+        step_timings["step4_scene_images"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
 
-        print(f"\n>>> Step 4 complete: {scene_image_prompt_count} scene image prompts generated (saved)")
+        print(f"\n>>> Step 4 complete: {scene_image_prompt_count} scene image prompts generated ({step_timings['step4_scene_images']:.1f}s)")
     elif 4 in steps_to_run:
         print("\n>>> Step 4: No scenes found in narrative, skipping scene image prompts")
         print("    (Run Phase 3 narrative generation first)")
@@ -571,6 +584,7 @@ def run_phase4_prompts(
         shot_frame_prompt_count=shot_frame_count,
         video_prompt_count=video_prompt_count,
         success=True,
+        step_timings=step_timings,
     )
 
 

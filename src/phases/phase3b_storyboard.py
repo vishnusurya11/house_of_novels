@@ -19,9 +19,10 @@ Usage (standalone):
 
 import sys
 import json
+import time
 import argparse
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # Add parent directory to path for proper package imports
@@ -40,6 +41,7 @@ class Phase3bStoryboardResult:
     total_duration_seconds: int
     success: bool
     error: Optional[str] = None
+    step_timings: dict = field(default_factory=dict)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -133,6 +135,7 @@ def run_phase3b_storyboard(
     total_shots = 0
     total_duration = 0
     scenes_processed = 0
+    step_start = time.time()
 
     # Process each act and scene
     for act in acts:
@@ -210,12 +213,15 @@ def run_phase3b_storyboard(
     print(f">>> Total duration: {total_duration}s ({total_duration // 60}m {total_duration % 60}s)")
     print(f">>> Saved to: {codex_path}")
 
+    step_timings = {"step1_storyboard": round(time.time() - step_start, 2)}
+
     return Phase3bStoryboardResult(
         codex_path=codex_path,
         scenes_processed=scenes_processed,
         total_shots_generated=total_shots,
         total_duration_seconds=total_duration,
         success=True,
+        step_timings=step_timings,
     )
 
 

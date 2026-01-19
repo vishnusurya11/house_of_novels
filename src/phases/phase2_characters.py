@@ -15,9 +15,10 @@ Fix names in existing codex (repair mismatched names from debate):
 
 import sys
 import json
+import time
 import argparse
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 # Add parent directory to path for proper package imports
@@ -39,6 +40,7 @@ class Phase2Result:
     metadata: dict
     success: bool
     error: Optional[str] = None
+    step_timings: dict = field(default_factory=dict)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -95,6 +97,10 @@ def run_phase2_characters(
     print(f"\n>>> Using model: {model}")
     print(f">>> Scope: {scope} - max {scope_config['max_characters']} characters, {scope_config['max_locations']} locations")
 
+    # Step timing
+    step_timings = {}
+    step_start = time.time()
+
     # Use existing workflow function
     result = _run_phase2(
         outline_json,
@@ -103,6 +109,7 @@ def run_phase2_characters(
         max_characters=scope_config["max_characters"],
         max_locations=scope_config["max_locations"]
     )
+    step_timings["step1_generation"] = round(time.time() - step_start, 2)
 
     # Update codex with character/location profiles (names are embedded in characters)
     codex["story"]["characters"] = result["characters"]
@@ -137,6 +144,7 @@ def run_phase2_characters(
         locations=result["locations"],
         metadata=result["metadata"],
         success=True,
+        step_timings=step_timings,
     )
 
 

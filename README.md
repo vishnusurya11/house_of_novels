@@ -1,10 +1,25 @@
 # House of Novels
 
-Digital implementation of the Story Engine and Deck of Worlds for generating story prompts and world-building.
+AI-powered novel generation pipeline - creates stories with audio, images, and video.
 
-## House of Novels - Complete Pipeline
+## Quick Start
 
-The modular `house_of_novels.py` is the main entry point for end-to-end novel generation.
+```bash
+# Install
+uv sync
+
+# Set API key
+export OPENROUTER_API_KEY="your-key-here"
+
+# Run (flash = fastest, ~10 min story)
+uv run python -m src.house_of_novels --scope flash
+```
+
+Output: `forge/<timestamp>/` with codex.json and media files.
+
+---
+
+## Full Documentation
 
 ### CLI Usage
 

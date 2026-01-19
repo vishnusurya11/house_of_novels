@@ -26,3 +26,5 @@ generated_*.txt
 # IDE
 .idea/
 .vscode/
+
+*.mp4
