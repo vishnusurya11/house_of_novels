@@ -1,7 +1,7 @@
 {
   "15": {
     "inputs": {
-      "audio": "D:\\Projects\\KingdomOfViSuReNa\\alpha\\house_of_novels\\audio_inputs\\man_voice_2_LONG.mp3",
+      "audio": "D:\\Projects\\KingdomOfViSuReNa\\alpha\\house_of_novels\\audio_inputs\\multi_talk_woman.mp3",
       "audioUI": ""
     },
     "class_type": "LoadAudio",
@@ -12,7 +12,7 @@
   "44": {
     "inputs": {
       "text": "\\\"What if I’m chasing shadows instead of truths?\\\" She paused, her gaze darting to the flickering shadows, as if they might hold the answer to her torment.",
-      "model": "VibeVoice-Large",
+      "model": "VibeVoice-1.5B",
       "attention_type": "auto",
       "quantize_llm": "full precision",
       "free_memory_after_generate": true,

@@ -60,6 +60,7 @@ from src.phases.phase3b_storyboard import run_phase3b_storyboard
 from src.phases.phase4_prompts import run_phase4_prompts
 from src.phases.phase5_generation import run_phase5_generation
 from src.phases.phase6_editing import run_phase6_editing
+from src.phases.phase7_youtube import run_phase7_youtube
 from src.templates import get_template, set_template, TEMPLATES, DEFAULT_TEMPLATE
 
 
@@ -293,6 +294,25 @@ def generate_novel(
                 print(f"\n>>> Editing failed: {result.error}")
         else:
             print("\n>>> Phase 6 (editing) skipped by GENERATION_STEPS config")
+
+    # Phase 7: YouTube Upload
+    if "upload" in phases:
+        print("\n" + "=" * 60)
+        print("PHASE 7: YOUTUBE UPLOAD")
+        print("=" * 60)
+        phase_start = time.time()
+        result = run_phase7_youtube(codex_path)
+        phase_timings["upload"] = {
+            "duration_seconds": round(time.time() - phase_start, 2),
+            "steps": getattr(result, "step_timings", {})
+        }
+        completed_phases.append("upload")
+        if result.success:
+            print(f"\n>>> Video URL: {result.video_url}")
+            print(f">>> Title: {result.title}")
+            print(f">>> Phase 7 completed in {phase_timings['upload']['duration_seconds']:.1f}s")
+        else:
+            print(f"\n>>> Upload failed: {result.error}")
 
     # Calculate total pipeline time
     pipeline_end = time.time()

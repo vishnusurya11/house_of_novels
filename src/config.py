@@ -84,7 +84,7 @@ STORY_SCOPES = {
 DEFAULT_STORY_SCOPE = "standard"
 
 # Phase configuration for House of Novels modular system
-PHASE_NAMES = ["codex", "outline", "characters", "narrative", "storyboard", "prompts", "generation", "editing"]
+PHASE_NAMES = ["codex", "outline", "characters", "narrative", "storyboard", "prompts", "generation", "editing", "upload"]
 DEFAULT_FORGE_DIR = "forge"
 
 # ComfyUI Configuration for Phase 5 (Media Generation)
@@ -119,6 +119,14 @@ GENERATION_STEPS = "11101"
 
 # Audio generation timeout (30 minutes per generation)
 AUDIO_GENERATION_TIMEOUT = 1800  # seconds
+
+# YouTube Configuration for Phase 7 (Upload)
+YOUTUBE_CLIENT_SECRETS_FILE = PROJECT_ROOT / "client_secrets.json"
+YOUTUBE_TOKEN_FILE = PROJECT_ROOT / ".youtube_token.json"
+YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube']
+DEFAULT_YOUTUBE_CATEGORY = "24"  # Entertainment
+DEFAULT_YOUTUBE_PRIVACY = "public"  # public by default
+DEFAULT_YOUTUBE_PLAYLIST = "PLr_5rpnSabhkDGfXp_G5ORgHhZY2m8hD6"  # House of Novels playlist
 
 
 def get_workflow_path(workflow_type: str) -> Path:

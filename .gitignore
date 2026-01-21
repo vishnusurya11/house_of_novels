@@ -10,6 +10,10 @@ wheels/
 .venv
 .env
 
+# YouTube OAuth secrets (Phase 7)
+client_secrets.json
+.youtube_token.json
+
 # Claude Code local settings
 .claude/
 

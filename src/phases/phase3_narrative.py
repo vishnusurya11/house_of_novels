@@ -484,6 +484,16 @@ def run_phase3_narrative(
                     "title": current_narrative.get("title", ""),
                     "acts": revised_acts,
                 }
+
+                # Re-add sentences and paragraphs that revision stripped
+                # NarrativeSceneSchema doesn't include these, so we re-split from text
+                for act in codex["story"]["narrative"]["acts"]:
+                    for scene in act.get("scenes", []):
+                        text = scene.get("text", "")
+                        if text:
+                            scene["paragraphs"] = text.split("\n\n")
+                            scene["sentences"] = split_into_sentences(text)
+
                 step_timings["step5_revision"] = round(time.time() - step_start, 2)
                 save_codex(codex, codex_path)
                 print(f">>> Revision complete ({total_scenes_revised} scenes across {len(revised_acts)} acts) ({step_timings['step5_revision']:.1f}s)")
