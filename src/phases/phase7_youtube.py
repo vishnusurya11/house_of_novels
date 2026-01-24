@@ -85,8 +85,8 @@ def extract_story_data(codex: dict) -> dict:
 
 def find_random_poster(codex: dict) -> Optional[Path]:
     """Find a random poster image from the codex poster generation data."""
-    # Get poster paths from codex
-    posters = codex.get("story", {}).get("prompts", {}).get("posters", [])
+    # Posters are stored in outline.poster_prompts
+    posters = codex.get("story", {}).get("outline", {}).get("poster_prompts", [])
 
     poster_paths = []
     for poster in posters:
