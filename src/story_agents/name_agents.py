@@ -469,7 +469,11 @@ def generate_character_names_via_debate(
         existing_names.append(final_name)
 
         # Build the direct mapping for substitution
-        if old_name and old_name != final_name:
+        # Map FULL role description (what appears in scene characters)
+        if role and role != final_name:
+            name_mapping[role] = final_name
+        # Also map extracted old_name if different (for text replacement)
+        if old_name and old_name != final_name and old_name != role:
             name_mapping[old_name] = final_name
 
         print(f"    Selected: {final_name}")

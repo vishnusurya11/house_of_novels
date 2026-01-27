@@ -492,7 +492,9 @@ def run_phase4_prompts(
                     scene["scene_image_prompt"] = {
                         "prompt": result["prompt"],
                         "location_name": result["location_name"],
+                        "location_id": result.get("location_id", ""),
                         "characters_in_scene": result["characters_in_scene"],
+                        "character_ids": result.get("character_ids", []),
                         "scene_summary": result["scene_summary"],
                         "composition_notes": result["composition_notes"],
                         "mood_lighting": result["mood_lighting"],

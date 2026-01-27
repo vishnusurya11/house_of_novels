@@ -45,11 +45,38 @@ def create_codex_tools(codex: dict) -> list:
     locations = codex.get("story", {}).get("locations", [])
 
     @tool
+    def lookup_character_by_role(role: str) -> str:
+        """
+        Look up a character by their story role (protagonist, antagonist, supporting).
+        Use this when scene data has role descriptions like "the protagonist" instead of names.
+
+        Args:
+            role: The role like "protagonist", "antagonist", "supporting", "the protagonist", etc.
+
+        Returns:
+            Character name, ID, and basic info if found.
+        """
+        role_lower = role.lower().replace("the ", "").strip()
+
+        for char in characters:
+            char_role = char.get("role_in_story", "").lower()
+            if char_role == role_lower:
+                return json.dumps({
+                    "id": char.get("id", ""),
+                    "name": char.get("name", ""),
+                    "role_in_story": char.get("role_in_story", ""),
+                    "gender": char.get("gender", ""),
+                    "age": char.get("age", ""),
+                }, indent=2)
+
+        return f"No character found with role '{role}'. Available roles: {[c.get('role_in_story') for c in characters]}"
+
+    @tool
     def get_character_description(character_name: str) -> str:
         """
         Retrieve full physical description and clothing for a character by name.
         Use this to get accurate details for describing characters in scene prompts.
-        Returns physical appearance, clothing, distinguishing features.
+        Returns ID, physical appearance, clothing, distinguishing features.
 
         Args:
             character_name: The character's name (case-insensitive search)
@@ -60,6 +87,7 @@ def create_codex_tools(codex: dict) -> list:
             if char.get("name", "").lower().strip() == name_lower:
                 physical = char.get("physical", {})
                 result = {
+                    "id": char.get("id", ""),
                     "name": char.get("name"),
                     "gender": char.get("gender", ""),
                     "age": char.get("age", ""),
@@ -78,6 +106,7 @@ def create_codex_tools(codex: dict) -> list:
             if name_lower in char.get("name", "").lower():
                 physical = char.get("physical", {})
                 result = {
+                    "id": char.get("id", ""),
                     "name": char.get("name"),
                     "gender": char.get("gender", ""),
                     "age": char.get("age", ""),
@@ -98,7 +127,7 @@ def create_codex_tools(codex: dict) -> list:
         """
         Retrieve full description and atmosphere for a location by name.
         Use this to get accurate setting details for scene prompts.
-        Returns visual description, atmosphere, key features, sensory details.
+        Returns ID, visual description, atmosphere, key features, sensory details.
 
         Args:
             location_name: The location name (case-insensitive, partial match)
@@ -109,6 +138,7 @@ def create_codex_tools(codex: dict) -> list:
             loc_name = loc.get("name", "").lower().strip()
             if loc_name == name_lower or name_lower in loc_name or loc_name in name_lower:
                 result = {
+                    "id": loc.get("id", ""),
                     "name": loc.get("name"),
                     "type": loc.get("type", ""),
                     "description": loc.get("description", ""),
@@ -138,7 +168,7 @@ def create_codex_tools(codex: dict) -> list:
         names = [l.get("name", "Unknown") for l in locations]
         return f"Available locations: {names}"
 
-    return [get_character_description, get_location_description, list_all_characters, list_all_locations]
+    return [lookup_character_by_role, get_character_description, get_location_description, list_all_characters, list_all_locations]
 
 
 # =============================================================================
@@ -163,8 +193,10 @@ This prompt will be used with AI image generation models (Flux, SDXL, Stable Dif
    - NOT "Rhea stands in the square"
 
 2. **USE THE TOOLS** - Before writing prompts, use the tools to:
-   - Fetch character descriptions for each character in the scene
-   - Fetch location descriptions for the setting
+   - If scene has role descriptions like "the protagonist" or "the antagonist", use lookup_character_by_role to get the actual character NAME and ID
+   - Then use get_character_description with the character NAME to get their physical appearance
+   - Use get_location_description to get the location details AND its ID
+   - IMPORTANT: Save the character NAMES (not roles!) and IDs for your output fields
 
 3. **CAPTURE THE KEY MOMENT** - Choose the most visually compelling moment of the scene:
    - The emotional peak
@@ -192,6 +224,14 @@ This prompt will be used with AI image generation models (Flux, SDXL, Stable Dif
 - Prompt: 300-500 words, single flowing paragraph
 - Natural language descriptions (not comma-separated keywords)
 - Ultra-specific details: "weathered brown leather jacket with brass buttons" not "leather jacket"
+
+## OUTPUT FIELDS (CRITICAL):
+- **location_name**: The location name from codex (e.g., "Weeps Canyon Gardens")
+- **location_id**: The location ID from get_location_description tool (e.g., "loc_001")
+- **characters_in_scene**: ACTUAL CHARACTER NAMES from lookup_character_by_role, NOT role descriptions!
+  - WRONG: ["the protagonist", "the antagonist"]
+  - RIGHT: ["Yara Ridgewell", "Quillon Blackwood"]
+- **character_ids**: The character IDs from lookup_character_by_role (e.g., ["char_001", "char_002"])
 
 Remember: The model will receive character reference images, so focus on what they're DOING
 and WEARING in THIS specific scene, plus the environment around them."""
@@ -544,6 +584,77 @@ Set needs_revision=true if ANY score is below 7."""
 # Orchestration Function
 # =============================================================================
 
+def _map_roles_to_characters(role_descriptions: list[str], codex: dict) -> tuple[list[str], list[str]]:
+    """
+    Map role descriptions to actual character names and IDs.
+
+    Matches by role_in_story field (e.g., "the protagonist" → character with role="protagonist")
+
+    Returns:
+        tuple of (character_names, character_ids)
+    """
+    characters = codex.get("story", {}).get("characters", [])
+    names = []
+    ids = []
+
+    for desc in role_descriptions:
+        desc_lower = desc.lower().strip()
+        matched = False
+
+        # Try matching by role_in_story
+        if "protagonist" in desc_lower:
+            for char in characters:
+                if char.get("role_in_story", "").lower() == "protagonist":
+                    names.append(char.get("name", desc))
+                    if char.get("id"):
+                        ids.append(char["id"])
+                    matched = True
+                    break
+        elif "antagonist" in desc_lower:
+            for char in characters:
+                if char.get("role_in_story", "").lower() == "antagonist":
+                    names.append(char.get("name", desc))
+                    if char.get("id"):
+                        ids.append(char["id"])
+                    matched = True
+                    break
+        elif "mentor" in desc_lower or "elder" in desc_lower or "wise" in desc_lower:
+            for char in characters:
+                if char.get("role_in_story", "").lower() == "supporting":
+                    names.append(char.get("name", desc))
+                    if char.get("id"):
+                        ids.append(char["id"])
+                    matched = True
+                    break
+
+        # Try matching by actual name (for cases where scene has real names)
+        if not matched:
+            for char in characters:
+                char_name = char.get("name", "").lower()
+                if desc_lower == char_name or desc_lower in char_name or char_name in desc_lower:
+                    names.append(char.get("name", desc))
+                    if char.get("id"):
+                        ids.append(char["id"])
+                    matched = True
+                    break
+
+        # Skip if no match - don't keep generic descriptions like "community members"
+        # This keeps names and ids lists synchronized and avoids generic text in character data
+
+    return names, ids
+
+
+def _lookup_location_id(location_name: str, codex: dict) -> str:
+    """Look up location ID from codex by name (case-insensitive)."""
+    locations = codex.get("story", {}).get("locations", [])
+    name_lower = location_name.lower().strip()
+    for loc in locations:
+        loc_name = loc.get("name", "").lower().strip()
+        if loc_name == name_lower or name_lower in loc_name or loc_name in name_lower:
+            return loc.get("id", "")
+    return ""
+
+
 def generate_scene_image_prompt(
     scene_data: dict,
     act_number: int,
@@ -569,7 +680,9 @@ def generate_scene_image_prompt(
         Dict with:
         - prompt: The scene image prompt
         - location_name: Location from scene
+        - location_id: Location ID from codex (e.g., 'loc_001')
         - characters_in_scene: Characters in scene
+        - character_ids: Character IDs from codex (e.g., ['char_001', 'char_002'])
         - scene_summary: Brief summary
         - composition_notes: Composition notes
         - mood_lighting: Lighting/mood description
@@ -632,10 +745,18 @@ def generate_scene_image_prompt(
     # Get final scores from last critique
     final_critique = critique_history[-1]
 
+    # Map role descriptions to actual character names and IDs
+    location_id = _lookup_location_id(scene_data.get("location", ""), codex)
+    character_names, character_ids = _map_roles_to_characters(
+        scene_data.get("characters", []), codex
+    )
+
     return {
         "prompt": current.prompt,
         "location_name": current.location_name,
-        "characters_in_scene": current.characters_in_scene,
+        "location_id": location_id,
+        "characters_in_scene": character_names,  # Actual names like "Yara Ridgewell"
+        "character_ids": character_ids,  # IDs like ["char_001"]
         "scene_summary": current.scene_summary,
         "composition_notes": current.composition_notes,
         "mood_lighting": current.mood_lighting,

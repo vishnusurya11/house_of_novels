@@ -740,10 +740,18 @@ class SceneImagePromptSchema(BaseModel):
     """Structured output for scene image prompt generation."""
     prompt: str = Field(
         ...,
-        description="Detailed 300-500 word image prompt with physical descriptions (NO character names)"
+        description="Detailed 300-500 word image prompt with physical descriptions (NO character names in prompt text)"
     )
-    location_name: str = Field(..., description="Location name from codex")
-    characters_in_scene: list[str] = Field(..., description="Character names present in scene (for tracking)")
+    location_name: str = Field(..., description="Location name from get_location_description tool (e.g., 'Weeps Canyon Gardens')")
+    location_id: str = Field(default="", description="Location ID from get_location_description tool (e.g., 'loc_001')")
+    characters_in_scene: list[str] = Field(
+        ...,
+        description="ACTUAL character NAMES from lookup_character_by_role tool, NOT role descriptions. Example: ['Yara Ridgewell', 'Quillon Blackwood'], NOT ['the protagonist', 'the antagonist']"
+    )
+    character_ids: list[str] = Field(
+        default_factory=list,
+        description="Character IDs from lookup_character_by_role tool (e.g., ['char_001', 'char_002'])"
+    )
     scene_summary: str = Field(..., description="Brief summary of what happens in scene")
     composition_notes: str = Field(..., description="Notes on framing, focus, composition")
     mood_lighting: str = Field(..., description="Lighting and atmosphere description")
