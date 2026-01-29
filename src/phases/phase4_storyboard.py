@@ -33,7 +33,7 @@ from src.config import DEFAULT_MODEL
 
 
 @dataclass
-class Phase3bStoryboardResult:
+class Phase4StoryboardResult:
     """Result of Phase 3b storyboard generation."""
     codex_path: Path
     scenes_processed: int
@@ -56,11 +56,11 @@ def save_codex(codex: dict, codex_path: Path) -> None:
         json.dump(codex, f, indent=2, ensure_ascii=False)
 
 
-def run_phase3b_storyboard(
+def run_phase4_storyboard(
     codex_path: Path,
     model: str = None,
     max_revisions: int = 2,
-) -> Phase3bStoryboardResult:
+) -> Phase4StoryboardResult:
     """
     Generate storyboards for all narrative scenes.
 
@@ -73,7 +73,7 @@ def run_phase3b_storyboard(
         max_revisions: Maximum critique-revision cycles per scene
 
     Returns:
-        Phase3bStoryboardResult with counts and status
+        Phase4StoryboardResult with counts and status
     """
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
@@ -215,7 +215,7 @@ def run_phase3b_storyboard(
 
     step_timings = {"step1_storyboard": round(time.time() - step_start, 2)}
 
-    return Phase3bStoryboardResult(
+    return Phase4StoryboardResult(
         codex_path=codex_path,
         scenes_processed=scenes_processed,
         total_shots_generated=total_shots,
@@ -253,7 +253,7 @@ def main():
         sys.exit(1)
 
     try:
-        result = run_phase3b_storyboard(
+        result = run_phase4_storyboard(
             args.codex_path,
             model=args.model,
             max_revisions=args.max_revisions,

@@ -30,7 +30,7 @@ from src.config import DEFAULT_YOUTUBE_PRIVACY, DEFAULT_MODEL, DEFAULT_YOUTUBE_P
 
 
 @dataclass
-class Phase7YouTubeResult:
+class Phase8UploadResult:
     """Result of Phase 7 YouTube upload."""
     codex_path: Path
     video_id: Optional[str]
@@ -127,11 +127,11 @@ def find_final_video(codex_path: Path) -> Optional[Path]:
     return None
 
 
-def run_phase7_youtube(
+def run_phase8_upload(
     codex_path: Path,
     privacy_status: str = None,
     model: str = None,
-) -> Phase7YouTubeResult:
+) -> Phase8UploadResult:
     """
     Run Phase 7: YouTube Upload.
 
@@ -146,7 +146,7 @@ def run_phase7_youtube(
         model: LLM model for metadata generation
 
     Returns:
-        Phase7YouTubeResult with upload status and video URL
+        Phase8UploadResult with upload status and video URL
     """
     codex_path = Path(codex_path)
     privacy_status = privacy_status or DEFAULT_YOUTUBE_PRIVACY
@@ -175,7 +175,7 @@ def run_phase7_youtube(
     # Find the final video
     video_path = find_final_video(codex_path)
     if not video_path:
-        return Phase7YouTubeResult(
+        return Phase8UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -243,7 +243,7 @@ def run_phase7_youtube(
         youtube = get_youtube_service()
         print(">>> YouTube authentication successful")
     except FileNotFoundError as e:
-        return Phase7YouTubeResult(
+        return Phase8UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -256,7 +256,7 @@ def run_phase7_youtube(
             step_timings=step_timings,
         )
     except Exception as e:
-        return Phase7YouTubeResult(
+        return Phase8UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -293,7 +293,7 @@ def run_phase7_youtube(
         )
 
         if not result.success:
-            return Phase7YouTubeResult(
+            return Phase8UploadResult(
                 codex_path=codex_path,
                 video_id=None,
                 video_url=None,
@@ -310,7 +310,7 @@ def run_phase7_youtube(
         video_url = result.video_url
 
     except Exception as e:
-        return Phase7YouTubeResult(
+        return Phase8UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -378,7 +378,7 @@ def run_phase7_youtube(
     print(f"\n>>> Phase 7 complete!")
     print(f">>> Video URL: {video_url}")
 
-    return Phase7YouTubeResult(
+    return Phase8UploadResult(
         codex_path=codex_path,
         video_id=video_id,
         video_url=video_url,
@@ -431,7 +431,7 @@ Examples:
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase7_youtube(
+    result = run_phase8_upload(
         codex_path=args.codex_path,
         privacy_status=args.privacy,
         model=args.model,

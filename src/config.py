@@ -128,8 +128,29 @@ STORY_SCOPES = {
 DEFAULT_STORY_SCOPE = "standard"
 
 # Phase configuration for House of Novels modular system
-PHASE_NAMES = ["codex", "outline", "characters", "narrative", "storyboard", "prompts", "generation", "editing", "upload"]
+# New pipeline with author phases:
+# Phase 0: Codex (select author)
+# Phase 1: PLOTTING (outline + characters + locations merged)
+# Phase 2: SCREENPLAY (prose writing)
+# Phase 3: REVISION (multi-pass editing)
+# Phase 4-8: Storyboard → Prompts → Generation → Editing → Upload
+PHASE_NAMES = [
+    "codex",      # 0 - Story seed generation + author selection
+    "plotting",   # 1 - Outline + Characters + Locations (was outline + characters)
+    "screenplay", # 2 - Narrative prose (was narrative)
+    "revision",   # 3 - Multi-pass revision (NEW)
+    "storyboard", # 4 - Shot breakdown (was 3b)
+    "prompts",    # 5 - Image/video prompts (was 4)
+    "generation", # 6 - Media generation (was 5)
+    "editing",    # 7 - Video editing (was 6)
+    "upload",     # 8 - YouTube upload (was 7)
+]
 DEFAULT_FORGE_DIR = "forge"
+
+# Author Configuration
+DEFAULT_AUTHOR = None  # None = random selection
+AUTHOR_SELECTION_MODE = "random"  # "random" | "specific" | "genre_match"
+DEFAULT_STRUCTURE = "three_act"  # Default story structure if author doesn't specify
 
 # ComfyUI Configuration for Phase 5 (Media Generation)
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"

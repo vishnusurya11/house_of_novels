@@ -31,6 +31,8 @@ from src.config import (
     DEFAULT_FORGE_DIR,
     DEFAULT_STORY_SCOPE,
 )
+from src.authors import select_author, list_authors
+from src.story_structures import get_structure
 
 
 # Default config names for each deck type
@@ -110,6 +112,8 @@ def run_phase0_codex(
     story_configs: list[str] = None,
     world_configs: list[str] = None,
     timestamp: str = None,
+    author_id: str = None,
+    structure_id: str = None,
 ) -> Phase0Result:
     """
     Generate codex with story prompts and worldbuilding microsettings.
@@ -121,6 +125,8 @@ def run_phase0_codex(
         story_configs: Story engine config names (default: ["story_seed"])
         world_configs: Deck of worlds config names (default: ["simple_microsetting"])
         timestamp: Timestamp for codex filename (default: extracted from output_dir name)
+        author_id: Specific author ID to use (default: random selection)
+        structure_id: Specific story structure to use (default: author's preferred)
 
     Returns:
         Phase0Result with codex path and extracted prompts
@@ -150,6 +156,21 @@ def run_phase0_codex(
     print(f"\n>>> Visual Style: {selected_style['name']}")
     print(f"    {selected_style['description']}")
 
+    # Select author (random if not specified)
+    author = select_author(author_id=author_id)
+    print(f"\n>>> Author: {author.name}")
+    if author.pen_name:
+        print(f"    Pen name: {author.pen_name}")
+    print(f"    Specialty: {author.specialty}")
+    print(f"    Genres: {', '.join(author.genres)}")
+
+    # Select story structure (author's preferred if not specified)
+    structure_to_use = structure_id or author.preferred_structure
+    structure = get_structure(structure_to_use)
+    print(f"\n>>> Story Structure: {structure.name}")
+    print(f"    Source: {structure.source}")
+    print(f"    Beats: {len(structure.beats)}")
+
     # Generate Story Engine prompts
     print("\n>>> Story Engine")
     se_prompts, se_metadata = generate_for_configs(story_configs)
@@ -167,6 +188,14 @@ def run_phase0_codex(
             "visual_style": selected_style,
             "debate_rounds": DEBATE_ROUNDS,
             "cards_per_draw": CARDS_PER_DRAW,
+        },
+        "author": author.to_dict(),
+        "story_structure": {
+            "short_name": structure.short_name,
+            "name": structure.name,
+            "source": structure.source,
+            "num_acts": structure.num_acts,
+            "beats": [{"name": b.name, "description": b.description, "act": b.act, "quadrant": b.quadrant} for b in structure.beats],
         },
         "story_engine": {
             "prompts": se_prompts,
@@ -218,7 +247,29 @@ def main():
         default=DEFAULT_STORY_SCOPE,
         help=f"Story scope for later phases (default: {DEFAULT_STORY_SCOPE})"
     )
+    parser.add_argument(
+        "--author",
+        default=None,
+        help="Author ID to use (default: random selection)"
+    )
+    parser.add_argument(
+        "--structure",
+        default=None,
+        help="Story structure to use (default: author's preferred)"
+    )
+    parser.add_argument(
+        "--list-authors",
+        action="store_true",
+        help="List available authors and exit"
+    )
     args = parser.parse_args()
+
+    # Handle --list-authors
+    if args.list_authors:
+        print("\nAvailable Authors:")
+        for author_info in list_authors():
+            print(f"  {author_info['id']}: {author_info['name']} - {author_info['specialty']}")
+        sys.exit(0)
 
     # Create timestamped dir if not specified
     if args.output_dir is None:
@@ -229,6 +280,8 @@ def main():
         args.output_dir,
         model=args.model,
         scope=args.scope,
+        author_id=args.author,
+        structure_id=args.structure,
     )
 
     print(f"\n>>> Story prompt: {result.story_prompt[:80]}...")

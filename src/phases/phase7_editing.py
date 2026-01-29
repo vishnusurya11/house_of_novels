@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 @dataclass
-class Phase6EditingResult:
+class Phase7EditingResult:
     """Result of Phase 6 audio/video editing (backward compatible)."""
     codex_path: Path
     # Audio outputs
@@ -35,11 +35,11 @@ class Phase6EditingResult:
     step_timings: dict = field(default_factory=dict)
 
 
-def run_phase6_editing(
+def run_phase7_editing(
     codex_path: Path,
     steps: list[int] = None,
     comfyui_output_dir: str = None,
-) -> Phase6EditingResult:
+) -> Phase7EditingResult:
     """
     Run Phase 6: Audio & Video Editing using the active template.
 
@@ -57,7 +57,7 @@ def run_phase6_editing(
         comfyui_output_dir: ComfyUI output directory (default: from config)
 
     Returns:
-        Phase6EditingResult with success status and output paths
+        Phase7EditingResult with success status and output paths
     """
     from src.templates import get_template
 
@@ -69,8 +69,8 @@ def run_phase6_editing(
         comfyui_output_dir=comfyui_output_dir,
     )
 
-    # Convert to Phase6EditingResult for backward compatibility
-    return Phase6EditingResult(
+    # Convert to Phase7EditingResult for backward compatibility
+    return Phase7EditingResult(
         codex_path=result.codex_path,
         scene_audio_count=result.scene_audio_count,
         scene_video_count=result.scene_video_count,
@@ -120,7 +120,7 @@ Examples:
 
     args = parser.parse_args()
 
-    result = run_phase6_editing(
+    result = run_phase7_editing(
         codex_path=Path(args.codex_path),
         steps=args.steps,
     )

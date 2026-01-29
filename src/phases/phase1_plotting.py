@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Phase 1: Story Outline Generation
+Phase 1: PLOTTING (Story Structure + Characters + Locations)
 
-Creates 3-act story structure with hero's journey beats and try-fail cycles.
-Requires a codex file from Phase 0.
+Generates story outline using author's preferred structure,
+then creates characters and locations in the same phase.
+
+This phase merges the old Phase 1 (outline) and Phase 2 (characters)
+with author style injection.
 
 Usage (standalone):
-    uv run python -m src.phases.phase1_outline forge/20260105143022/codex.json
-    uv run python -m src.phases.phase1_outline forge/20260105143022/codex.json --scope flash
+    uv run python -m src.phases.phase1_plotting forge/20260105143022/codex.json
+    uv run python -m src.phases.phase1_plotting forge/20260105143022/codex.json --scope flash
 """
 
 import sys
@@ -16,12 +19,14 @@ import time
 import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Optional
 
 # Add parent directory to path for proper package imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.story_workflows import run_phase1_outline as _run_phase1_outline_monolithic
+from src.story_workflows import (
+    run_phase2_characters_locations as _run_characters_locations,
+)
 from src.story_agents.outline_research_agents import (
     StructureResearchAgent,
     BeatSheetAgent,
@@ -33,14 +38,20 @@ from src.story_agents.outline_agents import (
 )
 from src.story_agents.reviser_agent import ReviserAgent
 from src.config import DEFAULT_MODEL, STORY_SCOPES, DEFAULT_STORY_SCOPE
+from src.authors import get_author
+from src.authors.base_author import BaseAuthor
+from src.authors.styles import PlottingStyle
+from src.story_structures import get_structure
+from src.story_structures.base_structure import BaseStructure
 
 
 @dataclass
 class Phase1Result:
-    """Result of Phase 1 outline generation."""
+    """Result of Phase 1 plotting generation."""
     codex_path: Path
     outline: dict
-    outline_json: str
+    characters: list[dict]
+    locations: list[dict]
     metadata: dict
     success: bool
     error: Optional[str] = None
@@ -70,29 +81,85 @@ def extract_prompts(codex: dict) -> tuple[str, str]:
     return story_prompt, setting_prompt
 
 
-def run_phase1_outline(
+def get_author_from_codex(codex: dict) -> tuple[Optional[BaseAuthor], PlottingStyle]:
+    """Get author and plotting style from codex.
+
+    Returns:
+        Tuple of (author_instance_or_None, plotting_style)
+    """
+    author_data = codex.get("author", {})
+    if not author_data:
+        # No author in codex, return default plotting style
+        return None, PlottingStyle()
+
+    author_id = author_data.get("id")
+    if author_id:
+        try:
+            author = get_author(author_id)
+            return author, author.plotting_style
+        except ValueError:
+            pass
+
+    # Reconstruct plotting style from codex data
+    plotting_data = author_data.get("plotting_style", {})
+    plotting_style = PlottingStyle(
+        beat_emphasis=plotting_data.get("beat_emphasis", []),
+        pacing=plotting_data.get("pacing", "medium"),
+        subplot_tendency=plotting_data.get("subplot_tendency", "minimal"),
+        twist_frequency=plotting_data.get("twist_frequency", "one_major"),
+    )
+    return None, plotting_style
+
+
+def get_structure_from_codex(codex: dict) -> BaseStructure:
+    """Get story structure from codex."""
+    structure_data = codex.get("story_structure", {})
+    short_name = structure_data.get("short_name", "three_act")
+    return get_structure(short_name)
+
+
+def build_structure_prompt(structure: BaseStructure, plotting_style: PlottingStyle) -> str:
+    """Build a combined prompt from structure and plotting style."""
+    parts = []
+
+    # Add structure prompt
+    parts.append(structure.get_outline_prompt("standard"))
+
+    # Add plotting style modifiers
+    style_modifier = plotting_style.get_prompt_modifier()
+    if style_modifier:
+        parts.append("\n## Author's Plotting Style")
+        parts.append(style_modifier)
+
+    return "\n\n".join(parts)
+
+
+def run_phase1_plotting(
     codex_path: Path,
     model: str = None,
     scope: str = None,
     steps: list[int] = None,
 ) -> Phase1Result:
     """
-    Generate story outline from codex with step-granular execution.
+    Generate story outline with author's structure, then characters and locations.
 
-    Step 1: High-Level Story Structure - research-driven 3-act summary
-    Step 2: Beat Sheet Generation - bullet points for each act
-    Step 3: Scene-by-Scene Outline - full scenes from beats
-    Step 4: Structure & Pacing Critique - multi-agent critique
-    Step 5: Revision & Final Outline - apply critiques and revise
+    Steps:
+    1. High-Level Story Structure - using author's preferred structure
+    2. Beat Sheet Generation - beats from selected structure
+    3. Scene-by-Scene Outline - scenes matching beats
+    4. Structure & Pacing Critique
+    5. Revision & Final Outline
+    6. Character Generation
+    7. Location Generation
 
     Args:
         codex_path: Path to codex.json file
         model: LLM model to use (default: from codex config or DEFAULT_MODEL)
         scope: Story scope (default: from codex config or DEFAULT_STORY_SCOPE)
-        steps: List of step numbers to run (default: all steps [1,2,3,4,5])
+        steps: List of step numbers to run (default: all steps [1-7])
 
     Returns:
-        Phase1Result with outline data
+        Phase1Result with outline, characters, and locations
     """
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
@@ -109,11 +176,22 @@ def run_phase1_outline(
 
     scope_config = STORY_SCOPES.get(scope, STORY_SCOPES[DEFAULT_STORY_SCOPE])
 
+    # Get author and structure from codex
+    author, plotting_style = get_author_from_codex(codex)
+    structure = get_structure_from_codex(codex)
+
     print(f"\n>>> Using model: {model}")
     print(f">>> Scope: {scope} - {scope_config['description']}")
+    print(f">>> Story Structure: {structure.name}")
+    print(f">>> Pacing: {plotting_style.pacing}")
+    if author:
+        print(f">>> Author: {author.name}")
+
+    # Build combined structure prompt
+    structure_prompt = build_structure_prompt(structure, plotting_style)
 
     # Determine which steps to run
-    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5]
+    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5, 6, 7]
     print(f">>> Running steps: {steps_to_run}")
 
     # Initialize story structure if needed
@@ -125,15 +203,16 @@ def run_phase1_outline(
     # Initialize metadata
     if "story_metadata" not in codex:
         codex["story_metadata"] = {}
-    if "phase1_outline" not in codex["story_metadata"]:
-        codex["story_metadata"]["phase1_outline"] = {
+    if "phase1_plotting" not in codex["story_metadata"]:
+        codex["story_metadata"]["phase1_plotting"] = {
             "phase": 1,
-            "name": "Outline Generation",
-            "mode": "research-driven",
+            "name": "Plotting (Structure + Characters)",
+            "mode": "author-driven",
+            "structure_used": structure.short_name,
             "steps_completed": [],
         }
 
-    # Initialize agents (only create if needed for requested steps)
+    # Initialize agents as needed
     structure_agent = None
     beat_agent = None
     scene_builder = None
@@ -153,41 +232,43 @@ def run_phase1_outline(
     if 5 in steps_to_run:
         reviser = ReviserAgent(model=model)
 
-    # Step timing tracking
     step_timings = {}
 
     # STEP 1: High-Level Story Structure
     if 1 in steps_to_run:
         print(f"\n{'='*60}")
-        print("STEP 1: High-Level Story Structure (Research-Driven)")
+        print("STEP 1: High-Level Story Structure (Author's Structure)")
         print(f"{'='*60}")
         step_start = time.time()
 
+        print(f">>> Using {structure.name} structure...")
         print(">>> Researching story structures...")
+
+        # Inject structure prompt into research
         research_insights = structure_agent.research_story_structures(
-            story_prompt, setting_prompt
+            story_prompt + "\n\n" + structure_prompt,
+            setting_prompt
         )
         print(f"    Found {len(research_insights)} relevant structures")
-        for insight in research_insights:
-            print(f"    - {insight.topic}")
 
-        print("\n>>> Creating high-level 3-act structure...")
+        print("\n>>> Creating high-level structure...")
         high_level_structure = structure_agent.create_high_level_structure(
-            story_prompt, setting_prompt, research_insights
+            story_prompt + "\n\n" + structure_prompt,
+            setting_prompt,
+            research_insights
         )
 
         # Store in codex
         codex["story"]["outline"]["high_level_structure"] = high_level_structure.model_dump()
-        codex["story_metadata"]["phase1_outline"]["research_insights"] = [
+        codex["story_metadata"]["phase1_plotting"]["research_insights"] = [
             r.model_dump() for r in research_insights
         ]
-        codex["story_metadata"]["phase1_outline"]["steps_completed"].append(1)
+        codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(1)
 
         step_timings["step1_structure"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
-        print(f">>> Step 1 complete: High-level structure saved ({step_timings['step1_structure']:.1f}s)")
+        print(f">>> Step 1 complete ({step_timings['step1_structure']:.1f}s)")
         print(f"    Theme: {high_level_structure.theme}")
-        print(f"    Central Conflict: {high_level_structure.central_conflict[:80]}...")
 
     # STEP 2: Beat Sheet Generation
     if 2 in steps_to_run:
@@ -196,7 +277,6 @@ def run_phase1_outline(
         print(f"{'='*60}")
         step_start = time.time()
 
-        # Load high-level structure from codex
         codex = load_codex(codex_path)
         hl_struct_dict = codex.get("story", {}).get("outline", {}).get("high_level_structure")
 
@@ -206,18 +286,23 @@ def run_phase1_outline(
             from src.story_schemas import HighLevelStructureSchema
             hl_struct = HighLevelStructureSchema(**hl_struct_dict)
 
-            print(">>> Generating beat sheet with research...")
+            # Include structure beats in prompt
+            beat_definitions = structure.get_beat_definitions()
+            print(f">>> Using {len(structure.beats)} beats from {structure.name}...")
+
             beat_sheet = beat_agent.generate_beat_sheet(
-                story_prompt, setting_prompt, hl_struct, scope_config
+                story_prompt + "\n\n" + beat_definitions,
+                setting_prompt,
+                hl_struct,
+                scope_config
             )
 
-            # Store in codex
             codex["story"]["outline"]["beat_sheet"] = beat_sheet.model_dump()
-            codex["story_metadata"]["phase1_outline"]["steps_completed"].append(2)
+            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(2)
 
             step_timings["step2_beats"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 2 complete: Beat sheet saved ({step_timings['step2_beats']:.1f}s)")
+            print(f">>> Step 2 complete ({step_timings['step2_beats']:.1f}s)")
             print(f"    Act 1 beats: {len(beat_sheet.act1_beats)}")
             print(f"    Act 2 beats: {len(beat_sheet.act2_beats)}")
             print(f"    Act 3 beats: {len(beat_sheet.act3_beats)}")
@@ -229,7 +314,6 @@ def run_phase1_outline(
         print(f"{'='*60}")
         step_start = time.time()
 
-        # Load beat sheet and high-level structure from codex
         codex = load_codex(codex_path)
         beat_sheet_dict = codex.get("story", {}).get("outline", {}).get("beat_sheet")
         hl_struct_dict = codex.get("story", {}).get("outline", {}).get("high_level_structure")
@@ -243,34 +327,28 @@ def run_phase1_outline(
             beat_sheet = BeatSheetSchema(**beat_sheet_dict)
             hl_struct = HighLevelStructureSchema(**hl_struct_dict)
 
-            # Build acts sequentially
             acts = []
 
-            print(">>> Building Act 1 scenes from beats...")
+            print(">>> Building Act 1 scenes...")
             act1 = scene_builder.build_act_scenes(
                 1, beat_sheet.act1_beats, hl_struct, setting_prompt
             )
             acts.append(act1)
             print(f"    Act 1: {len(act1.scenes)} scenes")
 
-            print(">>> Building Act 2 scenes from beats...")
+            print(">>> Building Act 2 scenes...")
             act2 = scene_builder.build_act_scenes(
                 2, beat_sheet.act2_beats, hl_struct, setting_prompt
             )
             acts.append(act2)
             print(f"    Act 2: {len(act2.scenes)} scenes")
 
-            print(">>> Building Act 3 scenes from beats...")
+            print(">>> Building Act 3 scenes...")
             act3 = scene_builder.build_act_scenes(
                 3, beat_sheet.act3_beats, hl_struct, setting_prompt
             )
             acts.append(act3)
             print(f"    Act 3: {len(act3.scenes)} scenes")
-
-            # Validate all acts have scenes
-            for i, act in enumerate(acts):
-                if not act.scenes:
-                    raise ValueError(f"Act {i+1} has 0 scenes - beat sheet may have empty act{i+1}_beats")
 
             # Create complete outline
             outline_data = {
@@ -282,14 +360,13 @@ def run_phase1_outline(
                 "acts": [act.model_dump() for act in acts]
             }
 
-            # Store in codex
             codex["story"]["outline"].update(outline_data)
-            codex["story_metadata"]["phase1_outline"]["steps_completed"].append(3)
+            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(3)
 
             step_timings["step3_scenes"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
             total_scenes = sum(len(act.scenes) for act in acts)
-            print(f">>> Step 3 complete: {total_scenes} scenes generated ({step_timings['step3_scenes']:.1f}s)")
+            print(f">>> Step 3 complete: {total_scenes} scenes ({step_timings['step3_scenes']:.1f}s)")
 
     # STEP 4: Structure & Pacing Critique
     if 4 in steps_to_run:
@@ -298,7 +375,6 @@ def run_phase1_outline(
         print(f"{'='*60}")
         step_start = time.time()
 
-        # Load complete outline from codex
         codex = load_codex(codex_path)
         outline = codex.get("story", {}).get("outline", {})
 
@@ -313,17 +389,16 @@ def run_phase1_outline(
             print(">>> Getting pacing critique...")
             pacing_critique = pacing_critic.critique(outline_json)
 
-            # Store critiques in metadata
             critique_data = {
                 "structure_critique": structure_critique.model_dump(),
                 "pacing_critique": pacing_critique.model_dump(),
             }
-            codex["story_metadata"]["phase1_outline"]["critiques"] = critique_data
-            codex["story_metadata"]["phase1_outline"]["steps_completed"].append(4)
+            codex["story_metadata"]["phase1_plotting"]["critiques"] = critique_data
+            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(4)
 
             step_timings["step4_critique"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 4 complete: Critiques saved ({step_timings['step4_critique']:.1f}s)")
+            print(f">>> Step 4 complete ({step_timings['step4_critique']:.1f}s)")
             print(f"    Structure issues: {len(structure_critique.issues)}")
             print(f"    Pacing issues: {len(pacing_critique.issues)}")
 
@@ -334,9 +409,8 @@ def run_phase1_outline(
         print(f"{'='*60}")
         step_start = time.time()
 
-        # Load critiques and outline from codex
         codex = load_codex(codex_path)
-        critiques = codex.get("story_metadata", {}).get("phase1_outline", {}).get("critiques")
+        critiques = codex.get("story_metadata", {}).get("phase1_plotting", {}).get("critiques")
         outline = codex.get("story", {}).get("outline", {})
 
         if not critiques:
@@ -350,16 +424,87 @@ def run_phase1_outline(
                 json.dumps(critiques["pacing_critique"])
             ]
 
-            print(">>> Revising outline based on critiques...")
+            print(">>> Revising outline...")
             revised_outline = reviser.revise_outline(outline_json, critique_jsons)
 
-            # Store revised outline
             codex["story"]["outline"].update(revised_outline.model_dump())
-            codex["story_metadata"]["phase1_outline"]["steps_completed"].append(5)
+            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(5)
 
             step_timings["step5_revision"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
-            print(f">>> Step 5 complete: Final outline saved ({step_timings['step5_revision']:.1f}s)")
+            print(f">>> Step 5 complete ({step_timings['step5_revision']:.1f}s)")
+
+    # STEP 6: Character Generation
+    if 6 in steps_to_run:
+        print(f"\n{'='*60}")
+        print("STEP 6: Character Generation")
+        print(f"{'='*60}")
+        step_start = time.time()
+
+        codex = load_codex(codex_path)
+        story = codex.get("story", {})
+
+        if "outline" not in story:
+            print("ERROR: No outline found. Run steps 1-5 first.")
+        else:
+            outline_json = json.dumps(story["outline"])
+
+            print(f">>> Generating up to {scope_config['max_characters']} characters...")
+
+            result = _run_characters_locations(
+                outline_json,
+                setting_prompt,
+                model,
+                max_characters=scope_config["max_characters"],
+                max_locations=scope_config["max_locations"]
+            )
+
+            codex["story"]["characters"] = result["characters"]
+
+            # Assign unique IDs
+            for i, char in enumerate(codex["story"]["characters"]):
+                char["id"] = f"char_{i+1:03d}"
+
+            # Update outline with debated names if available
+            if "outline_updated" in result and result["outline_updated"]:
+                codex["story"]["outline"] = result["outline_updated"]
+                print("    Updated outline with debated names.")
+
+            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(6)
+            codex["story_metadata"]["phase1_plotting"]["character_metadata"] = result.get("metadata", {})
+
+            step_timings["step6_characters"] = round(time.time() - step_start, 2)
+            save_codex(codex, codex_path)
+            print(f">>> Step 6 complete: {len(result['characters'])} characters ({step_timings['step6_characters']:.1f}s)")
+
+    # STEP 7: Location Generation
+    if 7 in steps_to_run:
+        print(f"\n{'='*60}")
+        print("STEP 7: Location Generation")
+        print(f"{'='*60}")
+        step_start = time.time()
+
+        codex = load_codex(codex_path)
+        story = codex.get("story", {})
+
+        if "characters" not in story:
+            print("ERROR: No characters found. Run step 6 first.")
+        else:
+            # Locations were already generated in step 6, just assign IDs if needed
+            if "locations" in story:
+                for i, loc in enumerate(codex["story"]["locations"]):
+                    if "id" not in loc:
+                        loc["id"] = f"loc_{i+1:03d}"
+
+                codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(7)
+                step_timings["step7_locations"] = round(time.time() - step_start, 2)
+                save_codex(codex, codex_path)
+                print(f">>> Step 7 complete: {len(story['locations'])} locations ({step_timings['step7_locations']:.1f}s)")
+            else:
+                print("    Locations were generated with characters in step 6.")
+                codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(7)
+                step_timings["step7_locations"] = round(time.time() - step_start, 2)
+                save_codex(codex, codex_path)
 
     # Update config
     codex = load_codex(codex_path)
@@ -367,16 +512,19 @@ def run_phase1_outline(
     codex["config"]["scope"] = scope
     save_codex(codex, codex_path)
 
-    # Get final outline
+    # Get final data
     final_outline = codex.get("story", {}).get("outline", {})
-    final_metadata = codex.get("story_metadata", {}).get("phase1_outline", {})
+    final_characters = codex.get("story", {}).get("characters", [])
+    final_locations = codex.get("story", {}).get("locations", [])
+    final_metadata = codex.get("story_metadata", {}).get("phase1_plotting", {})
 
-    print(f"\n>>> Outline saved to: {codex_path}")
+    print(f"\n>>> Plotting saved to: {codex_path}")
 
     return Phase1Result(
         codex_path=codex_path,
         outline=final_outline,
-        outline_json=json.dumps(final_outline, indent=2, ensure_ascii=False),
+        characters=final_characters,
+        locations=final_locations,
         metadata=final_metadata,
         success=True,
         step_timings=step_timings,
@@ -386,7 +534,7 @@ def run_phase1_outline(
 def main():
     """CLI entry point for standalone execution."""
     parser = argparse.ArgumentParser(
-        description="Phase 1: Generate story outline (research-driven)"
+        description="Phase 1: Plotting (Structure + Characters + Locations)"
     )
     parser.add_argument(
         "codex_path",
@@ -408,8 +556,8 @@ def main():
         "--steps",
         nargs="+",
         type=int,
-        choices=[1, 2, 3, 4, 5],
-        help="Run specific steps (1: Structure, 2: Beats, 3: Scenes, 4: Critique, 5: Revision). Example: --steps 1 2"
+        choices=[1, 2, 3, 4, 5, 6, 7],
+        help="Run specific steps. Example: --steps 1 2 3"
     )
     args = parser.parse_args()
 
@@ -417,7 +565,7 @@ def main():
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase1_outline(
+    result = run_phase1_plotting(
         args.codex_path,
         model=args.model,
         scope=args.scope,
@@ -425,7 +573,8 @@ def main():
     )
 
     print(f"\n>>> Title: {result.outline.get('title', 'Untitled')}")
-    print(f">>> Logline: {result.outline.get('logline', 'N/A')[:100]}...")
+    print(f">>> Characters: {len(result.characters)}")
+    print(f">>> Locations: {len(result.locations)}")
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ from src.config import DEFAULT_MODEL
 
 
 @dataclass
-class Phase4PromptsResult:
+class Phase5PromptsResult:
     """Result of Phase 4 prompt generation."""
     codex_path: Path
     character_prompt_count: int
@@ -137,11 +137,11 @@ def detect_genre(codex: dict) -> str:
         return "fantasy"  # default
 
 
-def run_phase4_prompts(
+def run_phase5_prompts(
     codex_path: Path,
     model: str = None,
     steps: list[int] = None,
-) -> Phase4PromptsResult:
+) -> Phase5PromptsResult:
     """
     Generate image prompts for story elements in codex.
 
@@ -157,7 +157,7 @@ def run_phase4_prompts(
         steps: List of step numbers to run (default: all steps [1,2,3,4,5])
 
     Returns:
-        Phase4PromptsResult with counts of generated prompts
+        Phase5PromptsResult with counts of generated prompts
     """
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
@@ -610,7 +610,7 @@ def run_phase4_prompts(
     print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
     print(f">>> Saved to: {codex_path}")
 
-    return Phase4PromptsResult(
+    return Phase5PromptsResult(
         codex_path=codex_path,
         character_prompt_count=char_prompt_count,
         location_prompt_count=loc_prompt_count,
@@ -650,7 +650,7 @@ def main():
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase4_prompts(
+    result = run_phase5_prompts(
         args.codex_path,
         model=args.model,
         steps=args.steps,
