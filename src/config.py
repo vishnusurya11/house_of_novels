@@ -42,20 +42,22 @@ def detect_environment() -> str:
 ENVIRONMENT = detect_environment()
 
 # Environment-specific configuration
-YOUTUBE_CONFIG = {
+ENV_CONFIG = {
     "alpha": {
         # Channel: @DigitalDaVinci-ViSuRAI
         "playlist_id": "PLDErTZAi9nWzqR8WZg070oJAGNhkYa-5N",
+        # ComfyUI output path for alpha
         "comfyui_output_dir": r"D:\Projects\KingdomOfViSuReNa\alpha\ComfyUI_windows_portable\ComfyUI\output",
     },
     "prod": {
         # Channel: @TheKeepersLantern
         "playlist_id": "PLr_5rpnSabhkDGfXp_G5ORgHhZY2m8hD6",
-        "comfyui_output_dir": r"D:\Projects\KingdomOfViSuReNa\prod\ComfyUI_windows_portable\ComfyUI\output",
+        # ComfyUI output path for prod (using alpha for now, change when prod ComfyUI is set up)
+        "comfyui_output_dir": r"D:\Projects\KingdomOfViSuReNa\alpha\ComfyUI_windows_portable\ComfyUI\output",
     },
 }
 
-_env_config = YOUTUBE_CONFIG[ENVIRONMENT]
+_env_config = ENV_CONFIG[ENVIRONMENT]
 
 
 # OpenRouter Configuration
