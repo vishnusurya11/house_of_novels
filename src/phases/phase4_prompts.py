@@ -2,11 +2,12 @@
 """
 Phase 4: Prompt Generation
 
-Creates AI image generation prompts for characters, locations, posters, and video frames.
+Creates AI image generation prompts for characters, locations, posters, and thumbnails.
 Step 1: Character Prompts
 Step 2: Location Prompts
 Step 3: Poster/Thumbnail Prompts (Multi-Agent with Jury Voting)
-Step 4: Shot Frame Prompts (First/Last frame for each video shot)
+Step 4: Scene Image Prompts (One representative image per scene)
+Step 5: YouTube Thumbnail Prompts (Agent Council with debate and voting)
 
 Usage (standalone):
     uv run python -m src.phases.phase4_prompts forge/20260105143022/codex.json
@@ -34,6 +35,7 @@ from src.story_agents.image_prompt_agents import (
     StoryPosterCriticAgent,
 )
 from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt
+from src.story_agents.thumbnail_agents import generate_thumbnail_prompts_via_council
 # from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
 # from src.story_agents.video_prompt_agents import generate_video_prompt
 from src.visual_styles import get_default_style
@@ -47,9 +49,8 @@ class Phase4PromptsResult:
     character_prompt_count: int
     location_prompt_count: int
     poster_prompt_count: int
-    scene_image_prompt_count: int  # Step 4: Scene image prompts (NEW)
-    shot_frame_prompt_count: int  # Step 5: First/last frame prompts per shot (COMMENTED OUT)
-    video_prompt_count: int  # Step 6: LTX screenplay video prompts per shot (COMMENTED OUT)
+    scene_image_prompt_count: int  # Step 4: Scene image prompts
+    thumbnail_prompt_count: int  # Step 5: YouTube thumbnail prompts (Agent Council)
     success: bool
     error: Optional[str] = None
     step_timings: dict = field(default_factory=dict)
@@ -161,7 +162,7 @@ def run_phase4_prompts(
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
 
-    # Determine which steps to run
+    # Determine which steps to run (1-5 are active steps)
     steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5]
     print(f"\n>>> Running steps: {steps_to_run}")
 
@@ -538,28 +539,61 @@ def run_phase4_prompts(
         print("\n>>> Step 4: Skipped (not in requested steps)")
 
     # =========================================================================
-    # Step 5: Shot Frame Prompts (COMMENTED OUT)
+    # Step 5: YouTube Thumbnail Prompts (Agent Council with Debate & Voting)
     # =========================================================================
-    shot_frame_count = 0
-    # NOTE: Shot frame prompts are commented out for now
-    # Uncomment when ready to generate first/last frame prompts for video shots
-    #
-    # if 5 in steps_to_run:
-    #     # ... shot frame prompt generation code ...
-    #     pass
-    print("\n>>> Step 5 (Shot Frame Prompts): COMMENTED OUT")
+    thumbnail_prompt_count = 0
 
-    # =========================================================================
-    # Step 6: Video Prompts (COMMENTED OUT)
-    # =========================================================================
-    video_prompt_count = 0
-    # NOTE: Video prompts are commented out for now
-    # Uncomment when ready to generate LTX screenplay video prompts
-    #
-    # if 6 in steps_to_run:
-    #     # ... video prompt generation code ...
-    #     pass
-    print("\n>>> Step 6 (Video Prompts): COMMENTED OUT")
+    if 5 in steps_to_run and outline.get("title"):
+        step_start = time.time()
+        print(f"\n>>> Step 5: Generating YouTube thumbnail prompts via Agent Council...")
+        print(f"    Story title: {outline.get('title')}")
+        print(f"    Visual style: {visual_style['name']}")
+
+        try:
+            # Run the agent council (4 agents debate and vote)
+            thumbnail_result = generate_thumbnail_prompts_via_council(
+                codex=codex,
+                model=model,
+                verbose=True,
+            )
+
+            # Store thumbnail data in codex
+            codex["story"]["thumbnail"] = {
+                "prompts": thumbnail_result["prompts"],
+                "title": outline.get("title", ""),
+                "style": thumbnail_result["style"],
+                "metadata": {
+                    "total_candidates": thumbnail_result["metadata"].get("total_candidates", 0),
+                    "agent_contributions": thumbnail_result["metadata"].get("agent_contributions", {}),
+                    "genre": thumbnail_result["metadata"].get("genre", ""),
+                },
+            }
+
+            thumbnail_prompt_count = len(thumbnail_result["prompts"])
+
+            # Store detailed metadata
+            phase4_metadata["thumbnail_prompts"] = {
+                "prompts_selected": thumbnail_prompt_count,
+                "total_candidates": len(thumbnail_result.get("all_candidates", [])),
+                "voting_results": thumbnail_result.get("voting_results", []),
+                "agent_contributions": thumbnail_result["metadata"].get("agent_contributions", {}),
+            }
+
+            print(f"\n    Top {thumbnail_prompt_count} thumbnail prompts selected from {len(thumbnail_result.get('all_candidates', []))} candidates")
+
+        except Exception as e:
+            print(f"\n    ERROR in thumbnail generation: {e}")
+            codex["story"]["thumbnail"] = {"error": str(e)}
+            phase4_metadata["thumbnail_prompts"] = {"error": str(e)}
+
+        # Save after Step 5
+        step_timings["step5_thumbnails"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 5 complete: {thumbnail_prompt_count} thumbnail prompts generated ({step_timings['step5_thumbnails']:.1f}s)")
+    elif 5 in steps_to_run:
+        print("\n>>> Step 5: No outline title found, skipping thumbnail prompts")
+    else:
+        print("\n>>> Step 5: Skipped (not in requested steps)")
 
     # Update codex
     codex["story"]["characters"] = characters
@@ -573,8 +607,7 @@ def run_phase4_prompts(
     print(f"    Location prompts: {loc_prompt_count}")
     print(f"    Poster prompts: {poster_prompt_count}")
     print(f"    Scene image prompts: {scene_image_prompt_count}")
-    print(f"    Shot frame prompts: {shot_frame_count} (commented out)")
-    print(f"    Video prompts: {video_prompt_count} (commented out)")
+    print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
     print(f">>> Saved to: {codex_path}")
 
     return Phase4PromptsResult(
@@ -583,8 +616,7 @@ def run_phase4_prompts(
         location_prompt_count=loc_prompt_count,
         poster_prompt_count=poster_prompt_count,
         scene_image_prompt_count=scene_image_prompt_count,
-        shot_frame_prompt_count=shot_frame_count,
-        video_prompt_count=video_prompt_count,
+        thumbnail_prompt_count=thumbnail_prompt_count,
         success=True,
         step_timings=step_timings,
     )
@@ -610,7 +642,7 @@ def main():
         nargs="+",
         type=int,
         choices=[1, 2, 3, 4, 5],
-        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Shot Frames, 5: Video). Example: --steps 1 2"
+        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Scene Images, 5: Thumbnails). Example: --steps 1 2"
     )
     args = parser.parse_args()
 
@@ -629,8 +661,7 @@ def main():
     print(f"    Location prompts: {result.location_prompt_count}")
     print(f"    Poster prompts: {result.poster_prompt_count}")
     print(f"    Scene image prompts: {result.scene_image_prompt_count}")
-    print(f"    Shot frame prompts: {result.shot_frame_prompt_count} (commented out)")
-    print(f"    Video prompts: {result.video_prompt_count} (commented out)")
+    print(f"    Thumbnail prompts: {result.thumbnail_prompt_count}")
 
 
 if __name__ == "__main__":
