@@ -16,6 +16,48 @@ PROJECT_ROOT = Path(__file__).parent.parent
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
 
+
+# === ENVIRONMENT DETECTION ===
+def detect_environment() -> str:
+    """Detect environment from folder path or HOUSE_OF_NOVELS_ENV variable.
+
+    Priority:
+    1. HOUSE_OF_NOVELS_ENV environment variable if set
+    2. Path-based detection (looks for 'alpha' or 'prod' in PROJECT_ROOT path)
+    3. Default to 'alpha' if unclear
+    """
+    env_override = os.environ.get("HOUSE_OF_NOVELS_ENV")
+    if env_override in ("alpha", "prod"):
+        return env_override
+
+    path_str = str(PROJECT_ROOT).lower()
+    if "\\prod\\" in path_str or "/prod/" in path_str:
+        return "prod"
+    elif "\\alpha\\" in path_str or "/alpha/" in path_str:
+        return "alpha"
+
+    return "alpha"  # Default
+
+
+ENVIRONMENT = detect_environment()
+
+# Environment-specific configuration
+YOUTUBE_CONFIG = {
+    "alpha": {
+        # Channel: @DigitalDaVinci-ViSuRAI
+        "playlist_id": "PLDErTZAi9nWzqR8WZg070oJAGNhkYa-5N",
+        "comfyui_output_dir": r"D:\Projects\KingdomOfViSuReNa\alpha\ComfyUI_windows_portable\ComfyUI\output",
+    },
+    "prod": {
+        # Channel: @TheKeepersLantern
+        "playlist_id": "PLr_5rpnSabhkDGfXp_G5ORgHhZY2m8hD6",
+        "comfyui_output_dir": r"D:\Projects\KingdomOfViSuReNa\prod\ComfyUI_windows_portable\ComfyUI\output",
+    },
+}
+
+_env_config = YOUTUBE_CONFIG[ENVIRONMENT]
+
+
 # OpenRouter Configuration
 # Supports both OPENROUTER_API_KEY and OPR_ROUTER_API_KEY
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPR_ROUTER_API_KEY", "")
@@ -100,7 +142,7 @@ COMFYUI_WORKFLOWS = {
 
 # ComfyUI output directory (where images/videos are saved)
 # This is used to construct full paths for input images in video generation
-COMFYUI_OUTPUT_DIR = r"D:\Projects\KingdomOfViSuReNa\alpha\ComfyUI_windows_portable\ComfyUI\output"
+COMFYUI_OUTPUT_DIR = _env_config["comfyui_output_dir"]
 
 # Video generation timeout (30 minutes - videos take much longer than images)
 VIDEO_GENERATION_TIMEOUT = 1800  # seconds
@@ -126,7 +168,7 @@ YOUTUBE_TOKEN_FILE = PROJECT_ROOT / ".youtube_token.json"
 YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www.googleapis.com/auth/youtube']
 DEFAULT_YOUTUBE_CATEGORY = "24"  # Entertainment
 DEFAULT_YOUTUBE_PRIVACY = "public"  # public by default
-DEFAULT_YOUTUBE_PLAYLIST = "PLr_5rpnSabhkDGfXp_G5ORgHhZY2m8hD6"  # House of Novels playlist
+DEFAULT_YOUTUBE_PLAYLIST = _env_config["playlist_id"]
 
 
 def get_workflow_path(workflow_type: str) -> Path:

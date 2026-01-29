@@ -1,7 +1,7 @@
 {
   "15": {
     "inputs": {
-      "audio": "D:\\Projects\\KingdomOfViSuReNa\\alpha\\house_of_novels\\audio_inputs\\multi_talk_woman.mp3",
+      "audio": "D:\\Projects\\KingdomOfViSuReNa\\alpha\\house_of_novels\\audio_inputs\\man_voice_2_LONG.mp3",
       "audioUI": ""
     },
     "class_type": "LoadAudio",
