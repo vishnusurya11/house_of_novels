@@ -89,16 +89,29 @@ class NameVote(BaseModel):
 # =============================================================================
 
 class PhysicalDescriptionSchema(BaseModel):
-    """Physical attributes of a character."""
-    height: str = Field(..., description="Height description")
-    build: str = Field(..., description="Body type/build")
-    hair_color: str = Field(..., description="Hair color and style")
+    """Physical attributes emphasizing visual storytelling."""
+    body_build: str = Field(
+        ...,
+        description="Body type/build that reflects character's life (e.g., 'wiry from years of labor', 'stocky and muscular from training')"
+    )
+    height: str = Field(..., description="Height description (tall, average, short)")
+    hair_color: str = Field(
+        ...,
+        description="Hair color AND style (e.g., 'silver-streaked black, worn in tight braids')"
+    )
+    ethnicity: str = Field(
+        ...,
+        description="Ethnic appearance/complexion (e.g., 'dark-skinned with West African features', 'pale with East Asian features', 'olive Mediterranean complexion')"
+    )
     eye_color: str = Field(..., description="Eye color")
-    distinguishing_features: str = Field(..., description="Scars, tattoos, unique features")
+    distinguishing_features: str = Field(
+        default="",
+        description="OPTIONAL: Meaningful unique features only if relevant to story (NOT default scars). Leave empty if none."
+    )
 
 
 class CharacterSchema(BaseModel):
-    """Detailed character profile."""
+    """Detailed character profile (legacy schema for backwards compatibility)."""
     id: Optional[str] = Field(None, description="Unique ID like 'char_001' (assigned in Phase 2)")
     name: str = Field(..., description="Character's full name")
     gender: str = Field(..., description="Character's gender")
@@ -110,6 +123,42 @@ class CharacterSchema(BaseModel):
     motivation: str = Field(..., description="What drives this character")
     role_in_story: str = Field(..., description="'protagonist', 'antagonist', or 'supporting'")
     arc: str = Field(..., description="Character's growth/change arc")
+
+
+class CharacterSheetSchema(BaseModel):
+    """Complete character sheet with backstory bullet points (Step 2 output)."""
+    id: str = Field(..., description="Unique ID like 'char_001'")
+    name: str = Field(..., description="Full name from name debate")
+    role_in_story: str = Field(..., description="'protagonist', 'antagonist', or 'supporting'")
+    role_description: str = Field(
+        ...,
+        description="Original role from story seed (e.g., 'an archivist', 'the closest friend')"
+    )
+    gender: str = Field(..., description="Character's gender")
+    age: str = Field(..., description="Age or age range")
+    physical: PhysicalDescriptionSchema = Field(..., description="Physical appearance")
+    costume: str = Field(
+        ...,
+        description="DETAILED costume/dress description: clothing, accessories, items carried. This is the most important visual element."
+    )
+    personality_traits: list[str] = Field(
+        ...,
+        description="3-5 key personality traits"
+    )
+    accent: str = Field(
+        ...,
+        description="Speech pattern/accent (e.g., 'clipped aristocratic', 'warm rural drawl', 'formal scholarly')"
+    )
+    qualities: list[str] = Field(
+        ...,
+        description="5-7 specific character qualities/quirks (e.g., 'obsessively organized', 'speaks in metaphors')"
+    )
+    backstory_points: list[str] = Field(
+        ...,
+        description="3-6 bullet points of backstory derived from story outline"
+    )
+    motivation: str = Field(..., description="Core motivation driving the character")
+    arc: str = Field(..., description="Character's transformation arc (from hook to resolution)")
 
 
 class LocationSchema(BaseModel):
@@ -138,6 +187,127 @@ class CharacterListSchema(BaseModel):
 class LocationListSchema(BaseModel):
     """Wrapper for location list output."""
     locations: list[LocationSchema] = Field(..., description="All location profiles")
+
+
+# =============================================================================
+# Step 3A: Location Debate Schemas
+# =============================================================================
+
+class LocationProposal(BaseModel):
+    """A proposal for location design from a debate agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    methodology_focus: str = Field(
+        ...,
+        description="Agent's focus (e.g., 'architecture', 'atmosphere', 'narrative function', 'audience immersion')"
+    )
+    name: str = Field(..., description="Proposed location name")
+    type: str = Field(..., description="Type of location (palace, market, forest, etc.)")
+    description: str = Field(..., description="Visual description (2-3 sentences)")
+    atmosphere: str = Field(..., description="Mood/feeling of the place")
+    key_features: list[str] = Field(..., description="3-5 notable features")
+    sensory_details: str = Field(..., description="Sounds, smells, textures")
+    reasoning: str = Field(..., description="Why this design fits the story")
+
+
+class LocationCritique(BaseModel):
+    """Critique of a location proposal."""
+    critic_agent: str = Field(..., description="Name of the agent giving the critique")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+    strengths: str = Field(..., description="What works well about this proposal")
+    weaknesses: str = Field(..., description="What could be improved")
+    suggestion: str = Field(..., description="Specific suggestion for improvement")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class LocationVote(BaseModel):
+    """An agent's vote for the best location proposal."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent whose proposal they voted for")
+    vote_reasoning: str = Field(..., description="Why this is the best proposal")
+
+
+# =============================================================================
+# Step 3B: World Building Schemas
+# =============================================================================
+
+class DailyLifeSchema(BaseModel):
+    """Daily life details for the world."""
+    common_foods: list[str] = Field(..., description="5-7 common foods/meals typical to this region")
+    eating_customs: str = Field(..., description="How people eat (family meals, street food, shifts, etc.)")
+    clothing_styles: str = Field(..., description="Typical clothing by class (poor vs rich)")
+    shelter_types: str = Field(..., description="Common housing/architecture styles")
+
+
+class SocialStructureSchema(BaseModel):
+    """Social hierarchy and organization."""
+    class_system: str = Field(..., description="Rich vs poor gap, social mobility, class divisions")
+    common_jobs: list[str] = Field(..., description="5-7 common occupations for ordinary people")
+    desirable_jobs: list[str] = Field(..., description="3-5 prestigious/desirable occupations")
+    lowly_jobs: list[str] = Field(..., description="3-5 looked-down-upon occupations")
+    guilds_organizations: list[str] = Field(..., description="Important guilds, unions, or organizations")
+
+
+class GovernmentLawSchema(BaseModel):
+    """Government and legal system."""
+    government_type: str = Field(..., description="Type of government (monarchy, democracy, theocracy, etc.)")
+    law_enforcement: str = Field(..., description="How laws are enforced (police, guards, militias)")
+    courts_trials: str = Field(..., description="How justice is administered")
+    punishments: list[str] = Field(..., description="Common punishments for crimes")
+    military: str = Field(..., description="Military structure and current conflicts")
+
+
+class EconomySchema(BaseModel):
+    """Economic system."""
+    currency: str = Field(..., description="What money/currency looks like and is called")
+    trade_goods: list[str] = Field(..., description="Major goods that are traded")
+    resources: list[str] = Field(..., description="Natural resources available")
+    taxation: str = Field(..., description="How taxes work and who collects them")
+
+
+class EducationHealthSchema(BaseModel):
+    """Education and healthcare systems."""
+    education_system: str = Field(..., description="Schools, literacy levels, who gets educated")
+    medicine: str = Field(..., description="Healthcare availability and quality")
+    healers: str = Field(..., description="Who provides healing (doctors, herbalists, magic, etc.)")
+    common_ailments: list[str] = Field(..., description="Common diseases/health issues")
+
+
+class EntertainmentSchema(BaseModel):
+    """Entertainment and leisure activities."""
+    poor_entertainment: list[str] = Field(..., description="What poor/common people do for fun")
+    rich_entertainment: list[str] = Field(..., description="What wealthy people do for fun")
+    festivals: list[str] = Field(..., description="Major celebrations/holidays")
+    art_forms: list[str] = Field(..., description="Popular art, music, storytelling forms")
+
+
+class ReligionBeliefsSchema(BaseModel):
+    """Religion and supernatural beliefs."""
+    main_religion: str = Field(..., description="Dominant faith/belief system")
+    gods_deities: list[str] = Field(default=[], description="Major gods/deities if any")
+    temples_worship: str = Field(..., description="Where and how people worship")
+    superstitions: list[str] = Field(..., description="Common superstitions")
+    taboos: list[str] = Field(..., description="Things that are forbidden or shameful")
+
+
+class CultureCustomsSchema(BaseModel):
+    """Cultural norms and customs."""
+    social_rules: list[str] = Field(..., description="Important social rules/etiquette")
+    gestures_respect: str = Field(..., description="How to show respect")
+    gestures_rudeness: str = Field(..., description="What's considered rude")
+    family_structure: str = Field(..., description="Family unit type (nuclear, extended, clans)")
+    naming_conventions: str = Field(..., description="How names work in this culture")
+
+
+class WorldBuildingSchema(BaseModel):
+    """Complete world building output from all agents."""
+    daily_life: DailyLifeSchema = Field(..., description="Food, clothing, shelter")
+    social_structure: SocialStructureSchema = Field(..., description="Classes, jobs, organizations")
+    government_law: GovernmentLawSchema = Field(..., description="Politics, law, military")
+    economy: EconomySchema = Field(..., description="Currency, trade, resources")
+    education_health: EducationHealthSchema = Field(..., description="Education, healthcare")
+    entertainment: EntertainmentSchema = Field(..., description="Fun, festivals, art")
+    religion_beliefs: ReligionBeliefsSchema = Field(..., description="Religion, superstitions")
+    culture_customs: CultureCustomsSchema = Field(..., description="Social rules, family")
 
 
 class ShotPromptCritiqueSchema(BaseModel):
@@ -733,6 +903,351 @@ class SceneListSchema(BaseModel):
 
 
 # =============================================================================
+# Phase 1 Step 1: Story Seed Parsing & 7-Point Structure Schemas
+# =============================================================================
+
+class StorySeedParsed(BaseModel):
+    """Parsed story seed with extracted components."""
+    adjective: str = Field(
+        ...,
+        description="The opening adjective/emotional state (e.g., 'SHATTERED', 'DESPERATE', 'BROKEN')"
+    )
+    adjective_meaning: str = Field(
+        ...,
+        description="WHY the hero is in this state - the backstory/trauma that caused it"
+    )
+    hero_role: str = Field(
+        ...,
+        description="The hero's role/occupation (e.g., 'an archivist', 'a young warrior')"
+    )
+    goal: str = Field(
+        ...,
+        description="What the hero wants to accomplish"
+    )
+    stakes: str = Field(
+        ...,
+        description="What's at risk / consequences of failure"
+    )
+    setting_context: str = Field(
+        default="",
+        description="Any setting/world context from the seed"
+    )
+
+
+class StructureBeatSchema(BaseModel):
+    """A single story beat in the 7-point structure."""
+    beat_name: str = Field(
+        ...,
+        description="Beat identifier: 'hook', 'plot_turn_1', 'pinch_point_1', 'midpoint', 'pinch_point_2', 'plot_turn_2', 'resolution'"
+    )
+    description: str = Field(
+        ...,
+        description="CONCISE beat description: 1-2 sentences MAX (under 40 words). Focus on what HAPPENS or CHANGES, not atmosphere. Example: 'The archivist, isolated and paranoid after betrayal, refuses help from allies.' Use generic roles only, NO character names."
+    )
+    emotional_state: str = Field(
+        ...,
+        description="Hero's emotional/psychological state during this beat"
+    )
+    purpose: str = Field(
+        ...,
+        description="One sentence explaining why this beat matters (max 20 words)"
+    )
+
+
+class SevenPointStructureSchema(BaseModel):
+    """Complete 7-point story structure (Dan Wells method)."""
+    hook: StructureBeatSchema = Field(
+        ...,
+        description="HOOK: Hero's BEFORE state - opposite of resolution. Why are they [ADJECTIVE]?"
+    )
+    plot_turn_1: StructureBeatSchema = Field(
+        ...,
+        description="PLOT TURN 1: The inciting incident that forces hero into the story"
+    )
+    pinch_point_1: StructureBeatSchema = Field(
+        ...,
+        description="PINCH POINT 1: First major pressure - stakes become real"
+    )
+    midpoint: StructureBeatSchema = Field(
+        ...,
+        description="MIDPOINT: The pivot - hero shifts from REACTION to ACTION"
+    )
+    pinch_point_2: StructureBeatSchema = Field(
+        ...,
+        description="PINCH POINT 2: Darkest moment - all seems lost"
+    )
+    plot_turn_2: StructureBeatSchema = Field(
+        ...,
+        description="PLOT TURN 2: The final piece that enables victory"
+    )
+    resolution: StructureBeatSchema = Field(
+        ...,
+        description="RESOLUTION: Hero's AFTER state - opposite of hook. Transformation complete."
+    )
+
+
+class StructureDebateProposal(BaseModel):
+    """A proposed beat from a structure debate agent."""
+    beat_name: str = Field(..., description="Which beat is being proposed")
+    proposal: StructureBeatSchema = Field(..., description="The proposed beat content")
+    reasoning: str = Field(
+        ...,
+        description="Why this beat works for the story (connection to adjective, theme, other beats)"
+    )
+
+
+class StructureDebateCritique(BaseModel):
+    """Critique of a proposed beat or structure."""
+    is_valid: bool = Field(..., description="Does the beat/structure work?")
+    strengths: list[str] = Field(..., description="What works well")
+    weaknesses: list[str] = Field(..., description="What needs improvement")
+    hook_resolution_opposite: bool = Field(
+        ...,
+        description="Are Hook and Resolution truly OPPOSITES?"
+    )
+    tension_escalates: bool = Field(
+        ...,
+        description="Does tension properly escalate through pinch points?"
+    )
+    midpoint_pivot_clear: bool = Field(
+        ...,
+        description="Is the Midpoint a clear shift from REACTION to ACTION?"
+    )
+    suggestions: list[str] = Field(..., description="Specific improvements")
+
+
+class StructureDebateResult(BaseModel):
+    """Complete result of the structure debate process."""
+    story_seed_parsed: StorySeedParsed = Field(..., description="Parsed story seed components")
+    structure_beats: SevenPointStructureSchema = Field(..., description="Final 7-point structure")
+    theme: str = Field(..., description="Central theme extracted from structure")
+    title_suggestion: str = Field(..., description="Suggested story title")
+    debate_rounds: int = Field(..., description="Number of debate rounds conducted")
+
+
+# =============================================================================
+# Research-Driven Multi-Agent Debate Schemas
+# =============================================================================
+
+class AgentMethodology(BaseModel):
+    """An agent's storytelling methodology/perspective."""
+    agent_name: str = Field(
+        ...,
+        description="Agent's name (e.g., 'DanWellsAgent', 'BlakeSnyderAgent')"
+    )
+    source: str = Field(
+        ...,
+        description="The methodology source (e.g., 'Dan Wells 7-Point Structure', 'Save the Cat Beat Sheet')"
+    )
+    core_beliefs: list[str] = Field(
+        ...,
+        description="Key principles this agent advocates for"
+    )
+
+
+class AgentCritique(BaseModel):
+    """A critique from one agent about another's proposal."""
+    critic_agent: str = Field(
+        ...,
+        description="Name of the agent giving the critique"
+    )
+    target_agent: str = Field(
+        ...,
+        description="Name of the agent whose proposal is being critiqued"
+    )
+    target_beat: str = Field(
+        ...,
+        description="Which beat is being critiqued (e.g., 'resolution', 'hook', 'midpoint')"
+    )
+    criticism: str = Field(
+        ...,
+        description="What's wrong or could be stronger with this proposal"
+    )
+    suggestion: str = Field(
+        ...,
+        description="Specific suggestion for improvement"
+    )
+    methodology_basis: str = Field(
+        ...,
+        description="Which principle from the critic's methodology supports this critique"
+    )
+    severity: str = Field(
+        ...,
+        description="Severity of the issue: 'minor', 'moderate', 'major'"
+    )
+
+
+class AgentProposal(BaseModel):
+    """A beat proposal from an agent with methodology backing."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    methodology_source: str = Field(..., description="The methodology backing this proposal")
+    beat: StructureBeatSchema = Field(..., description="The proposed beat content")
+    methodology_reasoning: str = Field(
+        ...,
+        description="How this proposal follows the agent's methodology principles"
+    )
+
+
+class AgentVote(BaseModel):
+    """An agent's vote for the best proposal in a round."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent whose proposal they voted for")
+    vote_reasoning: str = Field(
+        ...,
+        description="Why this proposal is best according to the voter's methodology"
+    )
+
+
+class DebateRound(BaseModel):
+    """A complete debate round with proposals, critiques, votes, and final beat."""
+    round_name: str = Field(
+        ...,
+        description="Name of the round (e.g., 'resolution_design', 'hook_design', 'midpoint_design')"
+    )
+    target_beat: str = Field(
+        ...,
+        description="Which beat this round is designing"
+    )
+    proposals: list[AgentProposal] = Field(
+        ...,
+        description="Each agent's proposal for this beat"
+    )
+    critiques: list[AgentCritique] = Field(
+        ...,
+        description="Cross-agent critiques of proposals"
+    )
+    votes: list[AgentVote] = Field(
+        ...,
+        description="Each agent's vote for the best proposal"
+    )
+    winning_agent: str = Field(
+        ...,
+        description="Agent whose proposal won (or 'merged' if combined)"
+    )
+    final_beat: StructureBeatSchema = Field(
+        ...,
+        description="The refined final beat after debate and voting"
+    )
+    revision_notes: str = Field(
+        default="",
+        description="Notes on how the final beat was refined based on critiques"
+    )
+
+
+class DebateTranscript(BaseModel):
+    """Complete transcript of the multi-agent structure debate."""
+    agents_participating: list[AgentMethodology] = Field(
+        ...,
+        description="All agents participating in the debate with their methodologies"
+    )
+    story_seed_analysis: dict = Field(
+        ...,
+        description="How each agent interpreted the story seed"
+    )
+    rounds: list[DebateRound] = Field(
+        ...,
+        description="All debate rounds (resolution, hook, midpoint, etc.)"
+    )
+    validation_round: dict = Field(
+        ...,
+        description="Final validation round results"
+    )
+    total_critiques: int = Field(..., description="Total number of critiques exchanged")
+    consensus_reached: bool = Field(..., description="Whether all agents agreed on final structure")
+
+
+# =============================================================================
+# Phase 1 Step 2: Character Debate Schemas
+# =============================================================================
+
+class CharacterPhysicalProposal(BaseModel):
+    """A proposal for character physical appearance from a debate agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    methodology_focus: str = Field(
+        ...,
+        description="Agent's focus (e.g., 'psychology', 'visual design', 'narrative role')"
+    )
+    physical: PhysicalDescriptionSchema = Field(..., description="Proposed physical appearance")
+    costume: str = Field(
+        ...,
+        description="Proposed costume/clothing description"
+    )
+    reasoning: str = Field(
+        ...,
+        description="Why this appearance fits the character's role and story"
+    )
+
+
+class CharacterPhysicalCritique(BaseModel):
+    """Critique of a character physical proposal."""
+    critic_agent: str = Field(..., description="Name of the agent giving the critique")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+    strengths: str = Field(..., description="What works well about this proposal")
+    weaknesses: str = Field(..., description="What could be improved")
+    suggestion: str = Field(..., description="Specific suggestion for improvement")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class CharacterPhysicalVote(BaseModel):
+    """An agent's vote for the best physical appearance proposal."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent whose proposal they voted for")
+    vote_reasoning: str = Field(..., description="Why this is the best proposal")
+
+
+class CharacterBackstoryProposal(BaseModel):
+    """A proposal for character backstory bullet points."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    backstory_points: list[str] = Field(
+        ...,
+        description="3-6 bullet points of backstory"
+    )
+    motivation: str = Field(..., description="Character's core motivation")
+    arc: str = Field(..., description="Character's transformation arc")
+    personality_traits: list[str] = Field(
+        ...,
+        description="3-5 key personality traits unique to this character"
+    )
+    accent: str = Field(
+        ...,
+        description="Speech pattern/accent (e.g., 'clipped aristocratic', 'warm rural drawl', 'formal scholarly')"
+    )
+    qualities: list[str] = Field(
+        ...,
+        description="5-7 specific character qualities/quirks (e.g., 'obsessively organized', 'speaks in metaphors', 'never makes eye contact')"
+    )
+    gender: str = Field(
+        ...,
+        description="Character's gender: 'male' or 'female'"
+    )
+    reasoning: str = Field(..., description="Why this backstory fits the story outline")
+
+
+class CharacterDebateResult(BaseModel):
+    """Complete result of character debate for one character."""
+    character_role: str = Field(..., description="Original role (e.g., 'an archivist')")
+    character_type: str = Field(..., description="'protagonist', 'antagonist', 'supporting'")
+    name_debate: dict = Field(..., description="Name debate results")
+    physical_proposals: list[CharacterPhysicalProposal] = Field(
+        ...,
+        description="All physical appearance proposals"
+    )
+    physical_critiques: list[CharacterPhysicalCritique] = Field(
+        ...,
+        description="All critiques of physical proposals"
+    )
+    physical_votes: list[CharacterPhysicalVote] = Field(
+        ...,
+        description="All votes for physical proposals"
+    )
+    winning_physical: str = Field(..., description="Agent whose physical proposal won")
+    final_character: CharacterSheetSchema = Field(
+        ...,
+        description="Final assembled character sheet"
+    )
+
+
+# =============================================================================
 # Phase 4 Step 4: Scene Image Prompt Schemas
 # =============================================================================
 
@@ -787,4 +1302,126 @@ class SceneImageCritiqueSchema(BaseModel):
     suggestions: list[str] = Field(
         default=[],
         description="Specific improvements needed"
+    )
+
+
+# =============================================================================
+# Phase 1 Step 4: Scene/Chapter Outline Schemas (GMC + Swain Structure)
+# =============================================================================
+
+class DetailedSceneSchema(BaseModel):
+    """Extended scene schema following GMC + Swain scene/sequel structure."""
+
+    # Basic identification
+    scene_number: int = Field(..., description="Scene number within chapter")
+    scene_type: str = Field(
+        ...,
+        description="'scene' (proactive: goal→conflict→disaster) or 'sequel' (reactive: reaction→dilemma→decision)"
+    )
+
+    # Setting
+    time_of_day: str = Field(
+        ...,
+        description="Time: 'dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'"
+    )
+    location: str = Field(..., description="Location name from codex")
+    location_id: str = Field(default="", description="Location ID (e.g., 'loc_001')")
+
+    # Characters
+    pov_character: str = Field(..., description="Point of view character for this scene")
+    characters: list[str] = Field(..., description="All character names present")
+    character_ids: list[str] = Field(default=[], description="Character IDs")
+
+    # GMC Structure (Goal, Motivation, Conflict)
+    goal: str = Field(
+        ...,
+        description="What the POV character wants to achieve IN THIS SCENE"
+    )
+    conflict: str = Field(
+        ...,
+        description="What obstacle/opposition prevents the goal"
+    )
+    outcome: str = Field(
+        ...,
+        description="'YES_BUT', 'NO_AND', 'YES', 'NO', or 'CLIFFHANGER'"
+    )
+
+    # What happens
+    happens: str = Field(
+        ...,
+        description="2-3 sentences: what happens in this scene"
+    )
+
+    # Story structure connection
+    structure_connection: str = Field(
+        ...,
+        description="Which 7-point beat this scene serves (e.g., 'hook', 'pinch_point_1')"
+    )
+    scene_purpose: str = Field(
+        ...,
+        description="Why this scene exists: what it accomplishes for plot/character"
+    )
+
+
+class ChapterSchema(BaseModel):
+    """A chapter containing 5-6 scenes."""
+    chapter_number: int = Field(..., description="Chapter number")
+    chapter_title: str = Field(..., description="Chapter title")
+    act: int = Field(..., description="Which act (1, 2, or 3)")
+    structure_beats_covered: list[str] = Field(
+        ...,
+        description="Which 7-point beats this chapter covers"
+    )
+    scenes: list[DetailedSceneSchema] = Field(
+        ...,
+        description="5-6 scenes in this chapter"
+    )
+
+
+class SceneProposal(BaseModel):
+    """A proposal for a scene from a debate agent."""
+    agent_name: str = Field(..., description="Name of proposing agent")
+    methodology_focus: str = Field(
+        ...,
+        description="Agent's focus: 'plot', 'character', 'pacing', 'structure'"
+    )
+    scene: DetailedSceneSchema = Field(..., description="The proposed scene")
+    reasoning: str = Field(..., description="Why this scene works")
+
+
+class SceneCritique(BaseModel):
+    """Critique of a scene proposal."""
+    critic_agent: str = Field(..., description="Name of the critic")
+    target_agent: str = Field(..., description="Agent being critiqued")
+    strengths: str = Field(..., description="What works well")
+    weaknesses: str = Field(..., description="What could improve")
+    suggestion: str = Field(..., description="Specific improvement")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class SceneVote(BaseModel):
+    """An agent's vote for best scene."""
+    voter_agent: str = Field(..., description="Voting agent")
+    voted_for_agent: str = Field(..., description="Agent voted for")
+    vote_reasoning: str = Field(..., description="Why this is best")
+
+
+class ChapterOutlineSchema(BaseModel):
+    """Complete chapter outline for the story."""
+    total_chapters: int = Field(..., description="Total number of chapters")
+    total_scenes: int = Field(..., description="Total number of scenes")
+    chapters: list[ChapterSchema] = Field(..., description="All chapters")
+
+    # STORY-LEVEL TICKING CLOCK - creates urgency for entire story
+    ticking_clock: str = Field(
+        ...,
+        description="The overarching deadline that creates urgency for the ENTIRE story (e.g., 'The execution is at dawn', 'The invasion begins in 3 days')"
+    )
+    ticking_clock_deadline: str = Field(
+        ...,
+        description="When the clock runs out (e.g., 'dawn of the third day', 'midnight tomorrow', 'when the moon is full')"
+    )
+    ticking_clock_consequence: str = Field(
+        ...,
+        description="What happens if the deadline is missed (e.g., 'the innocent dies', 'the city falls', 'the curse becomes permanent')"
     )
