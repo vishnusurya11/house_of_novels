@@ -103,7 +103,14 @@ def save_updated_codex(codex: dict, story_data: dict, original_path: Path) -> Pa
     """
     # Add story data to codex
     codex["story"] = story_data["story"]
-    codex["story_metadata"] = story_data["story_metadata"]
+    # Merge metadata (supports both old story_metadata and new metadata keys)
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    if "metadata" in story_data:
+        codex["metadata"].update(story_data["metadata"])
+    elif "story_metadata" in story_data:
+        # Legacy support: convert old story_metadata to new structure
+        codex["metadata"].update(story_data["story_metadata"])
     codex["story_generated_at"] = datetime.now().isoformat()
 
     # Update the original codex file in-place

@@ -70,6 +70,7 @@ def save_codex(codex: dict, codex_path: Path) -> None:
 
 def extract_setting_prompt(codex: dict) -> str:
     """Extract setting_prompt from codex for style consistency."""
+    # deck_of_worlds is at ROOT level
     dow_prompts = codex.get("deck_of_worlds", {}).get("prompts", [])
     return dow_prompts[0].get("prompt", "") if dow_prompts else ""
 
@@ -104,6 +105,8 @@ def detect_genre(codex: dict) -> str:
     Returns:
         Genre string (fantasy, sci-fi, noir, horror, etc.)
     """
+    # deck_of_worlds and story_engine are at ROOT level
+
     # Get setting prompt from deck_of_worlds
     setting = codex.get("deck_of_worlds", {}).get("prompts", [{}])
     if setting:
@@ -187,11 +190,11 @@ def run_phase5_prompts(
     print(f"\n>>> Using model: {model}")
     print(f">>> Visual Style: {visual_style['name']}")
 
-    # Initialize metadata storage
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata storage in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase4_metadata = {
+    phase5_metadata = {
         "model_used": model,
         "character_prompts": [],
         "location_prompts": [],
@@ -232,7 +235,7 @@ def run_phase5_prompts(
                 }
 
                 # Store detailed metadata
-                phase4_metadata["character_prompts"].append({
+                phase5_metadata["character_prompts"].append({
                     "character_name": char_name,
                     "final_prompt": result["prompt"],
                     "revision_count": result["revision_count"],
@@ -246,7 +249,7 @@ def run_phase5_prompts(
 
             except Exception as e:
                 print(f"    ERROR generating prompt: {e}")
-                phase4_metadata["character_prompts"].append({
+                phase5_metadata["character_prompts"].append({
                     "character_name": char_name,
                     "error": str(e),
                 })
@@ -294,7 +297,7 @@ def run_phase5_prompts(
                 }
 
                 # Store detailed metadata
-                phase4_metadata["location_prompts"].append({
+                phase5_metadata["location_prompts"].append({
                     "location_name": loc_name,
                     "final_prompt": result["prompt"],
                     "shot_type": result["shot_type"],
@@ -310,7 +313,7 @@ def run_phase5_prompts(
 
             except Exception as e:
                 print(f"    ERROR generating prompt: {e}")
-                phase4_metadata["location_prompts"].append({
+                phase5_metadata["location_prompts"].append({
                     "location_name": loc_name,
                     "error": str(e),
                 })
@@ -392,7 +395,7 @@ def run_phase5_prompts(
                 print(f"      #{i}: {agent} - {comp} ({score} pts)")
 
             # Store ALL metadata in phase4_metadata (not in outline)
-            phase4_metadata["poster_prompts"] = {
+            phase5_metadata["poster_prompts"] = {
                 "art_style": art_style,
                 "candidates_generated": len(all_prompts),
                 "winners_selected": poster_prompt_count,
@@ -428,7 +431,7 @@ def run_phase5_prompts(
                 poster_prompt_count = 1
                 print(f"    Fallback generated 1 poster prompt")
 
-                phase4_metadata["poster_prompts"] = {
+                phase5_metadata["poster_prompts"] = {
                     "art_style": art_style,
                     "fallback_used": True,
                 }
@@ -436,7 +439,7 @@ def run_phase5_prompts(
             except Exception as fallback_e:
                 print(f"    FALLBACK ERROR: {fallback_e}")
                 outline["poster_prompts"] = []
-                phase4_metadata["poster_prompts"] = {"error": str(fallback_e)}
+                phase5_metadata["poster_prompts"] = {"error": str(fallback_e)}
 
         # Update outline in story and save after Step 3
         story["outline"] = outline
@@ -466,7 +469,7 @@ def run_phase5_prompts(
         print(f"\n>>> Step 4: Generating scene image prompts...")
         print(f"    Total scenes to process: {total_scenes}")
 
-        phase4_metadata["scene_image_prompts"] = []
+        phase5_metadata["scene_image_prompts"] = []
         scene_index = 0
 
         for act_idx, act in enumerate(acts):
@@ -504,7 +507,7 @@ def run_phase5_prompts(
                     }
 
                     # Store metadata
-                    phase4_metadata["scene_image_prompts"].append({
+                    phase5_metadata["scene_image_prompts"].append({
                         "act": act_num,
                         "scene": scene_num,
                         "location": scene_location,
@@ -520,7 +523,7 @@ def run_phase5_prompts(
 
                 except Exception as e:
                     print(f"        ERROR: {e}")
-                    phase4_metadata["scene_image_prompts"].append({
+                    phase5_metadata["scene_image_prompts"].append({
                         "act": act_num,
                         "scene": scene_num,
                         "error": str(e),
@@ -572,7 +575,7 @@ def run_phase5_prompts(
             thumbnail_prompt_count = len(thumbnail_result["prompts"])
 
             # Store detailed metadata
-            phase4_metadata["thumbnail_prompts"] = {
+            phase5_metadata["thumbnail_prompts"] = {
                 "prompts_selected": thumbnail_prompt_count,
                 "total_candidates": len(thumbnail_result.get("all_candidates", [])),
                 "voting_results": thumbnail_result.get("voting_results", []),
@@ -584,7 +587,7 @@ def run_phase5_prompts(
         except Exception as e:
             print(f"\n    ERROR in thumbnail generation: {e}")
             codex["story"]["thumbnail"] = {"error": str(e)}
-            phase4_metadata["thumbnail_prompts"] = {"error": str(e)}
+            phase5_metadata["thumbnail_prompts"] = {"error": str(e)}
 
         # Save after Step 5
         step_timings["step5_thumbnails"] = round(time.time() - step_start, 2)
@@ -599,7 +602,7 @@ def run_phase5_prompts(
     codex["story"]["characters"] = characters
     codex["story"]["locations"] = locations
     codex["story"]["outline"] = story.get("outline", {})
-    codex["story_metadata"]["phase4_prompts"] = phase4_metadata
+    codex["metadata"]["phase_5"] = phase5_metadata
     save_codex(codex, codex_path)
 
     print(f"\n>>> Phase 4 complete!")

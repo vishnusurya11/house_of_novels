@@ -179,7 +179,7 @@ def run_phase0_codex(
     print("\n>>> Deck of Worlds")
     dow_prompts, dow_metadata = generate_for_configs(world_configs)
 
-    # Build codex data
+    # Build codex data - core inputs at ROOT level, processing metadata separate
     codex_data = {
         "generated_at": datetime.now().isoformat(),
         "config": {
@@ -189,6 +189,7 @@ def run_phase0_codex(
             "debate_rounds": DEBATE_ROUNDS,
             "cards_per_draw": CARDS_PER_DRAW,
         },
+        # Core story inputs at ROOT level
         "author": author.to_dict(),
         "story_structure": {
             "short_name": structure.short_name,
@@ -199,12 +200,18 @@ def run_phase0_codex(
         },
         "story_engine": {
             "prompts": se_prompts,
-            "metadata": se_metadata,
         },
         "deck_of_worlds": {
             "prompts": dow_prompts,
-            "metadata": dow_metadata,
         },
+        # Phase processing metadata (each phase adds its own)
+        "metadata": {
+            "phase_0": {
+                "story_engine": se_metadata,
+                "deck_of_worlds": dow_metadata,
+            }
+        },
+        "story": {},  # Will be populated by phase 1+
     }
 
     # Extract prompts for return value

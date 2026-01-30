@@ -91,7 +91,8 @@ def run_phase4_storyboard(
         raise ValueError("Codex missing narrative. Run Phase 3 first.")
 
     # Apply name substitution to narrative scenes (in case old names slipped through)
-    name_mapping = codex.get("story_metadata", {}).get("phase2_characters", {}).get("name_mapping", {})
+    # New structure: metadata.phase_1.character_metadata.name_mapping
+    name_mapping = codex.get("metadata", {}).get("phase_1", {}).get("character_metadata", {}).get("name_mapping", {})
     if name_mapping:
         from src.story_workflows import substitute_names_in_text
         substitution_count = 0
@@ -198,10 +199,10 @@ def run_phase4_storyboard(
     # Update codex (shots are now embedded in narrative scenes)
     codex["story"] = story
 
-    # Store metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    codex["story_metadata"]["phase3b_storyboard"] = phase3b_metadata
+    # Store metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    codex["metadata"]["phase_4"] = phase3b_metadata
 
     save_codex(codex, codex_path)
 

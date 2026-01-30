@@ -66,6 +66,7 @@ def split_into_sentences(text: str) -> list[str]:
 
 def get_revision_style_from_codex(codex: dict) -> RevisionStyle:
     """Get author's revision style from codex."""
+    # author is at ROOT level
     author_data = codex.get("author", {})
     if not author_data:
         return RevisionStyle()
@@ -209,11 +210,11 @@ def run_phase3_revision(
     characters_json = json.dumps(story.get("characters", []))
     locations_json = json.dumps(story.get("locations", []))
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    if "phase3_revision" not in codex["story_metadata"]:
-        codex["story_metadata"]["phase3_revision"] = {
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    if "phase_3" not in codex["metadata"]:
+        codex["metadata"]["phase_3"] = {
             "phase": 3,
             "name": "Multi-Pass Revision",
             "revision_style": revision_style.to_dict(),
@@ -322,7 +323,7 @@ def run_phase3_revision(
         pass_timing = round(time.time() - step_start, 2)
         step_timings[f"pass{pass_num}_{focus}"] = pass_timing
 
-        codex["story_metadata"]["phase3_revision"]["passes"].append({
+        codex["metadata"]["phase_3"]["passes"].append({
             "pass_number": pass_num,
             "focus": focus,
             "issues_found": len(critique.model_dump().get("issues", [])),
@@ -346,7 +347,7 @@ def run_phase3_revision(
     print(f"\n>>> Revision complete: {passes_completed} passes")
     print(f">>> Final narrative saved to: {codex_path}")
 
-    final_metadata = codex.get("story_metadata", {}).get("phase3_revision", {})
+    final_metadata = codex.get("metadata", {}).get("phase_3", {})
 
     return Phase3Result(
         codex_path=codex_path,

@@ -62,3 +62,19 @@ marcus_vane = BaseAuthor(
         Skill("pacing", level=9),
     ],
 )
+
+
+def get_phase1_runner(model: str = None):
+    """Get Phase 1 runner for Marcus Vane.
+
+    Marcus uses the default implementation with his Seven Point structure
+    and fast-paced plotting style.
+
+    Args:
+        model: LLM model to use (default: from config)
+
+    Returns:
+        BaseAuthorPhase1 instance configured for Marcus Vane
+    """
+    from src.authors.base_phase1 import BaseAuthorPhase1
+    return BaseAuthorPhase1(marcus_vane, model=model)

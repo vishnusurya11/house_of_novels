@@ -272,10 +272,10 @@ def run_template1_editing(
     # Initialize counters
     scene_audio_count = 0
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    phase6_metadata = {
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    phase7_metadata = {
         "started_at": datetime.now().isoformat(),
         "steps_executed": [],
         "template": "static_audio",
@@ -345,8 +345,8 @@ def run_template1_editing(
 
         # Save codex after Step 1
         save_codex(codex, codex_path)
-        phase6_metadata["steps_executed"].append(1)
-        phase6_metadata["scene_audio_count"] = scene_audio_count
+        phase7_metadata["steps_executed"].append(1)
+        phase7_metadata["scene_audio_count"] = scene_audio_count
         step_timings["step1_combine_audio"] = round(time.time() - step_start, 2)
 
         print(f"\n>>> Step 1 complete ({step_timings['step1_combine_audio']:.1f}s): {scene_audio_count} scene audio files created")
@@ -417,8 +417,8 @@ def run_template1_editing(
                         print(f"        -> {output_path.name} ({format_duration(duration)})")
 
             save_codex(codex, codex_path)
-            phase6_metadata["steps_executed"].append(2)
-            phase6_metadata["scene_video_count"] = scene_video_count
+            phase7_metadata["steps_executed"].append(2)
+            phase7_metadata["scene_video_count"] = scene_video_count
             step_timings["step2_scene_videos"] = round(time.time() - step_start, 2)
 
             print(f"\n>>> Step 2 complete ({step_timings['step2_scene_videos']:.1f}s): {scene_video_count} scene videos created")
@@ -475,7 +475,7 @@ def run_template1_editing(
                     video_output_path = output_path
                     video_duration = total_duration
 
-                    phase6_metadata["final_video"] = {
+                    phase7_metadata["final_video"] = {
                         "path": str(output_path),
                         "duration": total_duration,
                         "duration_formatted": format_duration(total_duration),
@@ -491,12 +491,12 @@ def run_template1_editing(
                 print(">>> No scene videos found. Run Step 2 first.")
 
         step_timings["step3_final_video"] = round(time.time() - step_start, 2)
-        phase6_metadata["steps_executed"].append(3)
+        phase7_metadata["steps_executed"].append(3)
         print(f"\n>>> Step 3 complete ({step_timings['step3_final_video']:.1f}s)")
 
     # Finalize metadata
-    phase6_metadata["completed_at"] = datetime.now().isoformat()
-    codex["story_metadata"]["phase6_editing"] = phase6_metadata
+    phase7_metadata["completed_at"] = datetime.now().isoformat()
+    codex["metadata"]["phase_7"] = phase7_metadata
     save_codex(codex, codex_path)
 
     # Summary

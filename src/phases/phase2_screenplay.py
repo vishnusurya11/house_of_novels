@@ -69,6 +69,7 @@ def get_screenplay_style_from_codex(codex: dict) -> ScreenplayStyle:
     Returns:
         ScreenplayStyle instance (default if not in codex)
     """
+    # author is at ROOT level
     author_data = codex.get("author", {})
     if not author_data:
         return ScreenplayStyle()
@@ -146,10 +147,8 @@ def run_phase2_screenplay(
     print(f">>> Dialogue ratio: {screenplay_style.dialogue_ratio}")
 
     # Safety: Apply name substitution if mapping exists
-    name_mapping = codex.get("story_metadata", {}).get("phase1_plotting", {}).get("character_metadata", {}).get("name_mapping", {})
-    if not name_mapping:
-        # Try old location
-        name_mapping = codex.get("story_metadata", {}).get("phase2_characters", {}).get("name_mapping", {})
+    # New structure: metadata.phase_1.character_metadata.name_mapping
+    name_mapping = codex.get("metadata", {}).get("phase_1", {}).get("character_metadata", {}).get("name_mapping", {})
 
     if name_mapping:
         from src.story_workflows import substitute_names_in_outline
@@ -174,11 +173,11 @@ def run_phase2_screenplay(
     steps_to_run = steps if steps is not None else [1, 2, 3]
     print(f">>> Running steps: {steps_to_run}")
 
-    # Initialize metadata if needed
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    if "phase2_screenplay" not in codex["story_metadata"]:
-        codex["story_metadata"]["phase2_screenplay"] = {
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    if "phase_2" not in codex["metadata"]:
+        codex["metadata"]["phase_2"] = {
             "phase": 2,
             "name": "Screenplay Writing",
             "writing_mode": "author-styled",
@@ -254,7 +253,7 @@ def run_phase2_screenplay(
             narrative_acts.append(act1_narrative)
 
         codex["story"]["narrative"]["acts"] = narrative_acts
-        codex["story_metadata"]["phase2_screenplay"]["steps_completed"].append(1)
+        codex["metadata"]["phase_2"]["steps_completed"].append(1)
         step_timings["step1_act1"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
         print(f">>> Act 1 saved ({len(narrative_scenes)} scenes) ({step_timings['step1_act1']:.1f}s)")
@@ -322,7 +321,7 @@ def run_phase2_screenplay(
             narrative_acts.append(act2_narrative)
 
         codex["story"]["narrative"]["acts"] = narrative_acts
-        codex["story_metadata"]["phase2_screenplay"]["steps_completed"].append(2)
+        codex["metadata"]["phase_2"]["steps_completed"].append(2)
         step_timings["step2_act2"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
         print(f">>> Act 2 saved ({len(narrative_scenes)} scenes) ({step_timings['step2_act2']:.1f}s)")
@@ -390,7 +389,7 @@ def run_phase2_screenplay(
             narrative_acts.append(act3_narrative)
 
         codex["story"]["narrative"]["acts"] = narrative_acts
-        codex["story_metadata"]["phase2_screenplay"]["steps_completed"].append(3)
+        codex["metadata"]["phase_2"]["steps_completed"].append(3)
         step_timings["step3_act3"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
         print(f">>> Act 3 saved ({len(narrative_scenes)} scenes) ({step_timings['step3_act3']:.1f}s)")
@@ -406,7 +405,7 @@ def run_phase2_screenplay(
 
     print(f"\n>>> Screenplay saved to: {codex_path}")
 
-    final_metadata = codex.get("story_metadata", {}).get("phase2_screenplay", {})
+    final_metadata = codex.get("metadata", {}).get("phase_2", {})
 
     return Phase2Result(
         codex_path=codex_path,

@@ -329,11 +329,11 @@ def run_template1_generation(
     print(f">>> Timeout: {timeout}s")
     print(f">>> Running steps: {steps_to_run}")
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase5_metadata = {
+    phase6_metadata = {
         "comfyui_url": comfyui_url,
         "workflow_used": Path(workflow_path).name if workflow_path else None,
         "steps_executed": [],
@@ -461,8 +461,8 @@ def run_template1_generation(
                         save_codex(codex, codex_path)
 
                 audio_count = audio_generated_count
-                phase5_metadata["steps_executed"].append(1)
-                phase5_metadata["total_audio_generated"] = audio_generated_count
+                phase6_metadata["steps_executed"].append(1)
+                phase6_metadata["total_audio_generated"] = audio_generated_count
                 step_timings["step1_audio"] = round(time.time() - step_start, 2)
 
                 print(f"\n>>> Step 1 complete ({step_timings['step1_audio']:.1f}s):")
@@ -682,10 +682,10 @@ def run_template1_generation(
             print(f">>> Posters complete: {poster_count}/{len(poster_prompts)}")
 
         # Update metadata
-        phase5_metadata["steps_executed"].append(2)
-        phase5_metadata["total_characters_generated"] = character_portrait_count
-        phase5_metadata["total_locations_generated"] = location_image_count
-        phase5_metadata["total_posters_generated"] = poster_count
+        phase6_metadata["steps_executed"].append(2)
+        phase6_metadata["total_characters_generated"] = character_portrait_count
+        phase6_metadata["total_locations_generated"] = location_image_count
+        phase6_metadata["total_posters_generated"] = poster_count
         step_timings["step2_static_images"] = round(time.time() - step_start, 2)
 
         # Save codex after Step 2 to preserve progress
@@ -759,8 +759,8 @@ def run_template1_generation(
             print(f">>> Scene images complete: {scene_image_count}/{total_scenes}")
 
         # Update metadata for Step 3
-        phase5_metadata["steps_executed"].append(3)
-        phase5_metadata["total_scene_images_generated"] = scene_image_count
+        phase6_metadata["steps_executed"].append(3)
+        phase6_metadata["total_scene_images_generated"] = scene_image_count
         step_timings["step3_scene_images"] = round(time.time() - step_start, 2)
 
         # Save codex after Step 3
@@ -774,7 +774,7 @@ def run_template1_generation(
         print(f"\n>>> Step 4 (Videos) is currently disabled")
 
     # Save metadata and codex
-    codex["story_metadata"]["phase5_generation"] = phase5_metadata
+    codex["metadata"]["phase_6"] = phase6_metadata
     save_codex(codex, codex_path)
 
     print(f"\n>>> Template 1 Generation complete!")

@@ -72,6 +72,7 @@ def save_codex(codex: dict, codex_path: Path) -> None:
 
 def extract_prompts(codex: dict) -> tuple[str, str]:
     """Extract story_prompt and setting_prompt from codex."""
+    # story_engine and deck_of_worlds are at ROOT level
     se_prompts = codex.get("story_engine", {}).get("prompts", [])
     story_prompt = se_prompts[0].get("prompt", "") if se_prompts else ""
 
@@ -87,6 +88,7 @@ def get_author_from_codex(codex: dict) -> tuple[Optional[BaseAuthor], PlottingSt
     Returns:
         Tuple of (author_instance_or_None, plotting_style)
     """
+    # author is at ROOT level
     author_data = codex.get("author", {})
     if not author_data:
         # No author in codex, return default plotting style
@@ -113,6 +115,7 @@ def get_author_from_codex(codex: dict) -> tuple[Optional[BaseAuthor], PlottingSt
 
 def get_structure_from_codex(codex: dict) -> BaseStructure:
     """Get story structure from codex."""
+    # story_structure is at ROOT level
     structure_data = codex.get("story_structure", {})
     short_name = structure_data.get("short_name", "three_act")
     return get_structure(short_name)
@@ -200,11 +203,11 @@ def run_phase1_plotting(
     if "outline" not in codex["story"]:
         codex["story"]["outline"] = {}
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    if "phase1_plotting" not in codex["story_metadata"]:
-        codex["story_metadata"]["phase1_plotting"] = {
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    if "phase_1" not in codex["metadata"]:
+        codex["metadata"]["phase_1"] = {
             "phase": 1,
             "name": "Plotting (Structure + Characters)",
             "mode": "author-driven",
@@ -260,10 +263,10 @@ def run_phase1_plotting(
 
         # Store in codex
         codex["story"]["outline"]["high_level_structure"] = high_level_structure.model_dump()
-        codex["story_metadata"]["phase1_plotting"]["research_insights"] = [
+        codex["metadata"]["phase_1"]["research_insights"] = [
             r.model_dump() for r in research_insights
         ]
-        codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(1)
+        codex["metadata"]["phase_1"]["steps_completed"].append(1)
 
         step_timings["step1_structure"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
@@ -298,7 +301,7 @@ def run_phase1_plotting(
             )
 
             codex["story"]["outline"]["beat_sheet"] = beat_sheet.model_dump()
-            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(2)
+            codex["metadata"]["phase_1"]["steps_completed"].append(2)
 
             step_timings["step2_beats"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
@@ -361,7 +364,7 @@ def run_phase1_plotting(
             }
 
             codex["story"]["outline"].update(outline_data)
-            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(3)
+            codex["metadata"]["phase_1"]["steps_completed"].append(3)
 
             step_timings["step3_scenes"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
@@ -393,8 +396,8 @@ def run_phase1_plotting(
                 "structure_critique": structure_critique.model_dump(),
                 "pacing_critique": pacing_critique.model_dump(),
             }
-            codex["story_metadata"]["phase1_plotting"]["critiques"] = critique_data
-            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(4)
+            codex["metadata"]["phase_1"]["critiques"] = critique_data
+            codex["metadata"]["phase_1"]["steps_completed"].append(4)
 
             step_timings["step4_critique"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
@@ -410,7 +413,7 @@ def run_phase1_plotting(
         step_start = time.time()
 
         codex = load_codex(codex_path)
-        critiques = codex.get("story_metadata", {}).get("phase1_plotting", {}).get("critiques")
+        critiques = codex.get("metadata", {}).get("phase_1", {}).get("critiques")
         outline = codex.get("story", {}).get("outline", {})
 
         if not critiques:
@@ -428,7 +431,7 @@ def run_phase1_plotting(
             revised_outline = reviser.revise_outline(outline_json, critique_jsons)
 
             codex["story"]["outline"].update(revised_outline.model_dump())
-            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(5)
+            codex["metadata"]["phase_1"]["steps_completed"].append(5)
 
             step_timings["step5_revision"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
@@ -470,8 +473,8 @@ def run_phase1_plotting(
                 codex["story"]["outline"] = result["outline_updated"]
                 print("    Updated outline with debated names.")
 
-            codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(6)
-            codex["story_metadata"]["phase1_plotting"]["character_metadata"] = result.get("metadata", {})
+            codex["metadata"]["phase_1"]["steps_completed"].append(6)
+            codex["metadata"]["phase_1"]["character_metadata"] = result.get("metadata", {})
 
             step_timings["step6_characters"] = round(time.time() - step_start, 2)
             save_codex(codex, codex_path)
@@ -496,13 +499,13 @@ def run_phase1_plotting(
                     if "id" not in loc:
                         loc["id"] = f"loc_{i+1:03d}"
 
-                codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(7)
+                codex["metadata"]["phase_1"]["steps_completed"].append(7)
                 step_timings["step7_locations"] = round(time.time() - step_start, 2)
                 save_codex(codex, codex_path)
                 print(f">>> Step 7 complete: {len(story['locations'])} locations ({step_timings['step7_locations']:.1f}s)")
             else:
                 print("    Locations were generated with characters in step 6.")
-                codex["story_metadata"]["phase1_plotting"]["steps_completed"].append(7)
+                codex["metadata"]["phase_1"]["steps_completed"].append(7)
                 step_timings["step7_locations"] = round(time.time() - step_start, 2)
                 save_codex(codex, codex_path)
 
@@ -516,7 +519,7 @@ def run_phase1_plotting(
     final_outline = codex.get("story", {}).get("outline", {})
     final_characters = codex.get("story", {}).get("characters", [])
     final_locations = codex.get("story", {}).get("locations", [])
-    final_metadata = codex.get("story_metadata", {}).get("phase1_plotting", {})
+    final_metadata = codex.get("metadata", {}).get("phase_1", {})
 
     print(f"\n>>> Plotting saved to: {codex_path}")
 

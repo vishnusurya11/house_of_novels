@@ -162,12 +162,12 @@ def run_phase8_upload(
     # Load codex
     codex = load_codex(codex_path)
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase7_metadata = {
-        "phase": 7,
+    phase8_metadata = {
+        "phase": 8,
         "name": "YouTube Upload",
         "steps_executed": [],
     }
@@ -228,7 +228,7 @@ def run_phase8_upload(
         tags = ["AI story", "generated story", "AI video", "storytelling"]
 
     step_timings["step1_metadata"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step1_metadata")
+    phase8_metadata["steps_executed"].append("step1_metadata")
 
     # ========================================
     # Step 2: Authenticate with YouTube
@@ -270,7 +270,7 @@ def run_phase8_upload(
         )
 
     step_timings["step2_auth"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step2_auth")
+    phase8_metadata["steps_executed"].append("step2_auth")
 
     # ========================================
     # Step 3: Upload video
@@ -324,7 +324,7 @@ def run_phase8_upload(
         )
 
     step_timings["step3_upload"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step3_upload")
+    phase8_metadata["steps_executed"].append("step3_upload")
 
     # ========================================
     # Step 4: Set Thumbnail (random poster)
@@ -338,14 +338,14 @@ def run_phase8_upload(
     if thumbnail_path:
         from src.youtube import set_thumbnail
         if set_thumbnail(youtube, video_id, thumbnail_path):
-            phase7_metadata["thumbnail_path"] = str(thumbnail_path)
+            phase8_metadata["thumbnail_path"] = str(thumbnail_path)
         else:
             print(">>> Thumbnail upload failed, continuing without custom thumbnail")
     else:
         print(">>> No poster images found, skipping thumbnail")
 
     step_timings["step4_thumbnail"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step4_thumbnail")
+    phase8_metadata["steps_executed"].append("step4_thumbnail")
 
     # ========================================
     # Step 5: Add to Playlist
@@ -357,22 +357,22 @@ def run_phase8_upload(
 
     from src.youtube import add_to_playlist
     if add_to_playlist(youtube, video_id, DEFAULT_YOUTUBE_PLAYLIST):
-        phase7_metadata["playlist_id"] = DEFAULT_YOUTUBE_PLAYLIST
+        phase8_metadata["playlist_id"] = DEFAULT_YOUTUBE_PLAYLIST
     else:
         print(">>> Failed to add to playlist, video uploaded but not in playlist")
 
     step_timings["step5_playlist"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step5_playlist")
+    phase8_metadata["steps_executed"].append("step5_playlist")
 
     # Save metadata to codex
-    phase7_metadata["video_id"] = video_id
-    phase7_metadata["video_url"] = video_url
-    phase7_metadata["title"] = title
-    phase7_metadata["description"] = description
-    phase7_metadata["tags"] = tags
-    phase7_metadata["privacy_status"] = privacy_status
+    phase8_metadata["video_id"] = video_id
+    phase8_metadata["video_url"] = video_url
+    phase8_metadata["title"] = title
+    phase8_metadata["description"] = description
+    phase8_metadata["tags"] = tags
+    phase8_metadata["privacy_status"] = privacy_status
 
-    codex["story_metadata"]["phase7_youtube"] = phase7_metadata
+    codex["metadata"]["phase_8"] = phase8_metadata
     save_codex(codex, codex_path)
 
     print(f"\n>>> Phase 7 complete!")
