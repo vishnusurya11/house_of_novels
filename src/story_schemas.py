@@ -1248,6 +1248,58 @@ class CharacterDebateResult(BaseModel):
 
 
 # =============================================================================
+# Phase 1 Step 7: Book & Chapter Title Naming Schemas
+# =============================================================================
+
+class BookTitleProposal(BaseModel):
+    """A proposed book title from a naming agent."""
+    agent_name: str = Field(..., description="Name of proposing agent")
+    title: str = Field(..., description="Proposed book title")
+    subtitle: str = Field(default="", description="Optional subtitle")
+    reasoning: str = Field(..., description="Why this title works for the story")
+    literary_devices_used: list[str] = Field(
+        default=[],
+        description="Literary devices used: metaphor, alliteration, symbolism, etc."
+    )
+
+    class Config:
+        extra = "ignore"
+
+
+class ChapterTitleProposal(BaseModel):
+    """A proposed chapter title."""
+    agent_name: str = Field(..., description="Name of proposing agent")
+    chapter_number: int = Field(..., description="Chapter number")
+    title: str = Field(..., description="Proposed chapter title")
+    reasoning: str = Field(..., description="Why this title fits the chapter")
+
+    class Config:
+        extra = "ignore"
+
+
+class TitleCritique(BaseModel):
+    """Critique of a title proposal."""
+    critic_agent: str = Field(..., description="Name of critic")
+    target_agent: str = Field(..., description="Agent being critiqued")
+    strengths: str = Field(..., description="What works well about this title")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+    class Config:
+        extra = "ignore"
+
+
+class TitleVote(BaseModel):
+    """An agent's vote for the best title."""
+    voter_agent: str = Field(..., description="Voting agent")
+    voted_for_agent: str = Field(..., description="Agent voted for")
+    vote_reasoning: str = Field(..., description="Why this is the best choice")
+
+    class Config:
+        extra = "ignore"
+
+
+# =============================================================================
 # Phase 4 Step 4: Scene Image Prompt Schemas
 # =============================================================================
 
@@ -1425,3 +1477,595 @@ class ChapterOutlineSchema(BaseModel):
         ...,
         description="What happens if the deadline is missed (e.g., 'the innocent dies', 'the city falls', 'the curse becomes permanent')"
     )
+
+
+# =============================================================================
+# Phase 1 Step 5: Narrative Writing Schemas (5-Agent Multi-Agent Debate)
+# =============================================================================
+
+class NarrativeProseProposal(BaseModel):
+    """A prose proposal from a narrative writing agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    methodology_focus: str = Field(
+        ...,
+        description="Agent's focus: 'character', 'location', 'world', 'plot', 'narrative'"
+    )
+
+    # Structured prose output
+    opening_paragraph: str = Field(
+        ...,
+        description=(
+            "Opening paragraph establishing setting and character entry. "
+            "Heavy sensory detail, immediate scene grounding. 100-150 words."
+        )
+    )
+    middle_paragraphs: list[str] = Field(
+        ...,
+        description=(
+            "3-5 paragraphs developing the scene with dialogue, action, "
+            "and character interaction. Each 100-150 words."
+        ),
+        min_length=3,
+    )
+    closing_paragraph: str = Field(
+        ...,
+        description=(
+            "Closing paragraph with scene resolution or hook. "
+            "Emotional resonance or cliffhanger. 100-150 words."
+        )
+    )
+
+    # Methodology tracking
+    techniques_used: list[str] = Field(
+        ...,
+        description=(
+            "List of writing techniques used based on agent's methodology "
+            "(e.g., 'smell trigger for backstory', 'ticking clock reference', "
+            "'cultural gesture integration')"
+        )
+    )
+    reasoning: str = Field(
+        ...,
+        description="Why this prose serves the scene and story best"
+    )
+
+    def to_prose(self) -> str:
+        """Assemble paragraphs into continuous prose."""
+        paragraphs = [self.opening_paragraph]
+        paragraphs.extend(self.middle_paragraphs)
+        paragraphs.append(self.closing_paragraph)
+        return "\n\n".join(paragraphs)
+
+    def word_count(self) -> int:
+        """Calculate total word count."""
+        return len(self.to_prose().split())
+
+
+class NarrativeProseCritique(BaseModel):
+    """Critique of a prose proposal from a narrative writing agent."""
+    critic_agent: str = Field(..., description="Name of the agent giving the critique")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+
+    # Dimension scores (1-10)
+    character_accuracy_score: int = Field(
+        ..., ge=1, le=10,
+        description="Do characters match their codex profiles? Personality, speech, quirks?"
+    )
+    sensory_immersion_score: int = Field(
+        ..., ge=1, le=10,
+        description="Are all senses engaged? Does location feel real?"
+    )
+    world_integration_score: int = Field(
+        ..., ge=1, le=10,
+        description="Are world details woven naturally? Food, customs, culture?"
+    )
+    plot_urgency_score: int = Field(
+        ..., ge=1, le=10,
+        description="Does scene advance plot? Is ticking clock felt?"
+    )
+    prose_quality_score: int = Field(
+        ..., ge=1, le=10,
+        description="Is prose varied, engaging? Show don't tell? No cliches?"
+    )
+
+    # Overall assessment
+    strengths: str = Field(..., description="What works well in this proposal")
+    weaknesses: str = Field(..., description="What needs improvement")
+    specific_suggestions: list[str] = Field(
+        ...,
+        description="Concrete suggestions for improvement with examples"
+    )
+    overall_score: float = Field(..., description="Average of all dimension scores")
+
+
+class NarrativeProseVote(BaseModel):
+    """An agent's vote for the best prose proposal."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(
+        ...,
+        description="Name of the agent whose proposal they voted for"
+    )
+    vote_reasoning: str = Field(
+        ...,
+        description="Why this proposal is the best choice for this scene"
+    )
+    methodology_alignment: str = Field(
+        ...,
+        description="How the winning proposal aligns with voter's methodology"
+    )
+
+
+class SceneNarrativeSchema(BaseModel):
+    """Final narrative prose for a scene after multi-agent debate."""
+    scene_id: str = Field(..., description="Scene identifier: 'ch{N}_scene{M}'")
+    chapter_number: int = Field(..., description="Chapter number")
+    scene_number: int = Field(..., description="Scene number within chapter")
+
+    # Scene metadata from chapter_outline
+    location: str = Field(..., description="Location name")
+    location_id: str = Field(default="", description="Location ID")
+    pov_character: str = Field(..., description="POV character name")
+    characters_present: list[str] = Field(..., description="All characters in scene")
+    character_ids: list[str] = Field(default=[], description="Character IDs (e.g., 'char_001')")
+    time_of_day: str = Field(..., description="Time of day")
+
+    # The prose
+    prose: str = Field(
+        ...,
+        description="Full narrative prose (750-1000 words, multiple paragraphs)"
+    )
+    word_count: int = Field(..., description="Word count of prose")
+
+    # Debate tracking
+    winning_agent: str = Field(..., description="Agent whose proposal won")
+    techniques_integrated: list[str] = Field(
+        ...,
+        description="Writing techniques used from all agents"
+    )
+
+
+# =============================================================================
+# Phase 1 Step 6: Critique Schemas (5-Persona Revision System)
+# =============================================================================
+
+# Helper models for nested structures (required for OpenAI structured output)
+class TextContextItem(BaseModel):
+    """A text with its surrounding context."""
+    text: str = Field(default="", description="The problematic text")
+    context: str = Field(default="", description="Surrounding context")
+
+    class Config:
+        extra = "ignore"
+
+
+class TextSuggestionItem(BaseModel):
+    """A text with a suggestion for improvement."""
+    text: str = Field(default="", description="The problematic text")
+    suggestion: str = Field(default="", description="Suggested improvement")
+
+    class Config:
+        extra = "ignore"
+
+
+class RewriteItem(BaseModel):
+    """An original text with its suggested rewrite."""
+    original: str = Field(default="", description="Original text")
+    suggestion: str = Field(default="", description="Suggested rewrite")
+
+    class Config:
+        extra = "ignore"
+
+
+class VoiceIssueItem(BaseModel):
+    """A character voice issue."""
+    character: str = Field(default="", description="Character name")
+    issue: str = Field(default="", description="Description of the voice issue")
+
+    class Config:
+        extra = "ignore"
+
+
+class DialogueFixItem(BaseModel):
+    """A dialogue fix with character, original, suggested, and reason."""
+    character: str = Field(default="", description="Character name")
+    original: str = Field(default="", description="Original dialogue")
+    suggested: str = Field(default="", description="Suggested dialogue")
+    reason: str = Field(default="", description="Reason for the fix")
+
+    class Config:
+        extra = "ignore"
+
+
+class CharacterIssueItem(BaseModel):
+    """A character inconsistency with codex."""
+    character: str = Field(default="", description="Character name")
+    issue: str = Field(default="", description="Description of the inconsistency")
+    prose_says: str = Field(default="", description="What the prose says")
+    codex_says: str = Field(default="", description="What the codex says")
+
+    class Config:
+        extra = "ignore"
+
+
+class LocationIssueItem(BaseModel):
+    """A location inconsistency with codex."""
+    location: str = Field(default="", description="Location name")
+    issue: str = Field(default="", description="Description of the inconsistency")
+    prose_says: str = Field(default="", description="What the prose says")
+    codex_says: str = Field(default="", description="What the codex says")
+
+    class Config:
+        extra = "ignore"
+
+
+class IssueItem(BaseModel):
+    """A generic issue with context."""
+    issue: str = Field(default="", description="Description of the issue")
+    context: str = Field(default="", description="Context or example")
+
+    class Config:
+        extra = "ignore"
+
+
+class ParagraphIssueItem(BaseModel):
+    """An issue at a specific paragraph."""
+    paragraph: int = Field(default=0, description="Paragraph number")
+    issue: str = Field(default="", description="Description of the issue")
+
+    class Config:
+        extra = "ignore"
+
+
+class SubtextItem(BaseModel):
+    """A dialogue with its subtext."""
+    dialogue: str = Field(default="", description="The dialogue")
+    subtext: str = Field(default="", description="The underlying meaning")
+
+    class Config:
+        extra = "ignore"
+
+
+class ProsePolishCritique(BaseModel):
+    """Critique from Prose Polish Critic - catches style issues."""
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # Issues found
+    filter_words_found: list[TextContextItem] = Field(
+        default=[],
+        description="Filter words found with context"
+    )
+    cliches_found: list[TextContextItem] = Field(
+        default=[],
+        description="Cliches found with context"
+    )
+    passive_voice_instances: list[TextContextItem] = Field(
+        default=[],
+        description="Passive voice instances in action scenes"
+    )
+    tell_not_show: list[TextSuggestionItem] = Field(
+        default=[],
+        description="Tell-not-show violations with suggestions"
+    )
+    weak_words: list[str] = Field(
+        default=[],
+        description="Weak words found: suddenly, very, just, really"
+    )
+    redundancies: list[str] = Field(
+        default=[],
+        description="Redundant phrases: nodded his head, shrugged shoulders"
+    )
+
+    # Scores
+    sentence_variety_score: int = Field(
+        ..., ge=1, le=10,
+        description="Score for sentence length variety (1-10)"
+    )
+    overall_score: int = Field(
+        ..., ge=1, le=10,
+        description="Overall prose polish score (1-10)"
+    )
+
+    # Rewrites
+    specific_rewrites: list[RewriteItem] = Field(
+        default=[],
+        description="Suggested rewrites"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return self.overall_score < 7 or len(self.filter_words_found) > 3
+
+
+class CharacterVoiceCritique(BaseModel):
+    """Critique from Character Voice Critic - checks dialogue authenticity."""
+    scene_id: str = Field(..., description="Scene identifier")
+    characters_evaluated: list[str] = Field(
+        ..., description="Characters whose dialogue was evaluated"
+    )
+
+    # Voice issues per character
+    voice_issues: list[VoiceIssueItem] = Field(
+        default=[],
+        description="Voice issues found for characters"
+    )
+
+    # Dialogue fixes
+    dialogue_fixes: list[DialogueFixItem] = Field(
+        default=[],
+        description="Dialogue fixes with character, original, suggested, reason"
+    )
+
+    # Tests
+    no_tag_test_passed: bool = Field(
+        ...,
+        description="Can tell who's speaking without dialogue tags?"
+    )
+
+    # Scores by factor
+    education_match_score: int = Field(
+        ..., ge=1, le=10,
+        description="Does vocabulary match character education level? (1-10)"
+    )
+    profession_match_score: int = Field(
+        ..., ge=1, le=10,
+        description="Does dialogue reflect character's profession/expertise? (1-10)"
+    )
+    personality_match_score: int = Field(
+        ..., ge=1, le=10,
+        description="Does speech pattern match personality (confident/timid/etc)? (1-10)"
+    )
+    background_match_score: int = Field(
+        ..., ge=1, le=10,
+        description="Does dialogue reflect character's history/trauma/passions? (1-10)"
+    )
+    overall_voice_score: int = Field(
+        ..., ge=1, le=10,
+        description="Overall character voice authenticity score (1-10)"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return (
+            self.overall_voice_score < 7 or
+            not self.no_tag_test_passed or
+            len(self.dialogue_fixes) > 2
+        )
+
+
+class WorldRuleViolationItem(BaseModel):
+    """A world rule violation."""
+    rule: str = Field(default="", description="The world rule that was violated")
+    violation: str = Field(default="", description="How it was violated")
+
+    class Config:
+        extra = "ignore"
+
+
+class NameSpellingItem(BaseModel):
+    """A name spelling inconsistency."""
+    name: str = Field(default="", description="The character name")
+    variations: list[str] = Field(default=[], description="Spelling variations found")
+
+    class Config:
+        extra = "ignore"
+
+
+class ContinuityCritique(BaseModel):
+    """Critique from Continuity Critic - checks consistency with codex."""
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # Inconsistencies found
+    character_inconsistencies: list[CharacterIssueItem] = Field(
+        default=[],
+        description="Character inconsistencies with codex"
+    )
+    location_inconsistencies: list[LocationIssueItem] = Field(
+        default=[],
+        description="Location inconsistencies with codex"
+    )
+    timeline_issues: list[IssueItem] = Field(
+        default=[],
+        description="Timeline problems"
+    )
+    world_rule_violations: list[WorldRuleViolationItem] = Field(
+        default=[],
+        description="World rule violations"
+    )
+    pov_breaks: list[IssueItem] = Field(
+        default=[],
+        description="POV consistency breaks"
+    )
+    knowledge_violations: list[VoiceIssueItem] = Field(
+        default=[],
+        description="Character knows things they shouldn't"
+    )
+    name_spelling_issues: list[NameSpellingItem] = Field(
+        default=[],
+        description="Name spelling inconsistencies"
+    )
+
+    # Overall
+    overall_continuity_score: int = Field(
+        ..., ge=1, le=10,
+        description="Overall continuity score (1-10)"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return (
+            self.overall_continuity_score < 8 or
+            len(self.character_inconsistencies) > 0 or
+            len(self.pov_breaks) > 0
+        )
+
+
+class PacingTensionCritique(BaseModel):
+    """Critique from Pacing & Tension Critic - checks scene structure."""
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # Scene structure
+    scene_length_assessment: str = Field(
+        ...,
+        description="'appropriate', 'too_long', or 'too_short'"
+    )
+    enters_late_enough: bool = Field(
+        ...,
+        description="Does scene enter late enough (no throat-clearing)?"
+    )
+    exits_at_hook: bool = Field(
+        ...,
+        description="Does scene exit at a hook (not after resolution)?"
+    )
+
+    # Ticking clock
+    ticking_clock_present: bool = Field(
+        ...,
+        description="Is the ticking clock felt in this scene?"
+    )
+    ticking_clock_references: list[str] = Field(
+        default=[],
+        description="Specific ticking clock references found"
+    )
+
+    # Problem areas
+    slow_spots: list[ParagraphIssueItem] = Field(
+        default=[],
+        description="Slow spots in the scene"
+    )
+    rushed_spots: list[ParagraphIssueItem] = Field(
+        default=[],
+        description="Rushed spots in the scene"
+    )
+
+    # GMC
+    gmc_clear: bool = Field(
+        ...,
+        description="Is Goal-Motivation-Conflict clear in scene?"
+    )
+
+    # Scores
+    tension_arc_score: int = Field(
+        ..., ge=1, le=10,
+        description="Tension rises and falls appropriately (1-10)"
+    )
+    overall_pacing_score: int = Field(
+        ..., ge=1, le=10,
+        description="Overall pacing score (1-10)"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return (
+            self.overall_pacing_score < 7 or
+            not self.ticking_clock_present or
+            len(self.slow_spots) > 1
+        )
+
+
+class EmotionalResonanceCritique(BaseModel):
+    """Critique from Emotional Resonance Critic - checks reader engagement."""
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # Emotional elements
+    emotional_beats_present: list[str] = Field(
+        default=[],
+        description="Emotional beats identified in scene"
+    )
+    subtext_instances: list[SubtextItem] = Field(
+        default=[],
+        description="Subtext instances in dialogue"
+    )
+    vulnerability_moments: list[str] = Field(
+        default=[],
+        description="Moments of character vulnerability"
+    )
+
+    # Problem areas
+    skim_risk_areas: list[ParagraphIssueItem] = Field(
+        default=[],
+        description="Areas where readers might skim"
+    )
+
+    # Scene ending
+    ending_resonance_type: str = Field(
+        ...,
+        description="'image', 'question', 'ache', 'realization', or 'weak'"
+    )
+
+    # Reader arc
+    reader_emotional_arc: str = Field(
+        ...,
+        description="How reader should feel: start -> middle -> end"
+    )
+
+    # Scores
+    micro_tension_score: int = Field(
+        ..., ge=1, le=10,
+        description="Line-by-line micro-tension present (1-10)"
+    )
+    overall_emotional_score: int = Field(
+        ..., ge=1, le=10,
+        description="Overall emotional resonance score (1-10)"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return (
+            self.overall_emotional_score < 7 or
+            self.ending_resonance_type == "weak" or
+            len(self.skim_risk_areas) > 2
+        )
+
+
+class SceneCritiqueBundle(BaseModel):
+    """All critiques for a single scene, bundled for revision."""
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # All 5 critiques
+    prose_critique: ProsePolishCritique = Field(
+        ..., description="Prose polish critique"
+    )
+    voice_critique: CharacterVoiceCritique = Field(
+        ..., description="Character voice critique"
+    )
+    continuity_critique: ContinuityCritique = Field(
+        ..., description="Continuity critique"
+    )
+    pacing_critique: PacingTensionCritique = Field(
+        ..., description="Pacing and tension critique"
+    )
+    emotional_critique: EmotionalResonanceCritique = Field(
+        ..., description="Emotional resonance critique"
+    )
+
+    # Aggregate
+    needs_revision: bool = Field(
+        ...,
+        description="True if any critic flags revision needed"
+    )
+    priority_issues: list[str] = Field(
+        default=[],
+        description="Top 3 issues to fix first"
+    )
+    average_score: float = Field(
+        ...,
+        description="Average of all critic scores"
+    )
+
+    class Config:
+        extra = "ignore"

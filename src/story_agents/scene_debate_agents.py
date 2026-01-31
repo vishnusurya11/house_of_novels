@@ -103,9 +103,9 @@ You design scenes that MOVE THE PLOT FORWARD."""
                 if isinstance(beat, dict):
                     beat_info += f"\n{beat_name}: {beat.get('description', '')}"
 
-        # Build characters summary
+        # Build characters summary (include ID so LLM can populate character_ids)
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')}: {c.get('role_in_story', 'unknown role')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown role')}"
             for c in characters[:5]
         ])
 
@@ -128,6 +128,8 @@ PREVIOUS SCENES IN THIS CHAPTER:
 
 AVAILABLE CHARACTERS:
 {char_summary}
+
+IMPORTANT: When specifying characters, put their NAMES in 'characters' field and their IDs in 'character_ids' field.
 
 AVAILABLE LOCATIONS:
 {loc_summary}
@@ -292,8 +294,9 @@ You design scenes that REVEAL and DEVELOP character."""
                 if isinstance(beat, dict):
                     beat_info += f"\n{beat_name}: {beat.get('description', '')} (State: {beat.get('emotional_state', '')})"
 
+        # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')}: {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
             for c in characters[:5]
         ])
 
@@ -315,6 +318,8 @@ PREVIOUS SCENES (check if character needs reaction time):
 
 CHARACTERS WITH ARCS:
 {char_summary}
+
+IMPORTANT: When specifying characters, put their NAMES in 'characters' field and their IDs in 'character_ids' field.
 
 AVAILABLE LOCATIONS:
 {loc_summary}
@@ -479,8 +484,9 @@ You design scenes that CREATE RHYTHM and MANAGE TENSION."""
                 if isinstance(beat, dict):
                     beat_info += f"\n{beat_name}: {beat.get('description', '')}"
 
+        # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')}: {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
@@ -506,6 +512,8 @@ PREVIOUS SCENES:
 
 AVAILABLE CHARACTERS:
 {char_summary}
+
+IMPORTANT: When specifying characters, put their NAMES in 'characters' field and their IDs in 'character_ids' field.
 
 AVAILABLE LOCATIONS:
 {loc_summary}
@@ -670,8 +678,9 @@ You design scenes that SERVE THE STORY STRUCTURE."""
                 for i, s in enumerate(previous_scenes)
             ])
 
+        # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')}: {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
@@ -697,6 +706,8 @@ PREVIOUS SCENES (structure connections):
 
 AVAILABLE CHARACTERS:
 {char_summary}
+
+IMPORTANT: When specifying characters, put their NAMES in 'characters' field and their IDs in 'character_ids' field.
 
 AVAILABLE LOCATIONS:
 {loc_summary}

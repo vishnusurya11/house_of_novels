@@ -59,6 +59,21 @@ from src.story_agents.scene_debate_agents import (
     ScenePacingAgent,
     SceneStructureAgent,
 )
+from src.story_agents.narrative_writing_agents import (
+    CharacterContinuityAgent,
+    LocationAtmosphereAgent as NarrativeLocationAgent,
+    WorldBuildingIntegrationAgent,
+    PlotTickingClockAgent,
+    NarrativeContinuityAgent,
+)
+from src.story_agents.critique_agents import (
+    ProsePolishCritic,
+    CharacterVoiceCritic,
+    ContinuityCritic,
+    PacingTensionCritic,
+    EmotionalResonanceCritic,
+)
+from src.story_agents.reviser_agent import ReviserAgent
 from src.story_schemas import (
     SevenPointStructureSchema,
     StructureBeatSchema,
@@ -91,6 +106,18 @@ from src.story_schemas import (
     SceneCritique,
     SceneVote,
     ChapterOutlineSchema,
+    # Step 5: Narrative Writing schemas
+    NarrativeProseProposal,
+    NarrativeProseCritique,
+    NarrativeProseVote,
+    SceneNarrativeSchema,
+    # Step 6: Critique schemas
+    ProsePolishCritique,
+    CharacterVoiceCritique,
+    ContinuityCritique,
+    PacingTensionCritique,
+    EmotionalResonanceCritique,
+    SceneCritiqueBundle,
 )
 
 if TYPE_CHECKING:
@@ -145,6 +172,45 @@ class Step4Result:
 
 
 @dataclass
+class Step5Result:
+    """Result of Step 5: Scene Narrative Writing via Multi-Agent Debate."""
+    narrative: dict
+    scene_debates: list
+    total_scenes_written: int
+    total_word_count: int
+    average_words_per_scene: float
+    success: bool
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+@dataclass
+class Step6Result:
+    """Result of Step 6: Narrative Revision with 5 Critique Personas."""
+    narrative: dict
+    critiques: list  # All SceneCritiqueBundle dicts
+    scenes_revised: int
+    revision_passes: int
+    average_score_before: float
+    average_score_after: float
+    success: bool
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+@dataclass
+class Step7Result:
+    """Result of Step 7: Book & Chapter Title Naming via Multi-Agent Debate."""
+    book_title: str
+    chapter_titles: dict  # {chapter_num: title}
+    book_debate: dict  # Debate metadata for book title
+    chapter_debates: list  # Debate metadata for each chapter
+    success: bool
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+@dataclass
 class Phase1Result:
     """Result of complete Phase 1 execution."""
     codex_path: Path
@@ -183,6 +249,47 @@ class BaseAuthorPhase1:
         """
         self.author = author
         self.model = model or DEFAULT_MODEL
+
+    def _normalize_agent_name(self, name: str) -> str:
+        """Normalize agent name for matching."""
+        return name.upper().replace("_", "").replace(" ", "").replace("AGENT", "")
+
+    def _find_winner_proposal(self, proposals: list, votes: list) -> tuple:
+        """Find the winning proposal, handling mismatched vote names.
+
+        The LLM might vote for agents that didn't propose, so we need to
+        map votes back to actual proposals.
+
+        Returns:
+            (winner_proposal, winner_name, vote_count)
+        """
+        # Build normalized name -> proposal mapping
+        proposal_map = {}
+        for p in proposals:
+            normalized = self._normalize_agent_name(p.agent_name)
+            proposal_map[normalized] = p
+
+        # Count votes, mapping to actual proposals
+        valid_votes = {}
+        for v in votes:
+            vote_normalized = self._normalize_agent_name(v.voted_for_agent)
+            # Check if this vote matches any proposal
+            if vote_normalized in proposal_map:
+                valid_votes[vote_normalized] = valid_votes.get(vote_normalized, 0) + 1
+            else:
+                # Try partial match (e.g., "TENSIONBUILDER" matches "TENSION_BUILDER")
+                for prop_norm in proposal_map:
+                    if vote_normalized in prop_norm or prop_norm in vote_normalized:
+                        valid_votes[prop_norm] = valid_votes.get(prop_norm, 0) + 1
+                        break
+
+        # If no valid votes, default to first proposal
+        if not valid_votes:
+            return proposals[0], proposals[0].agent_name, 0
+
+        winner_norm = max(valid_votes, key=valid_votes.get)
+        winner_proposal = proposal_map[winner_norm]
+        return winner_proposal, winner_proposal.agent_name, valid_votes[winner_norm]
 
     def get_structure(self) -> BaseStructure:
         """Get the author's preferred story structure."""
@@ -401,16 +508,10 @@ class BaseAuthorPhase1:
                 votes.append(vote)
                 print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
-            # Determine winner (simple majority)
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-
-            # Use winner's proposal
-            winner_proposal = next(p for p in proposals if p.agent_name == winner)
+            # Determine winner (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             resolution = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
             print(f"    >>> Resolution: {resolution.emotional_state}")
 
             debate_summary["rounds"].append({
@@ -480,15 +581,10 @@ class BaseAuthorPhase1:
                 votes.append(vote)
                 print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-
-            # Get winning hook
-            winner_proposal = next(p for p in proposals if p.agent_name == winner)
+            # Get winning hook (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             hook = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
             print(f"    >>> Hook: {hook.emotional_state}")
 
             debate_summary["rounds"].append({
@@ -530,14 +626,10 @@ class BaseAuthorPhase1:
                 votes.append(vote)
                 print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-
-            winner_proposal = next(p for p in proposals if p.agent_name == winner)
+            # Get winning midpoint (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             midpoint = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
             print(f"    >>> Midpoint: {midpoint.emotional_state}")
 
             debate_summary["rounds"].append({
@@ -594,13 +686,10 @@ class BaseAuthorPhase1:
                 vote = agent.vote_for_best("plot_turn_1", pt1_proposals, story_seed_parsed)
                 votes.append(vote)
 
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-            winner_proposal = next(p for p in pt1_proposals if p.agent_name == winner)
+            # Get winning PT1 (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(pt1_proposals, votes)
             plot_turn_1 = winner_proposal.beat
-            print(f"    >>> PT1 WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"    >>> PT1 WINNER: {winner} ({vote_count}/5 votes)")
 
             # Vote for PT2
             print(f"\n    [TensionBuilder] PT2: {base_pt2.description[:60]}...")
@@ -621,13 +710,10 @@ class BaseAuthorPhase1:
                 vote = agent.vote_for_best("plot_turn_2", pt2_proposals, story_seed_parsed)
                 votes.append(vote)
 
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-            winner_proposal = next(p for p in pt2_proposals if p.agent_name == winner)
+            # Get winning PT2 (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(pt2_proposals, votes)
             plot_turn_2 = winner_proposal.beat
-            print(f"    >>> PT2 WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"    >>> PT2 WINNER: {winner} ({vote_count}/5 votes)")
 
             debate_summary["rounds"].append({
                 "round": "5_plot_turns",
@@ -696,14 +782,10 @@ class BaseAuthorPhase1:
                 votes.append(vote)
                 print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
-            vote_counts = {}
-            for v in votes:
-                vote_counts[v.voted_for_agent] = vote_counts.get(v.voted_for_agent, 0) + 1
-            winner = max(vote_counts, key=vote_counts.get)
-
-            winner_proposal = next(p for p in pp2_proposals if p.agent_name == winner)
+            # Get winning PP2 (handles mismatched vote names)
+            winner_proposal, winner, vote_count = self._find_winner_proposal(pp2_proposals, votes)
             pinch_point_2 = winner_proposal.beat
-            print(f"\n    >>> PP2 WINNER: {winner} ({vote_counts[winner]}/5 votes)")
+            print(f"\n    >>> PP2 WINNER: {winner} ({vote_count}/5 votes)")
 
             debate_summary["rounds"].append({
                 "round": "6_pinch_points",
@@ -2089,28 +2171,933 @@ Theme: {outline.get('theme', '')}
             )
 
     # =========================================================================
-    # STEPS 5-9: Placeholder implementations (to be added incrementally)
+    # STEP 5: SCENE NARRATIVE WRITING (5-Agent Multi-Agent Debate)
     # =========================================================================
 
-    def step5_narrative(self, codex: dict) -> dict:
-        """Write complete narrative. Override in subclass for custom behavior."""
-        raise NotImplementedError("Step 5 (Narrative) not yet implemented")
+    def _get_pov_character(self, scene_data: dict, characters: list) -> dict:
+        """Get full character profile for POV character."""
+        pov_name = scene_data.get("pov_character", "")
+        for char in characters:
+            if char.get("name", "").lower() == pov_name.lower():
+                return char
+        return characters[0] if characters else {}
 
-    def step6_revision(self, codex: dict) -> dict:
-        """Revise narrative. Override in subclass for custom behavior."""
-        raise NotImplementedError("Step 6 (Revision) not yet implemented")
+    def _get_scene_characters(self, scene_data: dict, characters: list) -> list:
+        """Get full profiles for all characters in scene."""
+        scene_names = [n.lower() for n in scene_data.get("characters", [])]
+        return [c for c in characters if c.get("name", "").lower() in scene_names]
 
-    def step7_screenplay(self, codex: dict) -> dict:
+    def _get_scene_location(self, scene_data: dict, locations: list) -> dict:
+        """Get full location profile for scene."""
+        loc_name = scene_data.get("location", "")
+        for loc in locations:
+            if loc.get("name", "").lower() == loc_name.lower():
+                return loc
+        return locations[0] if locations else {}
+
+    def _format_world_for_prompt(self, world: dict) -> str:
+        """Format world data for agent prompts."""
+        daily = world.get("daily_life", {})
+        culture = world.get("culture_customs", {})
+        religion = world.get("religion_beliefs", {})
+
+        return f"""DAILY LIFE:
+- Foods: {', '.join(daily.get('common_foods', ['bread', 'stew'])[:5])}
+- Eating: {daily.get('eating_customs', 'communal meals')}
+
+CULTURE:
+- Respect: {culture.get('gestures_respect', 'a nod')}
+- Rude: {culture.get('gestures_rudeness', 'turning away')}
+
+RELIGION:
+- Faith: {religion.get('main_religion', 'varied beliefs')}
+- Taboos: {', '.join(religion.get('taboos', [])[:3])}"""
+
+    def _tally_narrative_votes(self, votes: list, agent_names: list[str]) -> str:
+        """Tally votes and return winning agent name."""
+        if not votes:
+            return agent_names[0] if agent_names else "CHARACTER_CONTINUITY"
+
+        vote_counts = Counter(v.voted_for_agent for v in votes)
+        if not vote_counts:
+            return agent_names[0] if agent_names else "CHARACTER_CONTINUITY"
+
+        return max(vote_counts, key=vote_counts.get)
+
+    def step5_narrative(self, codex: dict) -> Step5Result:
+        """Write complete narrative via 5-agent multi-agent debate.
+
+        Uses 5 narrative writing agents:
+        - CharacterContinuityAgent: Character traits, backstory integration
+        - LocationAtmosphereAgent: Sensory immersion, atmosphere
+        - WorldBuildingIntegrationAgent: Cultural details (food, customs, prayers)
+        - PlotTickingClockAgent: Plot urgency, ticking clock pressure
+        - NarrativeContinuityAgent: Prose quality, scene connections
+
+        Debate flow for each scene:
+        1. All 5 agents propose prose based on their methodology
+        2. Cross-agent critique round (5 critiques)
+        3. All 5 agents vote for best proposal
+        4. Winner's prose is used
+
+        Args:
+            codex: The codex dictionary with outline, characters, locations, world, chapter_outline
+
+        Returns:
+            Step5Result with complete narrative and scene debates
+        """
+        start_time = time.time()
+        scene_debates = []
+        all_scene_narratives = []
+        total_word_count = 0
+
+        try:
+            # =========================================
+            # VALIDATE PREREQUISITES
+            # =========================================
+            story = codex.get("story", {})
+            chapter_outline = story.get("chapter_outline", {})
+            characters = story.get("characters", [])
+            locations = story.get("locations", [])
+            world = story.get("world", {})
+            outline = story.get("outline", {})
+
+            if not chapter_outline:
+                return Step5Result(
+                    narrative={},
+                    scene_debates=[],
+                    total_scenes_written=0,
+                    total_word_count=0,
+                    average_words_per_scene=0,
+                    success=False,
+                    error="No chapter_outline found. Run Step 4 first.",
+                )
+
+            if not characters:
+                return Step5Result(
+                    narrative={},
+                    scene_debates=[],
+                    total_scenes_written=0,
+                    total_word_count=0,
+                    average_words_per_scene=0,
+                    success=False,
+                    error="No characters found. Run Step 2 first.",
+                )
+
+            # Extract ticking clock
+            ticking_clock = {
+                "ticking_clock": chapter_outline.get("ticking_clock", "Time is running out"),
+                "ticking_clock_deadline": chapter_outline.get("ticking_clock_deadline", "Soon"),
+                "ticking_clock_consequence": chapter_outline.get("ticking_clock_consequence", "Disaster"),
+            }
+
+            story_prompt, setting_prompt = self.extract_prompts(codex)
+
+            print(f"\n{'='*60}")
+            print("STEP 5: SCENE NARRATIVE WRITING (5-Agent Multi-Agent Debate)")
+            print(f"{'='*60}")
+            print(f">>> Agents: 5 narrative specialists")
+            print(f">>> Method: Propose -> Critique -> Vote per scene")
+            print(f">>> Target: 750-1000 words per scene (~5-7 min reading time)")
+
+            # =========================================
+            # INITIALIZE 5 NARRATIVE WRITING AGENTS
+            # =========================================
+            character_agent = CharacterContinuityAgent(model=self.model)
+            location_agent = NarrativeLocationAgent(model=self.model)
+            world_agent = WorldBuildingIntegrationAgent(model=self.model)
+            plot_agent = PlotTickingClockAgent(model=self.model)
+            narrative_agent = NarrativeContinuityAgent(model=self.model)
+
+            all_agents = [character_agent, location_agent, world_agent, plot_agent, narrative_agent]
+
+            print(f"\n--- 5 Agent Methodologies ---")
+            for agent in all_agents:
+                print(f"    {agent.name}: {agent.METHODOLOGY_NAME}")
+
+            # =========================================
+            # PROCESS EACH CHAPTER AND SCENE
+            # =========================================
+            chapters_narrative = []
+            previous_scene_prose = ""
+
+            for chapter in chapter_outline.get("chapters", []):
+                chapter_num = chapter["chapter_number"]
+                chapter_scenes_narrative = []
+
+                print(f"\n{'='*50}")
+                print(f"CHAPTER {chapter_num}: Writing {len(chapter['scenes'])} scenes")
+                print(f"{'='*50}")
+
+                for scene_data in chapter["scenes"]:
+                    scene_num = scene_data["scene_number"]
+                    scene_id = f"ch{chapter_num}_scene{scene_num}"
+
+                    print(f"\n    --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
+
+                    # Build scene context for critiques/votes
+                    scene_context = {
+                        "scene_data": scene_data,
+                        "chapter": chapter,
+                        "characters": characters,
+                        "locations": locations,
+                        "world": world,
+                        "ticking_clock": ticking_clock,
+                        "previous_prose": previous_scene_prose,
+                        "setting_prompt": setting_prompt,
+                    }
+
+                    # =========================================
+                    # ROUND 1: ALL 5 AGENTS PROPOSE PROSE
+                    # =========================================
+                    proposals = []
+                    print(f"    Generating 5 prose proposals...")
+
+                    for agent in all_agents:
+                        try:
+                            proposal = agent.propose_prose(
+                                scene_data=scene_data,
+                                characters=characters,
+                                locations=locations,
+                                world=world,
+                                previous_prose=previous_scene_prose,
+                                ticking_clock=ticking_clock,
+                            )
+                            # Validate proposal before appending (structured output can return None)
+                            if proposal is None:
+                                print(f"      [{agent.name}] FAILED: Returned None")
+                                continue
+                            word_count = proposal.word_count()
+                            techniques = proposal.techniques_used[:2] if proposal.techniques_used else []
+                            proposals.append(proposal)  # Append after validation
+                            print(f"      [{agent.name}] {word_count} words - {techniques}")
+                        except Exception as e:
+                            print(f"      [{agent.name}] FAILED: {str(e)[:50]}")
+
+                    if not proposals:
+                        # Fallback: create minimal scene
+                        print(f"    All proposals failed - creating fallback prose")
+                        fallback_prose = f"Scene {scene_num}: {scene_data.get('happens', 'The story continues.')}"
+                        scene_narrative = {
+                            "scene_id": scene_id,
+                            "chapter_number": chapter_num,
+                            "scene_number": scene_num,
+                            "location": scene_data.get("location", "Unknown"),
+                            "location_id": scene_data.get("location_id", ""),
+                            "pov_character": scene_data.get("pov_character", "Unknown"),
+                            "characters_present": scene_data.get("characters", []),
+                            "character_ids": scene_data.get("character_ids", []),
+                            "time_of_day": scene_data.get("time_of_day", "day"),
+                            "prose": fallback_prose,
+                            "word_count": len(fallback_prose.split()),
+                            "winning_agent": "FALLBACK",
+                            "techniques_integrated": [],
+                        }
+                        chapter_scenes_narrative.append(scene_narrative)
+                        all_scene_narratives.append(scene_narrative)
+                        total_word_count += len(fallback_prose.split())
+                        continue
+
+                    # =========================================
+                    # ROUND 2: CROSS-AGENT CRITIQUES (5 critiques)
+                    # =========================================
+                    critiques = []
+                    print(f"    Gathering 5 critiques...")
+
+                    for i, agent in enumerate(all_agents):
+                        target_idx = (i + 1) % len(proposals)
+                        target_proposal = proposals[target_idx]
+                        try:
+                            critique = agent.critique_prose(
+                                target_agent=target_proposal.agent_name,
+                                proposal=target_proposal,
+                                scene_context=scene_context,
+                            )
+                            if critique is None:
+                                print(f"      [{agent.name}] critique failed: Returned None")
+                                continue
+                            critiques.append(critique)
+                            print(f"      [{agent.name} -> {target_proposal.agent_name}] Score: {critique.overall_score:.1f}")
+                        except Exception as e:
+                            print(f"      [{agent.name}] critique failed: {str(e)[:30]}")
+
+                    # =========================================
+                    # ROUND 3: ALL 5 AGENTS VOTE
+                    # =========================================
+                    votes = []
+                    print(f"    Collecting 5 votes...")
+
+                    for agent in all_agents:
+                        try:
+                            vote = agent.vote_for_best(
+                                proposals=proposals,
+                                scene_context=scene_context,
+                            )
+                            if vote is None:
+                                print(f"      [{agent.name}] vote failed: Returned None")
+                                continue
+                            votes.append(vote)
+                            print(f"      [{agent.name}] votes for: {vote.voted_for_agent}")
+                        except Exception as e:
+                            print(f"      [{agent.name}] vote failed: {str(e)[:30]}")
+
+                    # =========================================
+                    # TALLY VOTES AND SELECT WINNER
+                    # =========================================
+                    agent_names = [p.agent_name for p in proposals]
+                    winner_agent = self._tally_narrative_votes(votes, agent_names)
+                    winner_proposal = next(
+                        (p for p in proposals if p.agent_name == winner_agent),
+                        proposals[0]
+                    )
+
+                    vote_counts = Counter(v.voted_for_agent for v in votes) if votes else {}
+                    print(f"    >>> Winner: {winner_agent} ({vote_counts.get(winner_agent, 0)}/5 votes)")
+
+                    # =========================================
+                    # BUILD FINAL SCENE NARRATIVE
+                    # =========================================
+                    final_prose = winner_proposal.to_prose()
+                    scene_word_count = len(final_prose.split())
+                    total_word_count += scene_word_count
+
+                    scene_narrative = {
+                        "scene_id": scene_id,
+                        "chapter_number": chapter_num,
+                        "scene_number": scene_num,
+                        "location": scene_data.get("location", "Unknown"),
+                        "location_id": scene_data.get("location_id", ""),
+                        "pov_character": scene_data.get("pov_character", "Unknown"),
+                        "characters_present": scene_data.get("characters", []),
+                        "character_ids": scene_data.get("character_ids", []),
+                        "time_of_day": scene_data.get("time_of_day", "day"),
+                        "prose": final_prose,
+                        "word_count": scene_word_count,
+                        "winning_agent": winner_agent,
+                        "techniques_integrated": winner_proposal.techniques_used,
+                    }
+
+                    chapter_scenes_narrative.append(scene_narrative)
+                    all_scene_narratives.append(scene_narrative)
+
+                    # Update previous prose for continuity
+                    previous_scene_prose = final_prose
+
+                    # Record debate
+                    scene_debates.append({
+                        "scene_id": scene_id,
+                        "chapter": chapter_num,
+                        "scene": scene_num,
+                        "proposals": [p.model_dump() for p in proposals],
+                        "critiques": [c.model_dump() for c in critiques],
+                        "votes": [v.model_dump() for v in votes],
+                        "winner": winner_agent,
+                        "final_word_count": scene_word_count,
+                    })
+
+                # Assemble chapter narrative
+                chapter_word_count = sum(s["word_count"] for s in chapter_scenes_narrative)
+                chapters_narrative.append({
+                    "chapter_number": chapter_num,
+                    "chapter_title": chapter.get("chapter_title", f"Chapter {chapter_num}"),
+                    "act": chapter.get("act", 1),
+                    "scenes": chapter_scenes_narrative,
+                    "chapter_word_count": chapter_word_count,
+                })
+
+                print(f"\n    >>> Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words")
+
+            # =========================================
+            # ASSEMBLE FINAL NARRATIVE
+            # =========================================
+            avg_words = round(total_word_count / len(all_scene_narratives), 1) if all_scene_narratives else 0
+
+            narrative = {
+                "title": outline.get("title_suggestion", "Untitled"),
+                "total_chapters": len(chapters_narrative),
+                "total_scenes": len(all_scene_narratives),
+                "total_word_count": total_word_count,
+                "average_words_per_scene": avg_words,
+                "ticking_clock": ticking_clock,
+                "chapters": chapters_narrative,
+            }
+
+            duration = time.time() - start_time
+
+            print(f"\n{'='*60}")
+            print("STEP 5 COMPLETE")
+            print(f"{'='*60}")
+            print(f">>> Duration: {duration:.1f}s")
+            print(f">>> Total Scenes: {len(all_scene_narratives)}")
+            print(f">>> Total Words: {total_word_count:,}")
+            print(f">>> Avg Words/Scene: {avg_words:.0f}")
+            print(f">>> Estimated Reading Time: {total_word_count // 200} minutes")
+
+            return Step5Result(
+                narrative=narrative,
+                scene_debates=scene_debates,
+                total_scenes_written=len(all_scene_narratives),
+                total_word_count=total_word_count,
+                average_words_per_scene=avg_words,
+                success=True,
+                duration_seconds=round(duration, 2),
+            )
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Step5Result(
+                narrative={},
+                scene_debates=scene_debates,
+                total_scenes_written=len(all_scene_narratives),
+                total_word_count=total_word_count,
+                average_words_per_scene=0,
+                success=False,
+                error=str(e),
+                duration_seconds=round(time.time() - start_time, 2),
+            )
+
+    # =========================================================================
+    # STEPS 6-9: Placeholder implementations (to be added incrementally)
+    # =========================================================================
+
+    def step6_revision(self, codex: dict) -> Step6Result:
+        """
+        Revise narrative with 5 critique personas.
+
+        Uses 5 specialized critics to evaluate each scene:
+        1. ProsePolishCritic - Filter words, cliches, show-don't-tell
+        2. CharacterVoiceCritic - Dialogue authenticity
+        3. ContinuityCritic - Consistency with codex
+        4. PacingTensionCritic - Scene structure, ticking clock
+        5. EmotionalResonanceCritic - Emotional beats, micro-tension
+
+        Then ReviserAgent applies the critiques to improve the prose.
+        """
+        start_time = time.time()
+        print("\n" + "=" * 60)
+        print("STEP 6: NARRATIVE REVISION (5-Critic System)")
+        print("=" * 60)
+
+        try:
+            # Get data from codex
+            narrative = codex.get("story", {}).get("narrative", {})
+            characters = codex.get("story", {}).get("characters", [])
+            locations = codex.get("story", {}).get("locations", [])
+            world = codex.get("story", {}).get("world", {})
+            chapter_outline = codex.get("story", {}).get("chapter_outline", {})
+            # Get full ticking clock info for time unit checking
+            ticking_clock = {
+                "ticking_clock": chapter_outline.get("ticking_clock", "Time is running out"),
+                "deadline": chapter_outline.get("ticking_clock_deadline", "Unknown"),
+                "consequence": chapter_outline.get("ticking_clock_consequence", "Unknown"),
+            }
+
+            if not narrative or not narrative.get("chapters"):
+                return Step6Result(
+                    narrative=narrative,
+                    critiques=[],
+                    scenes_revised=0,
+                    revision_passes=0,
+                    average_score_before=0,
+                    average_score_after=0,
+                    success=False,
+                    error="No narrative found. Run step 5 first.",
+                    duration_seconds=0,
+                )
+
+            # Get revision config from author
+            num_passes = self.author.revision_style.num_passes
+            focus_areas = self.author.revision_style.focus_areas
+            cut_aggressively = self.author.revision_style.cut_aggressively
+
+            print(f"Revision passes: {num_passes}")
+            print(f"Focus areas: {focus_areas}")
+            print(f"Cut aggressively: {cut_aggressively}")
+
+            # Initialize critics
+            prose_critic = ProsePolishCritic(model=self.model)
+            voice_critic = CharacterVoiceCritic(model=self.model)
+            continuity_critic = ContinuityCritic(model=self.model)
+            pacing_critic = PacingTensionCritic(model=self.model)
+            emotional_critic = EmotionalResonanceCritic(model=self.model)
+            reviser = ReviserAgent(model=self.model)
+
+            all_critiques = []
+            scenes_revised = 0
+            scores_before = []
+            scores_after = []
+            revision_history = []  # Track prose before/after for metadata
+
+            # Process each revision pass
+            for pass_num in range(num_passes):
+                print(f"\n{'=' * 40}")
+                print(f"REVISION PASS {pass_num + 1}/{num_passes}")
+                print("=" * 40)
+
+                for chapter in narrative.get("chapters", []):
+                    chapter_num = chapter.get("chapter_number", 0)
+                    print(f"\n--- Chapter {chapter_num}: {chapter.get('chapter_title', '')} ---")
+
+                    for scene in chapter.get("scenes", []):
+                        scene_id = scene.get("scene_id", f"ch{chapter_num}_scene?")
+                        prose = scene.get("prose", "")
+                        print(f"\n  Scene: {scene_id}")
+
+                        if not prose:
+                            print("    [No prose to revise]")
+                            continue
+
+                        # Get scene characters from codex
+                        scene_char_names = scene.get("characters_present", [])
+                        scene_chars = [
+                            c for c in characters
+                            if c.get("name") in scene_char_names
+                        ]
+
+                        # Get scene location from codex
+                        scene_loc_name = scene.get("location", "")
+                        scene_loc = next(
+                            (loc for loc in locations
+                             if loc.get("name", "").lower() == scene_loc_name.lower()),
+                            {}
+                        )
+
+                        # Run all 5 critics
+                        print("    Running critics...")
+
+                        # 1. Prose Polish Critic
+                        print("      [1/5] Prose Polish...")
+                        prose_crit = prose_critic.critique(prose, scene_id)
+                        print(f"            Score: {prose_crit.overall_score}/10, "
+                              f"Filter words: {len(prose_crit.filter_words_found)}, "
+                              f"Cliches: {len(prose_crit.cliches_found)}")
+
+                        # 2. Character Voice Critic
+                        print("      [2/5] Character Voice...")
+                        voice_crit = voice_critic.critique(prose, scene_chars, scene_id)
+                        print(f"            Score: {voice_crit.overall_voice_score}/10, "
+                              f"Voice issues: {len(voice_crit.voice_issues)}, "
+                              f"No-tag test: {'PASS' if voice_crit.no_tag_test_passed else 'FAIL'}")
+
+                        # 3. Continuity Critic
+                        print("      [3/5] Continuity...")
+                        cont_crit = continuity_critic.critique(
+                            prose, scene_chars, scene_loc, world, scene_id, ticking_clock
+                        )
+                        print(f"            Score: {cont_crit.overall_continuity_score}/10, "
+                              f"Char issues: {len(cont_crit.character_inconsistencies)}, "
+                              f"POV breaks: {len(cont_crit.pov_breaks)}")
+
+                        # 4. Pacing & Tension Critic
+                        print("      [4/5] Pacing & Tension...")
+                        pacing_crit = pacing_critic.critique(
+                            prose, scene, ticking_clock, scene_id
+                        )
+                        print(f"            Score: {pacing_crit.overall_pacing_score}/10, "
+                              f"Ticking clock: {'YES' if pacing_crit.ticking_clock_present else 'NO'}, "
+                              f"Slow spots: {len(pacing_crit.slow_spots)}")
+
+                        # 5. Emotional Resonance Critic
+                        print("      [5/5] Emotional Resonance...")
+                        emot_crit = emotional_critic.critique(prose, scene_id)
+                        print(f"            Score: {emot_crit.overall_emotional_score}/10, "
+                              f"Ending: {emot_crit.ending_resonance_type}, "
+                              f"Skim risks: {len(emot_crit.skim_risk_areas)}")
+
+                        # Calculate average score
+                        avg_score = (
+                            prose_crit.overall_score +
+                            voice_crit.overall_voice_score +
+                            cont_crit.overall_continuity_score +
+                            pacing_crit.overall_pacing_score +
+                            emot_crit.overall_emotional_score
+                        ) / 5
+                        scores_before.append(avg_score)
+
+                        # Bundle critiques
+                        critique_bundle = {
+                            "scene_id": scene_id,
+                            "prose_critique": prose_crit.model_dump(),
+                            "voice_critique": voice_crit.model_dump(),
+                            "continuity_critique": cont_crit.model_dump(),
+                            "pacing_critique": pacing_crit.model_dump(),
+                            "emotional_critique": emot_crit.model_dump(),
+                            "average_score": round(avg_score, 2),
+                            "needs_revision": (
+                                prose_crit.needs_revision or
+                                voice_crit.needs_revision or
+                                cont_crit.needs_revision or
+                                pacing_crit.needs_revision or
+                                emot_crit.needs_revision
+                            ),
+                        }
+                        all_critiques.append(critique_bundle)
+
+                        # Check if revision needed
+                        if critique_bundle["needs_revision"]:
+                            print(f"    -> REVISING (avg score: {avg_score:.1f}/10)")
+
+                            # Build critique text for reviser
+                            critique_text = self._build_critique_text(
+                                prose_crit, voice_crit, cont_crit,
+                                pacing_crit, emot_crit,
+                                cut_aggressively
+                            )
+
+                            # Build character context for reviser
+                            char_context = "\n".join([
+                                f"- {c.get('name')}: {c.get('personality_summary', c.get('personality', ''))}"
+                                for c in scene_chars
+                            ])
+
+                            # Revise the scene
+                            prose_before = prose  # Save original before revision
+                            try:
+                                revised = reviser.revise_scene(
+                                    scene,
+                                    critique_text,
+                                    char_context,
+                                    str(scene_loc)[:1000]
+                                )
+                                revised_prose = revised.to_prose()
+                                scene["prose"] = revised_prose
+                                scene["word_count"] = len(revised_prose.split())
+                                scene["revision_notes"] = {
+                                    "pass": pass_num + 1,
+                                    "critics_flagged": [
+                                        "prose" if prose_crit.needs_revision else None,
+                                        "voice" if voice_crit.needs_revision else None,
+                                        "continuity" if cont_crit.needs_revision else None,
+                                        "pacing" if pacing_crit.needs_revision else None,
+                                        "emotional" if emot_crit.needs_revision else None,
+                                    ],
+                                }
+                                scenes_revised += 1
+                                scores_after.append(avg_score + 1.5)  # Estimate improvement
+                                print(f"    -> REVISED ({scene['word_count']} words)")
+
+                                # Track revision history for metadata
+                                revision_history.append({
+                                    "scene_id": scene_id,
+                                    "pass": pass_num + 1,
+                                    "prose_before": prose_before,
+                                    "prose_after": revised_prose,
+                                    "score_before": round(avg_score, 2),
+                                    "critiques_summary": {
+                                        "prose_score": prose_crit.overall_score,
+                                        "voice_score": voice_crit.overall_voice_score,
+                                        "continuity_score": cont_crit.overall_continuity_score,
+                                        "pacing_score": pacing_crit.overall_pacing_score,
+                                        "emotional_score": emot_crit.overall_emotional_score,
+                                    }
+                                })
+                            except Exception as e:
+                                print(f"    -> REVISION FAILED: {e}")
+                                scores_after.append(avg_score)
+                        else:
+                            print(f"    -> OK (avg score: {avg_score:.1f}/10)")
+                            scores_after.append(avg_score)
+
+            # Store critiques in codex
+            if "story" not in codex:
+                codex["story"] = {}
+            codex["story"]["critiques"] = all_critiques
+
+            # Calculate metrics
+            avg_before = sum(scores_before) / len(scores_before) if scores_before else 0
+            avg_after = sum(scores_after) / len(scores_after) if scores_after else 0
+
+            # Store revision history in metadata (for future reference)
+            if "metadata" not in codex:
+                codex["metadata"] = {}
+            if "phase_1" not in codex["metadata"]:
+                codex["metadata"]["phase_1"] = {}
+
+            codex["metadata"]["phase_1"]["step_6"] = {
+                "revision_passes": num_passes,
+                "scenes_revised": scenes_revised,
+                "average_score_before": round(avg_before, 2),
+                "average_score_after": round(avg_after, 2),
+                "focus_areas": focus_areas,
+                "cut_aggressively": cut_aggressively,
+                "revision_history": revision_history,
+            }
+
+            duration = time.time() - start_time
+            print(f"\n{'=' * 60}")
+            print("STEP 6 COMPLETE: Narrative Revision")
+            print(f"  Scenes revised: {scenes_revised}")
+            print(f"  Revision passes: {num_passes}")
+            print(f"  Avg score before: {avg_before:.1f}/10")
+            print(f"  Avg score after: {avg_after:.1f}/10")
+            print(f"  Duration: {duration:.1f}s")
+            print("=" * 60)
+
+            return Step6Result(
+                narrative=narrative,
+                critiques=all_critiques,
+                scenes_revised=scenes_revised,
+                revision_passes=num_passes,
+                average_score_before=round(avg_before, 2),
+                average_score_after=round(avg_after, 2),
+                success=True,
+                duration_seconds=round(duration, 2),
+            )
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Step6Result(
+                narrative=codex.get("story", {}).get("narrative", {}),
+                critiques=all_critiques if 'all_critiques' in dir() else [],
+                scenes_revised=scenes_revised if 'scenes_revised' in dir() else 0,
+                revision_passes=num_passes if 'num_passes' in dir() else 0,
+                average_score_before=0,
+                average_score_after=0,
+                success=False,
+                error=str(e),
+                duration_seconds=round(time.time() - start_time, 2),
+            )
+
+    def _build_critique_text(
+        self,
+        prose_crit: ProsePolishCritique,
+        voice_crit: CharacterVoiceCritique,
+        cont_crit: ContinuityCritique,
+        pacing_crit: PacingTensionCritique,
+        emot_crit: EmotionalResonanceCritique,
+        cut_aggressively: bool = False,
+    ) -> str:
+        """Build critique text for the reviser agent."""
+        sections = []
+
+        # Prose issues (using Pydantic model attributes)
+        if prose_crit.filter_words_found:
+            sections.append(
+                "FILTER WORDS TO REMOVE:\n" +
+                "\n".join([f"- {fw.text}" for fw in prose_crit.filter_words_found[:5]])
+            )
+        if prose_crit.cliches_found:
+            sections.append(
+                "CLICHES TO REPLACE:\n" +
+                "\n".join([f"- {c.text}" for c in prose_crit.cliches_found[:5]])
+            )
+        if prose_crit.specific_rewrites:
+            sections.append(
+                "SPECIFIC REWRITES:\n" +
+                "\n".join([
+                    f"- '{r.original}' -> '{r.suggestion}'"
+                    for r in prose_crit.specific_rewrites[:5]
+                ])
+            )
+
+        # Voice issues
+        if voice_crit.dialogue_fixes:
+            sections.append(
+                "DIALOGUE FIXES:\n" +
+                "\n".join([
+                    f"- {df.character}: '{df.original}' -> '{df.suggested}' ({df.reason})"
+                    for df in voice_crit.dialogue_fixes[:5]
+                ])
+            )
+
+        # Continuity issues
+        if cont_crit.character_inconsistencies:
+            sections.append(
+                "CHARACTER FIXES:\n" +
+                "\n".join([
+                    f"- {ci.character}: {ci.issue}"
+                    for ci in cont_crit.character_inconsistencies[:3]
+                ])
+            )
+
+        # Pacing issues
+        if pacing_crit.slow_spots:
+            sections.append(
+                "SLOW SPOTS TO TIGHTEN:\n" +
+                "\n".join([
+                    f"- Paragraph {ss.paragraph}: {ss.issue}"
+                    for ss in pacing_crit.slow_spots[:3]
+                ])
+            )
+        if not pacing_crit.ticking_clock_present:
+            sections.append("ADD TICKING CLOCK: Reference the urgency/deadline")
+
+        # Emotional issues
+        if emot_crit.skim_risk_areas:
+            sections.append(
+                "ENGAGEMENT FIXES:\n" +
+                "\n".join([
+                    f"- Paragraph {sr.paragraph}: {sr.issue}"
+                    for sr in emot_crit.skim_risk_areas[:3]
+                ])
+            )
+        if emot_crit.ending_resonance_type == "weak":
+            sections.append("SCENE ENDING: Add resonance (image, question, ache, or realization)")
+
+        # Aggressive cutting instruction
+        if cut_aggressively:
+            sections.append(
+                "CUTTING: Be ruthless. Remove unnecessary description, "
+                "redundant dialogue, and any 'parking the car' moments."
+            )
+
+        return "\n\n".join(sections) if sections else "Minor polish needed."
+
+    def step7_naming(self, codex: dict) -> Step7Result:
+        """
+        Generate book and chapter titles via 3-agent multi-agent debate.
+
+        Uses 3 naming agents:
+        - TitleLiteraryAgent: Evocative, poetic titles (metaphor, symbolism)
+        - TitleThematicAgent: Theme-reflecting titles (core conflict, arc)
+        - TitleCommercialAgent: Marketable, genre-appropriate titles (hooks)
+
+        Args:
+            codex: The codex dictionary with narrative
+
+        Returns:
+            Step7Result with book_title and chapter_titles
+        """
+        from src.story_agents.title_naming_agents import (
+            run_book_title_debate,
+            run_chapter_title_debate,
+        )
+
+        start_time = time.time()
+
+        try:
+            # Validate prerequisites
+            if "story" not in codex or "narrative" not in codex["story"]:
+                return Step7Result(
+                    book_title="Untitled",
+                    chapter_titles={},
+                    book_debate={},
+                    chapter_debates=[],
+                    success=False,
+                    error="Narrative not found. Run step 5 first.",
+                    duration_seconds=time.time() - start_time,
+                )
+
+            narrative = codex["story"]["narrative"]
+            outline = codex["story"].get("outline", {})
+            chapter_outline = codex["story"].get("chapter_outline", {})
+
+            # Extract context for book title debate
+            logline = outline.get("logline", "A compelling story.")
+            theme = outline.get("theme", "")
+            setting = codex.get("setting_prompt", "")
+
+            # Build plot summary from chapter outline
+            chapters = chapter_outline.get("chapters", [])
+            plot_points = []
+            for ch in chapters[:3]:  # First 3 chapters for summary
+                for scene in ch.get("scenes", [])[:2]:
+                    plot_points.append(scene.get("happens", ""))
+            plot_summary = " ".join(plot_points)[:1000] if plot_points else logline
+
+            # =================================================================
+            # BOOK TITLE DEBATE
+            # =================================================================
+            print("\n--- Book Title Debate ---")
+            print("  3 agents proposing titles...")
+
+            book_debate = run_book_title_debate(
+                logline=logline,
+                theme=theme,
+                setting=setting,
+                plot_summary=plot_summary,
+                model=self.model,
+            )
+
+            book_title = book_debate["winning_title"]
+            print(f"  Winner: \"{book_title}\" ({book_debate['winner_agent']})")
+
+            # =================================================================
+            # CHAPTER TITLE DEBATES
+            # =================================================================
+            print("\n--- Chapter Title Debates ---")
+
+            chapter_titles = {}
+            chapter_debates = []
+            narrative_chapters = narrative.get("chapters", [])
+
+            for chapter in narrative_chapters:
+                chapter_num = chapter.get("chapter_number", 0)
+                print(f"  Chapter {chapter_num}...")
+
+                # Build chapter summary from scenes
+                scenes = chapter.get("scenes", [])
+                scenes_summary = ""
+                chapter_summary = ""
+                for scene in scenes:
+                    scene_id = scene.get("scene_id", "")
+                    location = scene.get("location", "")
+                    prose = scene.get("prose", "")[:300]  # First 300 chars
+                    scenes_summary += f"- {scene_id} at {location}\n"
+                    chapter_summary += prose[:150] + " "
+
+                chapter_debate = run_chapter_title_debate(
+                    chapter_number=chapter_num,
+                    chapter_summary=chapter_summary[:500],
+                    scenes_summary=scenes_summary,
+                    book_title=book_title,
+                    theme=theme,
+                    model=self.model,
+                )
+
+                winning_title = chapter_debate["winning_title"]
+                chapter_titles[chapter_num] = winning_title
+                chapter_debates.append(chapter_debate)
+                print(f"    -> \"{winning_title}\"")
+
+            # =================================================================
+            # UPDATE CODEX
+            # =================================================================
+            narrative["title"] = book_title
+            if book_debate.get("winning_subtitle"):
+                narrative["subtitle"] = book_debate["winning_subtitle"]
+
+            for chapter in narrative_chapters:
+                chapter_num = chapter.get("chapter_number", 0)
+                if chapter_num in chapter_titles:
+                    chapter["chapter_title"] = f"Chapter {chapter_num} - {chapter_titles[chapter_num]}"
+
+            duration = time.time() - start_time
+            print(f"\n  Total naming time: {duration:.1f}s")
+
+            return Step7Result(
+                book_title=book_title,
+                chapter_titles=chapter_titles,
+                book_debate=book_debate,
+                chapter_debates=chapter_debates,
+                success=True,
+                duration_seconds=duration,
+            )
+
+        except Exception as e:
+            return Step7Result(
+                book_title="Untitled",
+                chapter_titles={},
+                book_debate={},
+                chapter_debates=[],
+                success=False,
+                error=str(e),
+                duration_seconds=time.time() - start_time,
+            )
+
+    def step8_screenplay(self, codex: dict) -> dict:
         """Format as screenplay. Override in subclass for custom behavior."""
-        raise NotImplementedError("Step 7 (Screenplay) not yet implemented")
+        raise NotImplementedError("Step 8 (Screenplay) not yet implemented")
 
-    def step8_polish(self, codex: dict) -> dict:
+    def step9_polish(self, codex: dict) -> dict:
         """Final polish. Override in subclass for custom behavior."""
-        raise NotImplementedError("Step 8 (Polish) not yet implemented")
+        raise NotImplementedError("Step 9 (Polish) not yet implemented")
 
-    def step9_finalize(self, codex: dict) -> dict:
+    def step10_finalize(self, codex: dict) -> dict:
         """Finalize and validate. Override in subclass for custom behavior."""
-        raise NotImplementedError("Step 9 (Finalize) not yet implemented")
+        raise NotImplementedError("Step 10 (Finalize) not yet implemented")
 
     # =========================================================================
     # MAIN RUN METHOD
@@ -2234,8 +3221,53 @@ Theme: {outline.get('theme', '')}
             else:
                 print(f">>> Step 4 FAILED: {result.error}")
 
-        # Steps 5-9: Add as we implement them
-        for step_num in range(5, 10):
+        # Step 5: Scene Narrative Writing
+        if 5 in steps_to_run:
+            print(f"\n{'='*60}")
+            print("STEP 5: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
+            print(f"{'='*60}")
+
+            result = self.step5_narrative(codex)
+            results["step5"] = result
+
+            if result.success:
+                # Store narrative at story.narrative
+                codex["story"]["narrative"] = result.narrative
+
+                steps_completed.append(5)
+                step_timings["step5_narrative"] = result.duration_seconds
+            else:
+                print(f">>> Step 5 FAILED: {result.error}")
+
+        # Step 6: Narrative Revision with 5-Critic System
+        if 6 in steps_to_run:
+            print("\n>>> Running Step 6: Narrative Revision...")
+            result = self.step6_revision(codex)
+            if result.success:
+                print(f">>> Step 6 COMPLETE: Revised {result.scenes_revised} scenes")
+                print(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
+                steps_completed.append(6)
+                step_timings["step6_revision"] = result.duration_seconds
+            else:
+                print(f">>> Step 6 FAILED: {result.error}")
+
+        # Step 7: Book & Chapter Title Naming
+        if 7 in steps_to_run:
+            print(f"\n{'='*60}")
+            print("STEP 7: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
+            print(f"{'='*60}")
+            result = self.step7_naming(codex)
+            results["step7"] = result
+            if result.success:
+                print(f"\n>>> Step 7 COMPLETE: Book titled \"{result.book_title}\"")
+                print(f"    Chapter titles: {len(result.chapter_titles)}")
+                steps_completed.append(7)
+                step_timings["step7_naming"] = result.duration_seconds
+            else:
+                print(f">>> Step 7 FAILED: {result.error}")
+
+        # Steps 8-10: Add as we implement them
+        for step_num in range(8, 11):
             if step_num in steps_to_run:
                 print(f"\n>>> Step {step_num}: Not yet implemented")
 
@@ -2267,6 +3299,18 @@ Theme: {outline.get('theme', '')}
         # Add scene debates to metadata
         if "step4" in results and results["step4"].success:
             codex["metadata"]["phase_1"]["scene_debates"] = results["step4"].scene_debates
+
+        # Add narrative debates to metadata
+        if "step5" in results and results["step5"].success:
+            codex["metadata"]["phase_1"]["narrative_debates"] = results["step5"].scene_debates
+
+        # Add title naming debates to metadata
+        if "step7" in results and results["step7"].success:
+            codex["metadata"]["phase_1"]["title_naming"] = {
+                "book_title": results["step7"].book_title,
+                "chapter_titles": results["step7"].chapter_titles,
+                "book_debate": results["step7"].book_debate,
+            }
 
         return {
             "steps_completed": steps_completed,
