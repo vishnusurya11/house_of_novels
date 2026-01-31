@@ -1,7 +1,7 @@
 # Phase 1 Revamp Plan: Unified Author-Driven Story Creation
 
 ## Goal
-Merge Phase 1 (Plotting), Phase 2 (Screenplay), and Phase 3 (Revision) into a single **author-driven Phase 1** with 9 selective sub-steps.
+Merge Phase 1 (Plotting), Phase 2 (Screenplay), and Phase 3 (Revision) into a single **author-driven Phase 1** with 10 selective sub-steps.
 
 ### Input
 - Codex from Phase 0 (author, story_structure, story_engine.prompts, deck_of_worlds.prompts)
@@ -14,7 +14,7 @@ Merge Phase 1 (Plotting), Phase 2 (Screenplay), and Phase 3 (Revision) into a si
 
 ---
 
-## Phase 1: 9 Sub-Steps (Author-Driven)
+## Phase 1: 10 Sub-Steps (Author-Driven)
 
 | Step | Name | Description |
 |------|------|-------------|
@@ -24,9 +24,10 @@ Merge Phase 1 (Plotting), Phase 2 (Screenplay), and Phase 3 (Revision) into a si
 | 4 | **Critique & Revise Outline** | Structure/pacing critique → Outline revision |
 | 5 | **Complete Narrative** | Write full prose story (Acts 1-3) |
 | 6 | **Narrative Revision** | Multi-focus revision (pacing, dialogue, etc.) |
-| 7 | **Screenplay** | Format narrative for reader presentation |
-| 8 | **Final Polish** | Final continuity/prose polish |
-| 9 | **Final Output** | Validate and finalize story dict |
+| 7 | **Title Naming** | Book & chapter title naming via 3-agent debate |
+| 8 | **Screenplay** | Format narrative for reader presentation |
+| 9 | **Final Polish** | Final continuity/prose polish |
+| 10 | **Final Output** | Validate and finalize story dict |
 
 ---
 
@@ -63,17 +64,23 @@ Merge Phase 1 (Plotting), Phase 2 (Screenplay), and Phase 3 (Revision) into a si
 - Uses: StyleCriticAgent, ContinuityCriticAgent, ReviserAgent
 - Passes: TBD (controlled by author's revision_style or CLI flag)
 
-**Step 7: Screenplay**
+**Step 7: Title Naming**
+- Input: story.outline, story.narrative.chapters
+- Output: narrative.title, chapters[].chapter_title
+- Uses: TitleLiteraryAgent, TitleThematicAgent, TitleCommercialAgent
+- Process: 3-agent debate for book title, then each chapter title
+
+**Step 8: Screenplay**
 - Input: story.narrative
 - Output: story.screenplay (formatted for reader presentation)
 - Uses: TBD - formatting agent
 
-**Step 8: Final Polish**
+**Step 9: Final Polish**
 - Input: story.narrative, story.screenplay
 - Output: Polished versions
 - Uses: Final revision pass
 
-**Step 9: Final Output**
+**Step 10: Final Output**
 - Validate all story components
 - Generate final codex output
 
@@ -108,7 +115,7 @@ def run_phase1_author(
     codex_path: Path,
     model: str = None,
     scope: str = None,
-    steps: list[int] = None,  # 1-9, default all
+    steps: list[int] = None,  # 1-10, default all
     revision_passes: int = None,  # For step 6
 ) -> Phase1Result:
 ```
@@ -125,7 +132,7 @@ def run_phase1_author(
       "phase": 1,
       "name": "Author-Driven Story Creation",
       "author_id": "author_001",
-      "steps_completed": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "steps_completed": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       "step_timings": {...},
       "plotting": {...},
       "characters": {...},
@@ -178,7 +185,7 @@ def run_phase1_author(
   },
   "metadata": {
     "phase_1": {
-      "steps_completed": [1, 2, 3, ...],
+      "steps_completed": [1, 2, 3, ..., 10],
       "step_timings": {...}
     }
   }
@@ -194,8 +201,11 @@ We will build Phase 1 step by step:
 2. Add Step 2 (Characters) - test integration
 3. Add Step 3 (World Building + Locations) - test integration
 4. Add Step 4 (Critique & Revise) - test integration
-5. Continue adding steps incrementally
-6. Each step can be tested independently with `--steps N` flag
+5. Add Step 5 (Complete Narrative) - test integration
+6. Add Step 6 (Narrative Revision) - test integration
+7. Add Step 7 (Title Naming) - test integration
+8. Continue adding steps incrementally
+9. Each step can be tested independently with `--steps N` flag
 
 ---
 
@@ -288,9 +298,10 @@ class BaseAuthorPhase1(ABC):
     def step4_critique_revise(self, codex: dict) -> dict: ...
     def step5_narrative(self, codex: dict) -> dict: ...
     def step6_revision(self, codex: dict) -> dict: ...
-    def step7_screenplay(self, codex: dict) -> dict: ...
-    def step8_polish(self, codex: dict) -> dict: ...
-    def step9_finalize(self, codex: dict) -> dict: ...
+    def step7_naming(self, codex: dict) -> dict: ...
+    def step8_screenplay(self, codex: dict) -> dict: ...
+    def step9_polish(self, codex: dict) -> dict: ...
+    def step10_finalize(self, codex: dict) -> dict: ...
 ```
 
 ### Author Registry (Auto-Discovery)
