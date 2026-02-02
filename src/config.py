@@ -128,22 +128,20 @@ STORY_SCOPES = {
 DEFAULT_STORY_SCOPE = "standard"
 
 # Phase configuration for House of Novels modular system
-# New pipeline with author phases:
-# Phase 0: Codex (select author)
-# Phase 1: PLOTTING (outline + characters + locations merged)
-# Phase 2: SCREENPLAY (prose writing)
-# Phase 3: REVISION (multi-pass editing)
-# Phase 4-8: Storyboard → Prompts → Generation → Editing → Upload
+# Streamlined pipeline with author-driven phases:
+# Phase 0: Codex (story seed + author selection)
+# Phase 1: Author (10-step creation: plotting, characters, narrative, revision)
+# Phase 2: Prompts (character, location, scene, poster, thumbnail)
+# Phase 3: Generation (audio + images via ComfyUI)
+# Phase 4: Editing (combine audio, create videos)
+# Phase 5: Upload (YouTube)
 PHASE_NAMES = [
     "codex",      # 0 - Story seed generation + author selection
-    "plotting",   # 1 - Outline + Characters + Locations (was outline + characters)
-    "screenplay", # 2 - Narrative prose (was narrative)
-    "revision",   # 3 - Multi-pass revision (NEW)
-    "storyboard", # 4 - Shot breakdown (was 3b)
-    "prompts",    # 5 - Image/video prompts (was 4)
-    "generation", # 6 - Media generation (was 5)
-    "editing",    # 7 - Video editing (was 6)
-    "upload",     # 8 - YouTube upload (was 7)
+    "author",     # 1 - 10-step author-driven creation (plotting, characters, narrative, revision)
+    "prompts",    # 2 - Image/video prompts
+    "generation", # 3 - Media generation (audio + images)
+    "editing",    # 4 - Video editing
+    "upload",     # 5 - YouTube upload
 ]
 DEFAULT_FORGE_DIR = "forge"
 

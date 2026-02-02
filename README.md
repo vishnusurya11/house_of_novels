@@ -97,7 +97,7 @@ uv run python -m src.phases.phase0_codex
 uv run python -m src.phases.phase0_codex --output-dir forge/20260105143022
 
 # Phase 1: Generate story outline (requires codex from Phase 0)
-uv run python -m src.phases.phase1_author forge\20260130171119\codex_20260130171119.json
+uv run python -m src.phases.phase1_author forge\20260131132743\codex_20260131132743.json
 
 uv run python -m src.phases.phase1_outline forge/20260105143022/codex_20260105143022.json --steps 1 
 
