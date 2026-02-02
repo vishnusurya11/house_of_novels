@@ -221,7 +221,7 @@ def generate_novel(
         print(f"\n>>> Character prompts: {result.character_prompt_count}")
         print(f">>> Location prompts: {result.location_prompt_count}")
         print(f">>> Poster prompts: {result.poster_prompt_count}")
-        print(f">>> Chapter image prompts: {result.chapter_image_prompt_count}")
+        print(f">>> Scene image prompts: {result.scene_image_prompt_count}")
         print(f">>> Phase 2 completed in {phase_timings['prompts']['duration_seconds']:.1f}s")
 
     # Phase 3: Generation (ComfyUI audio/images)

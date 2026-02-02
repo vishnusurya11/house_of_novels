@@ -50,7 +50,7 @@ class Phase2PromptsResult:
     character_prompt_count: int
     location_prompt_count: int
     poster_prompt_count: int
-    chapter_image_prompt_count: int  # Step 4: Chapter image prompts (one per chapter)
+    scene_image_prompt_count: int  # Step 4: Scene image prompts (one per scene)
     thumbnail_prompt_count: int  # Step 5: YouTube thumbnail prompts (Agent Council)
     success: bool
     error: Optional[str] = None
@@ -610,7 +610,7 @@ def run_phase2_prompts(
     print(f"    Character prompts: {char_prompt_count}")
     print(f"    Location prompts: {loc_prompt_count}")
     print(f"    Poster prompts: {poster_prompt_count}")
-    print(f"    Chapter image prompts: {chapter_image_prompt_count}")
+    print(f"    Scene image prompts: {scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
     print(f">>> Saved to: {codex_path}")
 
@@ -619,7 +619,7 @@ def run_phase2_prompts(
         character_prompt_count=char_prompt_count,
         location_prompt_count=loc_prompt_count,
         poster_prompt_count=poster_prompt_count,
-        chapter_image_prompt_count=chapter_image_prompt_count,
+        scene_image_prompt_count=scene_image_prompt_count,
         thumbnail_prompt_count=thumbnail_prompt_count,
         success=True,
         step_timings=step_timings,
