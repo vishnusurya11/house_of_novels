@@ -664,7 +664,7 @@ def main():
     print(f"    Character prompts: {result.character_prompt_count}")
     print(f"    Location prompts: {result.location_prompt_count}")
     print(f"    Poster prompts: {result.poster_prompt_count}")
-    print(f"    Chapter image prompts: {result.chapter_image_prompt_count}")
+    print(f"    Scene image prompts: {result.scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {result.thumbnail_prompt_count}")
 
 
