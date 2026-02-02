@@ -1,0 +1,54 @@
+{
+  "6": {
+    "inputs": {
+      "audio": "toireland_shelley_cf_128kb.mp3",
+      "audioUI": ""
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "Load Audio"
+    }
+  },
+  "7": {
+    "inputs": {
+      "target_text": "Dusk settled over the Obsidian Citadel, shadows creeping across the stone courtyard. Mira stood at the center, her breath caught in the chill air, a stark contrast to the warmth of her memories that clung to her like a shroud. She had left the safety of her chamber, the weight of grief still draped over her shoulders. Before her gathered a community of faces, their expressions a mixture of concern and expectation. With the sun dipping behind the jagged peaks, she squared her shoulders, determined to carve her own path through the sorrow that enveloped her. Doubts echoed in her mind—would they see her as fragile, or could she command their respect?\\n\\nMira’s voice rang out, steady yet edged with tremors. \\\"I can handle this alone. I don’t need your pity!\\\" The words poured from her, a defiant shield against the sorrow that threatened to engulf her. She focused on the crowd, picking out familiar faces among the sea of uncertainty. A mother’s eyes glistened, a friend’s brow furrowed in concern. They wanted to help, to shoulder her burden, but this was hers alone. Behind her, the Citadel loomed, its stone walls whispering secrets she dared not confront. She wouldn’t crumble now. Not like this.\\n\\nThe shadows deepened, the air heavy with unspoken fears. Mira clenched her fists, nails digging into her palms. A sudden crash echoed from the depths of the Citadel, sending a ripple through the crowd. Gasps erupted, faces turned toward the darkened entrance. Panic surged within her, a wild drumbeat matching the growing unease around her. She needed to maintain control and reassure them. But doubt crept in, a slick darkness that threatened to drown her resolve. \\\"Stay with me!\\\" she called out, her voice bolstered by a sudden surge of adrenaline.\\n\\nJust as the crowd’s whispers swelled, a figure emerged from the depths, cloaked in darkness yet unmistakably familiar. \\\"Mira!\\\" The voice sliced through the tension, sharp and urgent. A flicker of dread ignited within her. Secrets she had buried surged to the surface, memories clawing at her consciousness. Here was a reminder of her past, a presence that tugged at the edges of her strength. No, she couldn’t allow this. Not now. Not when she needed to prove herself.\\n\\nThe figure stepped closer, shadows clinging to them like a living shroud. Mira’s heart raced, not from fear but from the weight of impending revelation. What did they know? The question sat heavy on her tongue, a truth she wasn’t ready to confront. The crowd held its breath, the tension palpable, a silent plea for her to lead. As the figure’s gaze locked onto hers, a flicker of vulnerability sparked within her. Would she crumble under the weight of her past? Or could she forge ahead, unearthing the strength that lay buried beneath her sorrow? Uncertainty buzzed in the air, an unspoken challenge hanging between them, as dusk deepened into night.",
+      "model_choice": "1.7B",
+      "device": "cuda",
+      "precision": "bf16",
+      "language": "Auto",
+      "ref_text": "",
+      "seed": 328327461963772,
+      "max_new_tokens": 2048,
+      "top_p": 0.8,
+      "top_k": 20,
+      "temperature": 1,
+      "repetition_penalty": 1.05,
+      "x_vector_only": true,
+      "attention": "sage_attn",
+      "unload_model_after_generate": false,
+      "ref_audio": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "FB_Qwen3TTSVoiceClone",
+    "_meta": {
+      "title": "🎭 Qwen3-TTS VoiceClone"
+    }
+  },
+  "8": {
+    "inputs": {
+      "filename_prefix": "audio/ComfyUI",
+      "quality": "V0",
+      "audioUI": "",
+      "audio": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "Save Audio (MP3)"
+    }
+  }
+}

@@ -2,15 +2,17 @@
 """
 Template 1: Static Audio - Generation Module
 
-Generates images and media using ComfyUI based on prompts from Phase 4.
+Generates images and media using ComfyUI based on prompts from Phase 2.
 
-Step 1: Generate Audio (VibeVoice TTS for each sentence)
+Step 1: Generate Audio (Qwen TTS Voice Clone - full scenes with sequential naming)
+        Order: book title → chapter 1 title → ch1 scenes → chapter 2 title → ch2 scenes → ...
+        Naming: 001_title, 002_ch01_title, 003_ch01_sc01, 004_ch01_sc02, ...
 Step 2: Generate Static Images (characters, locations, posters)
-Step 3: Generate Scene Images (scene-specific images with characters in location)
+Step 3: Generate Scene Images (one image per scene within chapters)
 Step 4: Generate Videos (COMMENTED OUT)
 
 Usage (standalone):
-    uv run python -m src.templates.template_1_static_audio.generation forge/20260113195058/codex.json
+    uv run python -m src.templates.template_1_static_audio.generation forge/xxx/codex.json
 """
 
 import sys
@@ -274,6 +276,102 @@ def generate_audio(
         return False, gen_data
 
 
+def generate_audio_qwen(
+    text: str,
+    filename_prefix: str,
+    label: str,
+    comfyui_url: str,
+    audio_workflow: dict,
+    voice_sample_path: str = "toireland_shelley_cf_128kb.mp3",
+    timeout: int = AUDIO_GENERATION_TIMEOUT,
+) -> tuple[bool | None, dict]:
+    """
+    Generate audio using Qwen TTS voice clone workflow.
+    Can handle entire scenes in one go (not sentence-by-sentence).
+
+    Args:
+        text: The text to convert to speech (can be full scene prose)
+        filename_prefix: Output path prefix for SaveAudioMP3 node
+        label: Human-readable label for logging
+        comfyui_url: ComfyUI API URL
+        audio_workflow: Loaded Qwen TTS workflow dict
+        voice_sample_path: Path to reference voice audio file
+        timeout: Timeout in seconds (default from config)
+
+    Returns:
+        (success, generation_data) where:
+        - success=True: Generation completed
+        - success=False: Generation failed (non-fatal)
+        - success=None: Connection error (fatal)
+    """
+    import copy
+    import os
+    import tempfile
+
+    workflow = copy.deepcopy(audio_workflow)
+
+    # Update Qwen TTS workflow nodes
+    workflow["6"]["inputs"]["audio"] = voice_sample_path  # Reference voice
+    workflow["7"]["inputs"]["target_text"] = text          # Text to synthesize
+    workflow["8"]["inputs"]["filename_prefix"] = filename_prefix  # Output path
+
+    gen_data = {
+        "prompt_id": None,
+        "status": "pending",
+        "execution_time": None,
+        "output_path": None,
+        "generated_at": datetime.now().isoformat(),
+        "error": None,
+        "text_length": len(text),
+    }
+
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+            json.dump(workflow, f, indent=2)
+            temp_workflow_path = f.name
+
+        try:
+            result = trigger_comfy(
+                workflow_json_path=temp_workflow_path,
+                replacements={},
+                comfyui_url=comfyui_url,
+                timeout=timeout,
+            )
+        finally:
+            os.unlink(temp_workflow_path)
+
+        if result.get("status") == "completed":
+            gen_data["prompt_id"] = result.get("prompt_id")
+            gen_data["status"] = "completed"
+            gen_data["execution_time"] = result.get("execution_time")
+            gen_data["output_path"] = f"{filename_prefix}_00001_.mp3"
+            print(f"        Completed in {result.get('execution_time', 0):.1f}s")
+            return True, gen_data
+        else:
+            gen_data["status"] = "failed"
+            gen_data["error"] = result.get("error", "Unknown error")
+            print(f"        FAILED: {gen_data['error']}")
+            return False, gen_data
+
+    except ConnectionError as e:
+        gen_data["status"] = "connection_error"
+        gen_data["error"] = str(e)
+        print(f"        Connection error: {e}")
+        return None, gen_data
+
+    except TimeoutError as e:
+        gen_data["status"] = "timeout"
+        gen_data["error"] = str(e)
+        print(f"        Timeout: {e}")
+        return False, gen_data
+
+    except Exception as e:
+        gen_data["status"] = "failed"
+        gen_data["error"] = str(e)
+        print(f"        ERROR: {e}")
+        return False, gen_data
+
+
 def run_template1_generation(
     codex_path: Path,
     comfyui_url: str = None,
@@ -284,13 +382,14 @@ def run_template1_generation(
     """
     Generate images and media using ComfyUI for Template 1 (Static Audio).
 
-    Step 1: Generate Audio (VibeVoice TTS for each sentence)
+    Step 1: Generate Audio (Qwen TTS Voice Clone - full scenes)
+            Generates: book title → chapter titles → scene prose (sequential naming)
     Step 2: Generate Static Images (characters, locations, posters)
-    Step 3: Generate Scene Images (scene-specific images with characters in location)
+    Step 3: Generate Scene Images (one per scene)
     Step 4: Generate Videos (COMMENTED OUT)
 
     Args:
-        codex_path: Path to codex.json (must have prompts from Phase 4)
+        codex_path: Path to codex.json (must have prompts from Phase 2)
         comfyui_url: ComfyUI API URL (default: from config)
         workflow_path: Path to ComfyUI workflow JSON (default: from config)
         steps: List of step numbers to run (default: [1, 2, 3])
@@ -329,11 +428,11 @@ def run_template1_generation(
     print(f">>> Timeout: {timeout}s")
     print(f">>> Running steps: {steps_to_run}")
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase5_metadata = {
+    phase3_metadata = {
         "comfyui_url": comfyui_url,
         "workflow_used": Path(workflow_path).name if workflow_path else None,
         "steps_executed": [],
@@ -353,120 +452,147 @@ def run_template1_generation(
     audio_count = 0
 
     # =========================================================================
-    # Step 1: Generate Audio (VibeVoice TTS for each sentence)
+    # Step 1: Generate Audio (Qwen TTS - full scenes with sequential naming)
     # =========================================================================
     if 1 in steps_to_run:
         step_start = time.time()
         print(f"\n{'='*60}")
-        print("STEP 1: Generate Audio (VibeVoice TTS)")
+        print("STEP 1: Generate Audio (Qwen TTS Voice Clone)")
         print(f"{'='*60}")
 
-        # Load audio workflow
-        try:
-            audio_workflow_path = get_workflow_path("audio")
-        except ValueError as e:
-            print(f">>> ERROR: {e}")
-            audio_workflow_path = None
+        # Load Qwen TTS workflow
+        audio_workflow_path = Path(__file__).parent.parent.parent.parent / "workflows" / "Qwen_tts_voice_clone.json"
 
-        if not audio_workflow_path:
-            pass  # Error already printed
-        elif not audio_workflow_path.exists():
-            print(f">>> ERROR: Audio workflow not found at {audio_workflow_path}")
+        if not audio_workflow_path.exists():
+            print(f">>> ERROR: Qwen TTS workflow not found at {audio_workflow_path}")
         else:
             with open(audio_workflow_path, "r", encoding="utf-8") as f:
                 audio_workflow = json.load(f)
 
-            # Count total sentences across all scenes
             narrative = codex.get("story", {}).get("narrative", {})
-            total_sentences = 0
-            for act in narrative.get("acts", []):
-                for scene in act.get("scenes", []):
-                    total_sentences += len(scene.get("sentences", []))
 
-            if total_sentences == 0:
-                print(">>> No sentences found in narrative, skipping")
-                print(">>> (Ensure Phase 3 narrative has 'sentences' arrays)")
+            # Build ordered list of audio items: title, chapter titles, scenes
+            audio_items = []
+
+            # 1. Book title
+            book_title = narrative.get("title", "Untitled")
+            if book_title:
+                audio_items.append({
+                    "type": "title",
+                    "text": book_title,
+                    "label": "Book Title",
+                })
+
+            # 2. Chapters and scenes
+            chapters = narrative.get("chapters", [])
+            for ch_idx, chapter in enumerate(chapters):
+                ch_num = chapter.get("chapter_number", ch_idx + 1)
+                ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
+
+                # Chapter title audio (ch_title already has "Chapter X - Title" format)
+                audio_items.append({
+                    "type": "chapter_title",
+                    "chapter_number": ch_num,
+                    "text": ch_title,
+                    "label": f"Ch{ch_num} Title",
+                })
+
+                # Scene prose (entire scene in one audio)
+                for sc_idx, scene in enumerate(chapter.get("scenes", [])):
+                    sc_num = scene.get("scene_number", sc_idx + 1)
+                    prose = scene.get("prose", "")
+
+                    if prose:
+                        audio_items.append({
+                            "type": "scene",
+                            "chapter_number": ch_num,
+                            "scene_number": sc_num,
+                            "text": prose,
+                            "label": f"Ch{ch_num} Sc{sc_num}",
+                        })
+
+            if not audio_items:
+                print(">>> No audio items found (no narrative title/chapters/scenes)")
             else:
-                print(f">>> Generating audio for {total_sentences} sentences...")
-                print(f">>> Timeout: {AUDIO_GENERATION_TIMEOUT}s ({AUDIO_GENERATION_TIMEOUT // 60} minutes) per sentence")
+                print(f">>> Total audio items to generate: {len(audio_items)}")
+                print(f"    - 1 book title")
+                print(f"    - {len(chapters)} chapter titles")
+                print(f"    - {len([i for i in audio_items if i['type'] == 'scene'])} scenes")
+                print(f">>> Timeout: {AUDIO_GENERATION_TIMEOUT}s ({AUDIO_GENERATION_TIMEOUT // 60} minutes) per item")
 
-                sentence_global_idx = 0
+                # Initialize audio generation tracking in narrative
+                # Reset audio generation tracking (clear old items from previous runs)
+                narrative["audio_generation"] = {"items": [], "total_generated": 0}
+
                 audio_generated_count = 0
 
-                for act_idx, act in enumerate(narrative.get("acts", [])):
-                    act_num = act.get("act_number", act_idx + 1)
-                    act_name = act.get("act_name", f"Act {act_num}")
+                # Generate audio with sequential numbering
+                for idx, item in enumerate(audio_items):
+                    seq_num = idx + 1
 
-                    print(f"\n>>> Act {act_num}: {act_name}")
+                    # Build filename based on type
+                    if item["type"] == "title":
+                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_title"
+                    elif item["type"] == "chapter_title":
+                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_ch{item['chapter_number']:02d}_title"
+                    else:  # scene
+                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_ch{item['chapter_number']:02d}_sc{item['scene_number']:02d}"
 
-                    for scene_idx, scene in enumerate(act.get("scenes", [])):
-                        scene_num = scene.get("scene_number", scene_idx + 1)
-                        scene_location = scene.get("location", "unknown")
-                        sentences = scene.get("sentences", [])
+                    # Display progress
+                    display_text = item["text"][:60] + "..." if len(item["text"]) > 60 else item["text"]
+                    print(f"\n    [{seq_num}/{len(audio_items)}] {item['label']}")
+                    print(f"        \"{display_text}\"")
 
-                        if not sentences:
-                            continue
+                    success, gen_data = generate_audio_qwen(
+                        text=item["text"],
+                        filename_prefix=filename_prefix,
+                        label=item["label"],
+                        comfyui_url=comfyui_url,
+                        audio_workflow=audio_workflow,
+                        timeout=AUDIO_GENERATION_TIMEOUT,
+                    )
 
-                        print(f"    Scene {scene_num} ({scene_location}): {len(sentences)} sentences")
+                    # Store generation data
+                    gen_data["sequence"] = seq_num
+                    gen_data["type"] = item["type"]
+                    if item["type"] == "chapter_title" or item["type"] == "scene":
+                        gen_data["chapter_number"] = item["chapter_number"]
+                    if item["type"] == "scene":
+                        gen_data["scene_number"] = item["scene_number"]
 
-                        # Initialize audio_generation array for this scene
-                        if "audio_generation" not in scene:
-                            scene["audio_generation"] = []
+                    narrative["audio_generation"]["items"].append(gen_data)
 
-                        for sent_idx, sentence in enumerate(sentences):
-                            sentence_num = sent_idx + 1
-                            sentence_global_idx += 1
-
-                            # Output path for audio
-                            filename_prefix = f"api/{timestamp}/audio/act{act_num}/scene{scene_num}/sentence{sentence_num:04d}"
-
-                            # Truncate display of long sentences
-                            display_text = sentence[:50] + "..." if len(sentence) > 50 else sentence
-                            print(f"      [{sentence_global_idx}/{total_sentences}] \"{display_text}\"")
-
-                            success, gen_data = generate_audio(
-                                sentence_text=sentence,
-                                filename_prefix=filename_prefix,
-                                label=f"act{act_num}_scene{scene_num}_sent{sentence_num}",
-                                comfyui_url=comfyui_url,
-                                audio_workflow=audio_workflow,
-                                timeout=AUDIO_GENERATION_TIMEOUT,
-                            )
-
-                            # Store generation data
-                            gen_data["sentence_index"] = sent_idx
-                            gen_data["sentence_text"] = sentence
-                            scene["audio_generation"].append(gen_data)
-
-                            if success is None:
-                                # Fatal connection error - save and exit
-                                print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                                save_codex(codex, codex_path)
-                                return GenerationResult(
-                                    codex_path=codex_path,
-                                    poster_count=poster_count,
-                                    character_portrait_count=character_portrait_count,
-                                    location_image_count=location_image_count,
-                                    scene_image_count=scene_image_count,
-                                    shot_frame_count=shot_frame_count,
-                                    video_count=video_count,
-                                    audio_count=audio_generated_count,
-                                    success=False,
-                                    error=f"Cannot connect to ComfyUI: {gen_data['error']}",
-                                )
-                            elif success:
-                                audio_generated_count += 1
-
-                        # Save codex after each scene to preserve progress
+                    if success is None:
+                        # Fatal connection error - save and exit
+                        print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                        narrative["audio_generation"]["total_generated"] = audio_generated_count
                         save_codex(codex, codex_path)
+                        return GenerationResult(
+                            codex_path=codex_path,
+                            poster_count=poster_count,
+                            character_portrait_count=character_portrait_count,
+                            location_image_count=location_image_count,
+                            scene_image_count=scene_image_count,
+                            shot_frame_count=shot_frame_count,
+                            video_count=video_count,
+                            audio_count=audio_generated_count,
+                            success=False,
+                            error=f"Cannot connect to ComfyUI: {gen_data['error']}",
+                        )
+                    elif success:
+                        audio_generated_count += 1
+
+                    # Save codex after each item to preserve progress
+                    narrative["audio_generation"]["total_generated"] = audio_generated_count
+                    save_codex(codex, codex_path)
 
                 audio_count = audio_generated_count
-                phase5_metadata["steps_executed"].append(1)
-                phase5_metadata["total_audio_generated"] = audio_generated_count
+                phase3_metadata["steps_executed"].append(1)
+                phase3_metadata["total_audio_generated"] = audio_generated_count
                 step_timings["step1_audio"] = round(time.time() - step_start, 2)
 
                 print(f"\n>>> Step 1 complete ({step_timings['step1_audio']:.1f}s):")
-                print(f"    Audio files generated: {audio_generated_count}/{total_sentences}")
+                print(f"    Audio files generated: {audio_generated_count}/{len(audio_items)}")
 
     # =========================================================================
     # Helper function for image generation (used by Steps 2 and 3)
@@ -682,10 +808,10 @@ def run_template1_generation(
             print(f">>> Posters complete: {poster_count}/{len(poster_prompts)}")
 
         # Update metadata
-        phase5_metadata["steps_executed"].append(2)
-        phase5_metadata["total_characters_generated"] = character_portrait_count
-        phase5_metadata["total_locations_generated"] = location_image_count
-        phase5_metadata["total_posters_generated"] = poster_count
+        phase3_metadata["steps_executed"].append(2)
+        phase3_metadata["total_characters_generated"] = character_portrait_count
+        phase3_metadata["total_locations_generated"] = location_image_count
+        phase3_metadata["total_posters_generated"] = poster_count
         step_timings["step2_static_images"] = round(time.time() - step_start, 2)
 
         # Save codex after Step 2 to preserve progress
@@ -697,7 +823,7 @@ def run_template1_generation(
         print(f"    Poster images: {poster_count}")
 
     # =========================================================================
-    # Step 3: Generate Scene Images
+    # Step 3: Generate Scene Images (one image per scene)
     # =========================================================================
     if 3 in steps_to_run:
         step_start = time.time()
@@ -706,34 +832,41 @@ def run_template1_generation(
         print(f"{'='*60}")
 
         narrative = codex.get("story", {}).get("narrative", {})
-        acts = narrative.get("acts", [])
+        chapters = narrative.get("chapters", [])
 
-        total_scenes = sum(len(act.get("scenes", [])) for act in acts)
+        # Count total scenes with prompts
+        total_scenes = 0
+        for ch in chapters:
+            for sc in ch.get("scenes", []):
+                if sc.get("scene_image_prompt", {}).get("prompt"):
+                    total_scenes += 1
+
         if total_scenes == 0:
-            print(">>> No scenes found, skipping")
+            print(">>> No scene image prompts found, skipping")
+            print(">>> (Ensure Phase 2 has generated scene_image_prompt for each scene)")
         else:
             print(f">>> Generating {total_scenes} scene images...")
 
             scene_global_idx = 0
-            for act_idx, act in enumerate(acts):
-                act_num = act.get("act_number", act_idx + 1)
+            for ch_idx, chapter in enumerate(chapters):
+                ch_num = chapter.get("chapter_number", ch_idx + 1)
 
-                for scene_idx, scene in enumerate(act.get("scenes", [])):
-                    scene_num = scene.get("scene_number", scene_idx + 1)
-                    scene_global_idx += 1
+                for sc_idx, scene in enumerate(chapter.get("scenes", [])):
+                    sc_num = scene.get("scene_number", sc_idx + 1)
 
                     scene_prompt_data = scene.get("scene_image_prompt", {})
                     prompt_text = scene_prompt_data.get("prompt", "")
 
                     if not prompt_text:
-                        print(f"    [{scene_global_idx}/{total_scenes}] Act {act_num} Scene {scene_num} - No prompt, skipping")
+                        print(f"    [Ch{ch_num} Sc{sc_num}] No prompt, skipping")
                         continue
 
+                    scene_global_idx += 1
                     location_name = scene_prompt_data.get("location_name", "unknown")
-                    filename_prefix = f"api/{timestamp}/scenes/act{act_num}_scene{scene_num}"
-                    print(f"    [{scene_global_idx}/{total_scenes}] Act {act_num} Scene {scene_num} - {location_name}")
+                    filename_prefix = f"api/{timestamp}/scenes/ch{ch_num:02d}_sc{sc_num:02d}"
+                    print(f"    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {location_name}")
 
-                    success, gen_data = generate_image(prompt_text, filename_prefix, f"act{act_num}_scene{scene_num}")
+                    success, gen_data = generate_image(prompt_text, filename_prefix, f"ch{ch_num}_sc{sc_num}")
 
                     scene_prompt_data["generation"] = gen_data
 
@@ -759,8 +892,8 @@ def run_template1_generation(
             print(f">>> Scene images complete: {scene_image_count}/{total_scenes}")
 
         # Update metadata for Step 3
-        phase5_metadata["steps_executed"].append(3)
-        phase5_metadata["total_scene_images_generated"] = scene_image_count
+        phase3_metadata["steps_executed"].append(3)
+        phase3_metadata["total_scene_images_generated"] = scene_image_count
         step_timings["step3_scene_images"] = round(time.time() - step_start, 2)
 
         # Save codex after Step 3
@@ -774,7 +907,7 @@ def run_template1_generation(
         print(f"\n>>> Step 4 (Videos) is currently disabled")
 
     # Save metadata and codex
-    codex["story_metadata"]["phase5_generation"] = phase5_metadata
+    codex["metadata"]["phase_3"] = phase3_metadata
     save_codex(codex, codex_path)
 
     print(f"\n>>> Template 1 Generation complete!")
@@ -809,7 +942,7 @@ def main():
     parser.add_argument(
         "codex_path",
         type=Path,
-        help="Path to codex.json (must have prompts from Phase 4)"
+        help="Path to codex.json (must have prompts from Phase 2)"
     )
     parser.add_argument(
         "--comfyui-url",

@@ -94,7 +94,9 @@ class BaseStoryAgent(ABC):
         Returns:
             Parsed Pydantic model instance
         """
-        structured_llm = self.llm.with_structured_output(schema)
+        # Use function_calling method to avoid strict JSON schema requirements
+        # (OpenAI's strict mode requires additionalProperties: false at every level)
+        structured_llm = self.llm.with_structured_output(schema, method="function_calling")
         # Bind max_tokens to prevent hitting completion token limits
         limited_llm = structured_llm.bind(max_tokens=max_tokens)
         messages = [

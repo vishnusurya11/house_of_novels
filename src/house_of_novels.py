@@ -5,6 +5,14 @@ House of Novels - Complete Novel Generation Pipeline
 Main orchestrator that runs all phases in sequence to generate a complete novel.
 Can be imported as a module or run via CLI.
 
+Phases:
+    0. codex      - Story seed generation + author selection
+    1. author     - 10-step author-driven creation (plotting, characters, narrative, revision)
+    2. prompts    - Image/video prompts (character, location, scene, poster, thumbnail)
+    3. generation - Media generation (audio + images via ComfyUI)
+    4. editing    - Video editing (combine audio, create videos)
+    5. upload     - YouTube upload
+
 Usage (as module):
     from src.house_of_novels import generate_novel
 
@@ -15,7 +23,7 @@ Usage (as module):
     result_path = generate_novel(
         scope="flash",
         model="x-ai/grok-4.1-fast",
-        phases=["codex", "outline", "characters"],  # Partial run
+        phases=["codex", "author", "prompts"],  # Partial run
     )
 
 Usage (CLI):
@@ -26,10 +34,10 @@ Usage (CLI):
     uv run python -m src.house_of_novels --scope flash
 
     # Specific phases only
-    uv run python -m src.house_of_novels --phases codex outline characters
+    uv run python -m src.house_of_novels --phases codex author prompts
 
     # Resume from existing codex
-    uv run python -m src.house_of_novels --codex forge/20260105143022/codex.json --phases narrative images
+    uv run python -m src.house_of_novels --codex forge/20260105143022/codex.json --phases prompts generation
 """
 
 import sys
@@ -50,18 +58,15 @@ from src.config import (
     DEFAULT_STORY_SCOPE,
     PHASE_NAMES,
     DEFAULT_FORGE_DIR,
-    should_run_step,
 )
 from src.phases.phase0_codex import run_phase0_codex
-from src.phases.phase1_outline import run_phase1_outline
-from src.phases.phase2_characters import run_phase2_characters
-from src.phases.phase3_narrative import run_phase3_narrative
-from src.phases.phase3b_storyboard import run_phase3b_storyboard
-from src.phases.phase4_prompts import run_phase4_prompts
-from src.phases.phase5_generation import run_phase5_generation
-from src.phases.phase6_editing import run_phase6_editing
-from src.phases.phase7_youtube import run_phase7_youtube
+from src.phases.phase1_author import run_phase1_author
+from src.phases.phase2_prompts import run_phase2_prompts
+from src.phases.phase3_generation import run_phase3_generation
+from src.phases.phase4_editing import run_phase4_editing
+from src.phases.phase5_upload import run_phase5_upload
 from src.templates import get_template, set_template, TEMPLATES, DEFAULT_TEMPLATE
+from src.authors import list_authors
 
 
 @dataclass
@@ -85,6 +90,8 @@ def generate_novel(
     phases: list[str] = None,
     codex_path: str = None,
     template: str = DEFAULT_TEMPLATE,
+    author_id: str = None,
+    structure_id: str = None,
 ) -> Path:
     """
     Generate a complete novel end-to-end.
@@ -94,9 +101,11 @@ def generate_novel(
         model: LLM model to use (defaults to config.DEFAULT_MODEL)
         output_dir: Base output directory (default: "forge")
         phases: List of phases to run. None = all phases.
-                Options: ["codex", "outline", "characters", "narrative", "storyboard", "prompts"]
+                Options: ["codex", "author", "prompts", "generation", "editing", "upload"]
         codex_path: Path to existing codex (skip phase 0, resume from this file)
         template: Template for media generation (default: "static_audio")
+        author_id: Specific author ID to use (default: random selection)
+        structure_id: Specific story structure to use (default: author's preferred)
 
     Returns:
         Path to the generated forge folder (e.g., forge/20260105143022/)
@@ -156,7 +165,14 @@ def generate_novel(
         print("PHASE 0: CODEX GENERATION")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase0_codex(forge_path, model=model, scope=scope, timestamp=timestamp)
+        result = run_phase0_codex(
+            forge_path,
+            model=model,
+            scope=scope,
+            timestamp=timestamp,
+            author_id=author_id,
+            structure_id=structure_id,
+        )
         phase_timings["codex"] = {"duration_seconds": round(time.time() - phase_start, 2)}
         codex_path = result.codex_path
         completed_phases.append("codex")
@@ -164,80 +180,39 @@ def generate_novel(
         print(f">>> Setting prompt: {result.setting_prompt[:60]}...")
         print(f">>> Phase 0 completed in {phase_timings['codex']['duration_seconds']:.1f}s")
 
-    # Phase 1: Story Outline
-    if "outline" in phases:
+    # Phase 1: Author (10-step author-driven story creation)
+    if "author" in phases:
         print("\n" + "=" * 60)
-        print("PHASE 1: STORY OUTLINE")
+        print("PHASE 1: AUTHOR (10-Step Story Creation)")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase1_outline(codex_path, model=model, scope=scope)
-        phase_timings["outline"] = {
+        result = run_phase1_author(codex_path, model=model)
+        phase_timings["author"] = {
             "duration_seconds": round(time.time() - phase_start, 2),
             "steps": getattr(result, "step_timings", {})
         }
-        completed_phases.append("outline")
-        title = result.outline.get("title", "Untitled")
+        completed_phases.append("author")
+        # Load codex to get title and counts
+        with open(codex_path, "r", encoding="utf-8") as f:
+            codex_data = json.load(f)
+        narrative = codex_data.get("story", {}).get("narrative", {})
+        title = narrative.get("title", "Untitled")
+        total_characters = len(codex_data.get("story", {}).get("characters", []))
+        total_locations = len(codex_data.get("story", {}).get("locations", []))
+        total_scenes = sum(len(ch.get("scenes", [])) for ch in narrative.get("chapters", []))
         print(f"\n>>> Title: {title}")
-        print(f">>> Logline: {result.outline.get('logline', 'N/A')[:80]}...")
-        print(f">>> Phase 1 completed in {phase_timings['outline']['duration_seconds']:.1f}s")
-
-    # Phase 2: Characters & Locations
-    if "characters" in phases:
-        print("\n" + "=" * 60)
-        print("PHASE 2: CHARACTERS & LOCATIONS")
-        print("=" * 60)
-        phase_start = time.time()
-        result = run_phase2_characters(codex_path, model=model, scope=scope)
-        phase_timings["characters"] = {
-            "duration_seconds": round(time.time() - phase_start, 2),
-            "steps": getattr(result, "step_timings", {})
-        }
-        completed_phases.append("characters")
-        total_characters = len(result.characters)
-        total_locations = len(result.locations)
-        print(f"\n>>> Characters: {total_characters}")
+        print(f">>> Characters: {total_characters}")
         print(f">>> Locations: {total_locations}")
-        print(f">>> Phase 2 completed in {phase_timings['characters']['duration_seconds']:.1f}s")
+        print(f">>> Scenes: {total_scenes}")
+        print(f">>> Phase 1 completed in {phase_timings['author']['duration_seconds']:.1f}s")
 
-    # Phase 3: Narrative Writing
-    if "narrative" in phases:
-        print("\n" + "=" * 60)
-        print("PHASE 3: NARRATIVE WRITING")
-        print("=" * 60)
-        phase_start = time.time()
-        result = run_phase3_narrative(codex_path, model=model)
-        phase_timings["narrative"] = {
-            "duration_seconds": round(time.time() - phase_start, 2),
-            "steps": getattr(result, "step_timings", {})
-        }
-        completed_phases.append("narrative")
-        total_scenes = result.total_scenes
-        print(f"\n>>> Scenes written: {total_scenes}")
-        print(f">>> Phase 3 completed in {phase_timings['narrative']['duration_seconds']:.1f}s")
-
-    # Phase 3b: Storyboard Generation
-    if "storyboard" in phases:
-        print("\n" + "=" * 60)
-        print("PHASE 3b: STORYBOARD GENERATION")
-        print("=" * 60)
-        phase_start = time.time()
-        result = run_phase3b_storyboard(codex_path, model=model)
-        phase_timings["storyboard"] = {
-            "duration_seconds": round(time.time() - phase_start, 2),
-            "steps": getattr(result, "step_timings", {})
-        }
-        completed_phases.append("storyboard")
-        print(f"\n>>> Shots generated: {result.total_shots_generated}")
-        print(f">>> Total duration: {result.total_duration_seconds}s")
-        print(f">>> Phase 3b completed in {phase_timings['storyboard']['duration_seconds']:.1f}s")
-
-    # Phase 4: Prompts (Character, Location, Scene, Video)
+    # Phase 2: Prompts (Character, Location, Scene, Poster, Thumbnail)
     if "prompts" in phases:
         print("\n" + "=" * 60)
-        print("PHASE 4: PROMPT GENERATION")
+        print("PHASE 2: PROMPT GENERATION")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase4_prompts(codex_path, model=model)
+        result = run_phase2_prompts(codex_path, model=model)
         phase_timings["prompts"] = {
             "duration_seconds": round(time.time() - phase_start, 2),
             "steps": getattr(result, "step_timings", {})
@@ -247,16 +222,15 @@ def generate_novel(
         print(f">>> Location prompts: {result.location_prompt_count}")
         print(f">>> Poster prompts: {result.poster_prompt_count}")
         print(f">>> Scene image prompts: {result.scene_image_prompt_count}")
-        print(f">>> Phase 4 completed in {phase_timings['prompts']['duration_seconds']:.1f}s")
+        print(f">>> Phase 2 completed in {phase_timings['prompts']['duration_seconds']:.1f}s")
 
-    # Phase 5: Generation (ComfyUI audio/images)
-    # Run Steps 1 (audio TTS), 2 (static images), 3 (scene images)
+    # Phase 3: Generation (ComfyUI audio/images)
     if "generation" in phases:
         print("\n" + "=" * 60)
-        print("PHASE 5: MEDIA GENERATION")
+        print("PHASE 3: MEDIA GENERATION")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase5_generation(codex_path, steps=[1, 2, 3])
+        result = run_phase3_generation(codex_path, steps=[1, 2, 3])
         phase_timings["generation"] = {
             "duration_seconds": round(time.time() - phase_start, 2),
             "steps": getattr(result, "step_timings", {})
@@ -267,41 +241,37 @@ def generate_novel(
         print(f">>> Location images: {result.location_image_count}")
         print(f">>> Poster images: {result.poster_count}")
         print(f">>> Scene images: {result.scene_image_count}")
-        print(f">>> Phase 5 completed in {phase_timings['generation']['duration_seconds']:.1f}s")
+        print(f">>> Phase 3 completed in {phase_timings['generation']['duration_seconds']:.1f}s")
 
-    # Phase 6: Editing (combine audio hierarchically)
-    # Steps: 1=sentence->scene, 2=scene videos, 3=final video
+    # Phase 4: Editing (combine audio, create videos)
     if "editing" in phases:
-        if should_run_step(4):
-            print("\n" + "=" * 60)
-            print("PHASE 6: AUDIO/VIDEO EDITING")
-            print("=" * 60)
-            phase_start = time.time()
-            result = run_phase6_editing(codex_path, steps=[1, 2, 3])
-            phase_timings["editing"] = {
-                "duration_seconds": round(time.time() - phase_start, 2),
-                "steps": getattr(result, "step_timings", {})
-            }
-            completed_phases.append("editing")
-            if result.success:
-                print(f"\n>>> Scene audio files: {result.scene_audio_count}")
-                print(f">>> Scene videos: {result.scene_video_count}")
-                if result.video_output_path:
-                    print(f">>> Final video: {result.video_output_path}")
-                    print(f">>> Total duration: {result.video_duration:.1f}s")
-                print(f">>> Phase 6 completed in {phase_timings['editing']['duration_seconds']:.1f}s")
-            else:
-                print(f"\n>>> Editing failed: {result.error}")
-        else:
-            print("\n>>> Phase 6 (editing) skipped by GENERATION_STEPS config")
-
-    # Phase 7: YouTube Upload
-    if "upload" in phases:
         print("\n" + "=" * 60)
-        print("PHASE 7: YOUTUBE UPLOAD")
+        print("PHASE 4: AUDIO/VIDEO EDITING")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase7_youtube(codex_path)
+        result = run_phase4_editing(codex_path, steps=[1, 2, 3])
+        phase_timings["editing"] = {
+            "duration_seconds": round(time.time() - phase_start, 2),
+            "steps": getattr(result, "step_timings", {})
+        }
+        completed_phases.append("editing")
+        if result.success:
+            print(f"\n>>> Scene audio files: {result.scene_audio_count}")
+            print(f">>> Scene videos: {result.scene_video_count}")
+            if result.video_output_path:
+                print(f">>> Final video: {result.video_output_path}")
+                print(f">>> Total duration: {result.video_duration:.1f}s")
+            print(f">>> Phase 4 completed in {phase_timings['editing']['duration_seconds']:.1f}s")
+        else:
+            print(f"\n>>> Editing failed: {result.error}")
+
+    # Phase 5: YouTube Upload
+    if "upload" in phases:
+        print("\n" + "=" * 60)
+        print("PHASE 5: YOUTUBE UPLOAD")
+        print("=" * 60)
+        phase_start = time.time()
+        result = run_phase5_upload(codex_path)
         phase_timings["upload"] = {
             "duration_seconds": round(time.time() - phase_start, 2),
             "steps": getattr(result, "step_timings", {})
@@ -310,7 +280,7 @@ def generate_novel(
         if result.success:
             print(f"\n>>> Video URL: {result.video_url}")
             print(f">>> Title: {result.title}")
-            print(f">>> Phase 7 completed in {phase_timings['upload']['duration_seconds']:.1f}s")
+            print(f">>> Phase 5 completed in {phase_timings['upload']['duration_seconds']:.1f}s")
         else:
             print(f"\n>>> Upload failed: {result.error}")
 
@@ -379,11 +349,11 @@ Examples:
   # Quick flash fiction
   uv run python -m src.house_of_novels --scope flash
 
-  # Only generate codex and outline
-  uv run python -m src.house_of_novels --phases codex outline
+  # Only generate codex and author phases
+  uv run python -m src.house_of_novels --phases codex author
 
-  # Resume from existing codex (add narrative and images)
-  uv run python -m src.house_of_novels --codex forge/20260105143022/codex.json --phases narrative images
+  # Resume from existing codex (add prompts and media)
+  uv run python -m src.house_of_novels --codex forge/20260105143022/codex.json --phases prompts generation
 
   # Use specific model
   uv run python -m src.house_of_novels --model "x-ai/grok-4.1-fast"
@@ -427,8 +397,32 @@ Examples:
         default=DEFAULT_TEMPLATE,
         help=f"Output template for media generation (default: {DEFAULT_TEMPLATE})"
     )
+    parser.add_argument(
+        "--author",
+        default=None,
+        help="Author ID to use (default: random selection)"
+    )
+    parser.add_argument(
+        "--structure",
+        default=None,
+        help="Story structure to use (default: author's preferred)"
+    )
+    parser.add_argument(
+        "--list-authors",
+        action="store_true",
+        help="List available authors and exit"
+    )
 
     args = parser.parse_args()
+
+    # Handle --list-authors
+    if args.list_authors:
+        print("\nAvailable Authors:")
+        for author_info in list_authors():
+            print(f"  {author_info['id']}: {author_info['name']} - {author_info['specialty']}")
+            print(f"      Genres: {', '.join(author_info['genres'])}")
+            print(f"      Preferred structure: {author_info['preferred_structure']}")
+        sys.exit(0)
 
     try:
         forge_path = generate_novel(
@@ -438,6 +432,8 @@ Examples:
             phases=args.phases,
             codex_path=args.codex,
             template=args.template,
+            author_id=args.author,
+            structure_id=args.structure,
         )
         print(f"\nNovel generated at: {forge_path}")
     except Exception as e:

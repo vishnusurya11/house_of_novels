@@ -1,5 +1,5 @@
 """
-Phase 6: Audio & Video Editing
+Phase 4: Audio & Video Editing
 
 This is a thin wrapper that delegates to the active template's editing phase.
 The actual implementation is in src/templates/template_1_static_audio/editing.py.
@@ -7,6 +7,9 @@ The actual implementation is in src/templates/template_1_static_audio/editing.py
 - Step 1: Combine sentence audio → scene audio
 - Step 2: Generate scene videos (scene image + scene audio)
 - Step 3: Concatenate scene videos → final video
+
+Usage (standalone):
+    uv run python -m src.phases.phase4_editing forge/xxx/codex.json
 """
 
 import sys
@@ -20,8 +23,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 @dataclass
-class Phase6EditingResult:
-    """Result of Phase 6 audio/video editing (backward compatible)."""
+class Phase4EditingResult:
+    """Result of Phase 4 audio/video editing (backward compatible)."""
     codex_path: Path
     # Audio outputs
     scene_audio_count: int
@@ -35,13 +38,13 @@ class Phase6EditingResult:
     step_timings: dict = field(default_factory=dict)
 
 
-def run_phase6_editing(
+def run_phase4_editing(
     codex_path: Path,
     steps: list[int] = None,
     comfyui_output_dir: str = None,
-) -> Phase6EditingResult:
+) -> Phase4EditingResult:
     """
-    Run Phase 6: Audio & Video Editing using the active template.
+    Run Phase 4: Audio & Video Editing using the active template.
 
     This function delegates to the template's run_editing() method.
     By default, uses template_1 (static_audio).
@@ -57,7 +60,7 @@ def run_phase6_editing(
         comfyui_output_dir: ComfyUI output directory (default: from config)
 
     Returns:
-        Phase6EditingResult with success status and output paths
+        Phase4EditingResult with success status and output paths
     """
     from src.templates import get_template
 
@@ -69,8 +72,8 @@ def run_phase6_editing(
         comfyui_output_dir=comfyui_output_dir,
     )
 
-    # Convert to Phase6EditingResult for backward compatibility
-    return Phase6EditingResult(
+    # Convert to Phase4EditingResult for backward compatibility
+    return Phase4EditingResult(
         codex_path=result.codex_path,
         scene_audio_count=result.scene_audio_count,
         scene_video_count=result.scene_video_count,
@@ -92,7 +95,7 @@ def format_duration(seconds: float) -> str:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="Phase 6: Audio & Video Editing",
+        description="Phase 4: Audio & Video Editing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Steps:
@@ -120,20 +123,20 @@ Examples:
 
     args = parser.parse_args()
 
-    result = run_phase6_editing(
+    result = run_phase4_editing(
         codex_path=Path(args.codex_path),
         steps=args.steps,
     )
 
     if result.success:
-        print(f"\n>>> Phase 6 complete!")
+        print(f"\n>>> Phase 4 complete!")
         print(f"    Scene audio: {result.scene_audio_count}")
         print(f"    Scene videos: {result.scene_video_count}")
         if result.video_output_path:
             print(f"    Final video: {result.video_output_path}")
             print(f"    Duration: {format_duration(result.video_duration)}")
     else:
-        print(f"\n>>> Phase 6 failed: {result.error}")
+        print(f"\n>>> Phase 4 failed: {result.error}")
         sys.exit(1)
 
 

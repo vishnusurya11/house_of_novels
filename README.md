@@ -97,8 +97,9 @@ uv run python -m src.phases.phase0_codex
 uv run python -m src.phases.phase0_codex --output-dir forge/20260105143022
 
 # Phase 1: Generate story outline (requires codex from Phase 0)
-uv run python -m src.phases.phase1_outline forge\20260116191326\codex_20260116191326.json
-uv run python -m src.phases.phase1_outline forge/20260105143022/codex_20260105143022.json --scope flash
+uv run python -m src.phases.phase1_author forge\20260131132743\codex_20260131132743.json
+
+uv run python -m src.phases.phase1_outline forge/20260105143022/codex_20260105143022.json --steps 1 
 
 # Phase 2: Generate characters & locations (requires Phase 1)
 uv run python -m src.phases.phase2_characters forge\20260116191326\codex_20260116191326.json
@@ -125,24 +126,10 @@ uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_2026010514
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 3    # Posters only
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 4 5  # Shot frames + Video prompts
 
-
-
-
-# phse 5
-uv run python -m src.phases.phase5_generation forge/20260116191326/codex_20260116191326.json
-
-
-uv run python -m src.phases.phase5_generation forge/20260116191326/codex_20260116191326.json --steps 3
-
-
-
-# phase 6
-
-
-
+# Phase 5: Generate images/videos with ComfyUI
+uv run python -m src.phases.phase5_generation forge/xxx/codex.json
+uv run python -m src.phases.phase5_generation forge/xxx/codex.json --steps 3
 ```
-
-
 
 **Re-run any phase**: Just pass the same codex path to regenerate that phase with different options:
 ```bash
@@ -152,6 +139,52 @@ uv run python -m src.phases.phase1_outline forge/20260105143022/codex_2026010514
 # Regenerate specific Phase 4 steps
 uv run python -m src.phases.phase4_prompts forge/20260105143022/codex_20260105143022.json --steps 3  # Re-run poster generation
 ```
+
+### Phase 1 Author: Author-Driven Story Creation (9 Steps)
+
+The new author-driven pipeline consolidates story creation into 9 selective steps:
+
+| Step | Name | Description |
+|------|------|-------------|
+| 1 | Plotting | 7-Point Structure via multi-agent debate |
+| 2 | Characters | Generate characters with name debates |
+| 3 | World Building | Locations + world context + lore |
+| 4 | Chapter Outline | Scene-by-scene outline with ticking clock |
+| 5 | Narrative | Write prose (5-agent debate per scene) |
+| 6 | Revision | 5-critic revision system |
+| 7-9 | Coming Soon | Screenplay, Polish, Finalize |
+
+**Run all steps:**
+```bash
+uv run python -m src.phases.phase1_author forge/xxx/codex.json
+```
+
+**Run specific steps:**
+```bash
+# Step 1 only (Plotting)
+uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1
+
+# Steps 1-3 (Structure + Characters + World)
+uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1 2 3
+
+# Step 5 only (Narrative writing)
+uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 5
+
+# Step 6 only (Revision with 5 critics)
+uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 6
+
+# Full pipeline
+uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1 2 3 4 5 6
+```
+
+**Step 6: 5-Critic Revision System**
+- **ProsePolishCritic**: Filter words, cliches, show-don't-tell
+- **CharacterVoiceCritic**: Dialogue authenticity + differentiation
+- **ContinuityCritic**: Consistency with codex
+- **PacingTensionCritic**: Scene structure + ticking clock
+- **EmotionalResonanceCritic**: Emotional beats + micro-tension
+
+Critiques are saved to `codex["story"]["critiques"]` for reference.
 
 ### Story Scopes
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Phase 5: Image & Media Generation
+Phase 3: Image & Media Generation
 
 This is a thin wrapper that delegates to the active template's generation phase.
 The actual implementation is in src/templates/template_1_static_audio/generation.py.
 
 Usage (standalone):
-    uv run python -m src.phases.phase5_generation forge/20260113195058/codex.json
-    uv run python -m src.phases.phase5_generation codex.json --steps 1 2
-    uv run python -m src.phases.phase5_generation codex.json --comfyui-url http://192.168.1.100:8188
+    uv run python -m src.phases.phase3_generation forge/xxx/codex.json
+    uv run python -m src.phases.phase3_generation codex.json --steps 1 2
+    uv run python -m src.phases.phase3_generation codex.json --comfyui-url http://192.168.1.100:8188
 """
 
 import sys
@@ -24,7 +24,7 @@ from src.config import DEFAULT_COMFYUI_URL, DEFAULT_COMFYUI_TIMEOUT
 
 
 @dataclass
-class Phase5GenerationResult:
+class Phase3GenerationResult:
     """Result of Phase 5 media generation (backward compatible)."""
     codex_path: Path
     poster_count: int
@@ -39,13 +39,13 @@ class Phase5GenerationResult:
     step_timings: dict = field(default_factory=dict)
 
 
-def run_phase5_generation(
+def run_phase3_generation(
     codex_path: Path,
     comfyui_url: str = None,
     workflow_path: str = None,
     steps: list[int] = None,
     timeout: int = None,
-) -> Phase5GenerationResult:
+) -> Phase3GenerationResult:
     """
     Generate images and media using the active template.
 
@@ -65,7 +65,7 @@ def run_phase5_generation(
         timeout: Timeout in seconds for each generation (default: 300)
 
     Returns:
-        Phase5GenerationResult with counts of generated media
+        Phase3GenerationResult with counts of generated media
     """
     from src.templates import get_template
 
@@ -79,8 +79,8 @@ def run_phase5_generation(
         timeout=timeout,
     )
 
-    # Convert to Phase5GenerationResult for backward compatibility
-    return Phase5GenerationResult(
+    # Convert to Phase3GenerationResult for backward compatibility
+    return Phase3GenerationResult(
         codex_path=result.codex_path,
         poster_count=result.poster_count,
         character_portrait_count=result.character_portrait_count,
@@ -134,7 +134,7 @@ def main():
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase5_generation(
+    result = run_phase3_generation(
         args.codex_path,
         comfyui_url=args.comfyui_url,
         workflow_path=args.workflow,

@@ -696,13 +696,15 @@ def run_full_story_pipeline(story_prompt: str, setting_prompt: str,
             "locations": phase2["locations"],
             "narrative": phase3["narrative"],
         },
-        "story_metadata": {
-            "phase1_outline": phase1["metadata"],
-            "phase2_characters": phase2["metadata"],
-            "phase3_narrative": phase3["metadata"],
-            "critique_cycles_per_phase": CRITIQUE_CYCLES,
-            "model_used": model,
-            "scope": scope,
-            "scope_config": scope_config,
+        "metadata": {
+            "phase_1": phase1["metadata"],
+            "phase_1_characters": phase2["metadata"],
+            "phase_2": phase3["metadata"],
+            "workflow_config": {
+                "critique_cycles_per_phase": CRITIQUE_CYCLES,
+                "model_used": model,
+                "scope": scope,
+                "scope_config": scope_config,
+            },
         },
     }

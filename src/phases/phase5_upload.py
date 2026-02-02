@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Phase 7: YouTube Upload
+Phase 5: YouTube Upload
 
 Publishes the generated video to YouTube with AI-generated title and description.
 
@@ -10,8 +10,8 @@ Steps:
     3: Upload video with metadata
 
 Usage (standalone):
-    uv run python -m src.phases.phase7_youtube forge/20260118/codex.json
-    uv run python -m src.phases.phase7_youtube codex.json --privacy unlisted
+    uv run python -m src.phases.phase5_upload forge/xxx/codex.json
+    uv run python -m src.phases.phase5_upload codex.json --privacy unlisted
 """
 
 import sys
@@ -30,8 +30,8 @@ from src.config import DEFAULT_YOUTUBE_PRIVACY, DEFAULT_MODEL, DEFAULT_YOUTUBE_P
 
 
 @dataclass
-class Phase7YouTubeResult:
-    """Result of Phase 7 YouTube upload."""
+class Phase5UploadResult:
+    """Result of Phase 5 YouTube upload."""
     codex_path: Path
     video_id: Optional[str]
     video_url: Optional[str]
@@ -63,14 +63,14 @@ def extract_story_data(codex: dict) -> dict:
     narrative = story.get("narrative", {})
     characters = story.get("characters", [])
 
-    # Get title and logline
-    title = outline.get("title", narrative.get("title", "Untitled Story"))
+    # Get title and logline - prioritize narrative.title (from Step 7 title naming)
+    title = narrative.get("title", outline.get("title", "Untitled Story"))
     logline = outline.get("logline", "An AI-generated story.")
 
-    # Extract scene summaries from narrative
+    # Extract scene summaries from narrative (chapters structure)
     scene_summaries = []
-    for act in narrative.get("acts", []):
-        for scene in act.get("scenes", []):
+    for chapter in narrative.get("chapters", []):
+        for scene in chapter.get("scenes", []):
             summary = scene.get("summary", "")
             if summary:
                 scene_summaries.append(summary)
@@ -127,13 +127,13 @@ def find_final_video(codex_path: Path) -> Optional[Path]:
     return None
 
 
-def run_phase7_youtube(
+def run_phase5_upload(
     codex_path: Path,
     privacy_status: str = None,
     model: str = None,
-) -> Phase7YouTubeResult:
+) -> Phase5UploadResult:
     """
-    Run Phase 7: YouTube Upload.
+    Run Phase 5: YouTube Upload.
 
     Steps:
         1: Generate YouTube metadata (title, description) using AI agent
@@ -146,7 +146,7 @@ def run_phase7_youtube(
         model: LLM model for metadata generation
 
     Returns:
-        Phase7YouTubeResult with upload status and video URL
+        Phase5UploadResult with upload status and video URL
     """
     codex_path = Path(codex_path)
     privacy_status = privacy_status or DEFAULT_YOUTUBE_PRIVACY
@@ -154,7 +154,7 @@ def run_phase7_youtube(
     step_timings = {}
 
     print(f"\n{'='*60}")
-    print("PHASE 7: YOUTUBE UPLOAD")
+    print("PHASE 5: YOUTUBE UPLOAD")
     print(f"{'='*60}")
     print(f">>> Codex: {codex_path}")
     print(f">>> Privacy: {privacy_status}")
@@ -162,12 +162,12 @@ def run_phase7_youtube(
     # Load codex
     codex = load_codex(codex_path)
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase7_metadata = {
-        "phase": 7,
+    phase5_metadata = {
+        "phase": 5,
         "name": "YouTube Upload",
         "steps_executed": [],
     }
@@ -175,7 +175,7 @@ def run_phase7_youtube(
     # Find the final video
     video_path = find_final_video(codex_path)
     if not video_path:
-        return Phase7YouTubeResult(
+        return Phase5UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -184,7 +184,7 @@ def run_phase7_youtube(
             tags=[],
             privacy_status=privacy_status,
             success=False,
-            error="No video file found. Run Phase 6 (editing) first.",
+            error="No video file found. Run Phase 4 (editing) first.",
             step_timings=step_timings,
         )
 
@@ -228,7 +228,7 @@ def run_phase7_youtube(
         tags = ["AI story", "generated story", "AI video", "storytelling"]
 
     step_timings["step1_metadata"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step1_metadata")
+    phase5_metadata["steps_executed"].append("step1_metadata")
 
     # ========================================
     # Step 2: Authenticate with YouTube
@@ -243,7 +243,7 @@ def run_phase7_youtube(
         youtube = get_youtube_service()
         print(">>> YouTube authentication successful")
     except FileNotFoundError as e:
-        return Phase7YouTubeResult(
+        return Phase5UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -256,7 +256,7 @@ def run_phase7_youtube(
             step_timings=step_timings,
         )
     except Exception as e:
-        return Phase7YouTubeResult(
+        return Phase5UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -270,7 +270,7 @@ def run_phase7_youtube(
         )
 
     step_timings["step2_auth"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step2_auth")
+    phase5_metadata["steps_executed"].append("step2_auth")
 
     # ========================================
     # Step 3: Upload video
@@ -293,7 +293,7 @@ def run_phase7_youtube(
         )
 
         if not result.success:
-            return Phase7YouTubeResult(
+            return Phase5UploadResult(
                 codex_path=codex_path,
                 video_id=None,
                 video_url=None,
@@ -310,7 +310,7 @@ def run_phase7_youtube(
         video_url = result.video_url
 
     except Exception as e:
-        return Phase7YouTubeResult(
+        return Phase5UploadResult(
             codex_path=codex_path,
             video_id=None,
             video_url=None,
@@ -324,7 +324,7 @@ def run_phase7_youtube(
         )
 
     step_timings["step3_upload"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step3_upload")
+    phase5_metadata["steps_executed"].append("step3_upload")
 
     # ========================================
     # Step 4: Set Thumbnail (random poster)
@@ -338,14 +338,14 @@ def run_phase7_youtube(
     if thumbnail_path:
         from src.youtube import set_thumbnail
         if set_thumbnail(youtube, video_id, thumbnail_path):
-            phase7_metadata["thumbnail_path"] = str(thumbnail_path)
+            phase5_metadata["thumbnail_path"] = str(thumbnail_path)
         else:
             print(">>> Thumbnail upload failed, continuing without custom thumbnail")
     else:
         print(">>> No poster images found, skipping thumbnail")
 
     step_timings["step4_thumbnail"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step4_thumbnail")
+    phase5_metadata["steps_executed"].append("step4_thumbnail")
 
     # ========================================
     # Step 5: Add to Playlist
@@ -357,28 +357,28 @@ def run_phase7_youtube(
 
     from src.youtube import add_to_playlist
     if add_to_playlist(youtube, video_id, DEFAULT_YOUTUBE_PLAYLIST):
-        phase7_metadata["playlist_id"] = DEFAULT_YOUTUBE_PLAYLIST
+        phase5_metadata["playlist_id"] = DEFAULT_YOUTUBE_PLAYLIST
     else:
         print(">>> Failed to add to playlist, video uploaded but not in playlist")
 
     step_timings["step5_playlist"] = {"duration_seconds": round(time.time() - step_start, 2)}
-    phase7_metadata["steps_executed"].append("step5_playlist")
+    phase5_metadata["steps_executed"].append("step5_playlist")
 
     # Save metadata to codex
-    phase7_metadata["video_id"] = video_id
-    phase7_metadata["video_url"] = video_url
-    phase7_metadata["title"] = title
-    phase7_metadata["description"] = description
-    phase7_metadata["tags"] = tags
-    phase7_metadata["privacy_status"] = privacy_status
+    phase5_metadata["video_id"] = video_id
+    phase5_metadata["video_url"] = video_url
+    phase5_metadata["title"] = title
+    phase5_metadata["description"] = description
+    phase5_metadata["tags"] = tags
+    phase5_metadata["privacy_status"] = privacy_status
 
-    codex["story_metadata"]["phase7_youtube"] = phase7_metadata
+    codex["metadata"]["phase_5"] = phase5_metadata
     save_codex(codex, codex_path)
 
-    print(f"\n>>> Phase 7 complete!")
+    print(f"\n>>> Phase 5 complete!")
     print(f">>> Video URL: {video_url}")
 
-    return Phase7YouTubeResult(
+    return Phase5UploadResult(
         codex_path=codex_path,
         video_id=video_id,
         video_url=video_url,
@@ -394,18 +394,18 @@ def run_phase7_youtube(
 def main():
     """CLI entry point for standalone execution."""
     parser = argparse.ArgumentParser(
-        description="Phase 7: Upload video to YouTube",
+        description="Phase 5: Upload video to YouTube",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Upload video (unlisted by default)
-  uv run python -m src.phases.phase7_youtube forge/20260118/codex.json
+  uv run python -m src.phases.phase5_upload forge/20260118/codex.json
 
   # Upload as private
-  uv run python -m src.phases.phase7_youtube forge/20260118/codex.json --privacy private
+  uv run python -m src.phases.phase5_upload forge/20260118/codex.json --privacy private
 
   # Upload as public (requires API audit approval)
-  uv run python -m src.phases.phase7_youtube forge/20260118/codex.json --privacy public
+  uv run python -m src.phases.phase5_upload forge/20260118/codex.json --privacy public
         """
     )
     parser.add_argument(
@@ -431,7 +431,7 @@ Examples:
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase7_youtube(
+    result = run_phase5_upload(
         codex_path=args.codex_path,
         privacy_status=args.privacy,
         model=args.model,

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Phase 4: Prompt Generation
+Phase 2: Prompt Generation
 
 Creates AI image generation prompts for characters, locations, posters, and thumbnails.
 Step 1: Character Prompts
 Step 2: Location Prompts
 Step 3: Poster/Thumbnail Prompts (Multi-Agent with Jury Voting)
-Step 4: Scene Image Prompts (One representative image per scene)
+Step 4: Scene Image Prompts (One image per scene within chapters)
 Step 5: YouTube Thumbnail Prompts (Agent Council with debate and voting)
 
 Usage (standalone):
-    uv run python -m src.phases.phase4_prompts forge/20260105143022/codex.json
+    uv run python -m src.phases.phase2_prompts forge/xxx/codex.json
 """
 
 import sys
@@ -35,6 +35,7 @@ from src.story_agents.image_prompt_agents import (
     StoryPosterCriticAgent,
 )
 from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt
+from src.story_agents.chapter_image_prompt_agents import generate_chapter_image_prompt
 from src.story_agents.thumbnail_agents import generate_thumbnail_prompts_via_council
 # from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
 # from src.story_agents.video_prompt_agents import generate_video_prompt
@@ -43,13 +44,13 @@ from src.config import DEFAULT_MODEL
 
 
 @dataclass
-class Phase4PromptsResult:
-    """Result of Phase 4 prompt generation."""
+class Phase2PromptsResult:
+    """Result of Phase 5 prompt generation."""
     codex_path: Path
     character_prompt_count: int
     location_prompt_count: int
     poster_prompt_count: int
-    scene_image_prompt_count: int  # Step 4: Scene image prompts
+    scene_image_prompt_count: int  # Step 4: Scene image prompts (one per scene)
     thumbnail_prompt_count: int  # Step 5: YouTube thumbnail prompts (Agent Council)
     success: bool
     error: Optional[str] = None
@@ -70,6 +71,7 @@ def save_codex(codex: dict, codex_path: Path) -> None:
 
 def extract_setting_prompt(codex: dict) -> str:
     """Extract setting_prompt from codex for style consistency."""
+    # deck_of_worlds is at ROOT level
     dow_prompts = codex.get("deck_of_worlds", {}).get("prompts", [])
     return dow_prompts[0].get("prompt", "") if dow_prompts else ""
 
@@ -104,6 +106,8 @@ def detect_genre(codex: dict) -> str:
     Returns:
         Genre string (fantasy, sci-fi, noir, horror, etc.)
     """
+    # deck_of_worlds and story_engine are at ROOT level
+
     # Get setting prompt from deck_of_worlds
     setting = codex.get("deck_of_worlds", {}).get("prompts", [{}])
     if setting:
@@ -137,11 +141,11 @@ def detect_genre(codex: dict) -> str:
         return "fantasy"  # default
 
 
-def run_phase4_prompts(
+def run_phase2_prompts(
     codex_path: Path,
     model: str = None,
     steps: list[int] = None,
-) -> Phase4PromptsResult:
+) -> Phase2PromptsResult:
     """
     Generate image prompts for story elements in codex.
 
@@ -157,7 +161,7 @@ def run_phase4_prompts(
         steps: List of step numbers to run (default: all steps [1,2,3,4,5])
 
     Returns:
-        Phase4PromptsResult with counts of generated prompts
+        Phase2PromptsResult with counts of generated prompts
     """
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
@@ -187,11 +191,11 @@ def run_phase4_prompts(
     print(f"\n>>> Using model: {model}")
     print(f">>> Visual Style: {visual_style['name']}")
 
-    # Initialize metadata storage
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
+    # Initialize metadata storage in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
 
-    phase4_metadata = {
+    phase2_metadata = {
         "model_used": model,
         "character_prompts": [],
         "location_prompts": [],
@@ -232,7 +236,7 @@ def run_phase4_prompts(
                 }
 
                 # Store detailed metadata
-                phase4_metadata["character_prompts"].append({
+                phase2_metadata["character_prompts"].append({
                     "character_name": char_name,
                     "final_prompt": result["prompt"],
                     "revision_count": result["revision_count"],
@@ -246,7 +250,7 @@ def run_phase4_prompts(
 
             except Exception as e:
                 print(f"    ERROR generating prompt: {e}")
-                phase4_metadata["character_prompts"].append({
+                phase2_metadata["character_prompts"].append({
                     "character_name": char_name,
                     "error": str(e),
                 })
@@ -294,7 +298,7 @@ def run_phase4_prompts(
                 }
 
                 # Store detailed metadata
-                phase4_metadata["location_prompts"].append({
+                phase2_metadata["location_prompts"].append({
                     "location_name": loc_name,
                     "final_prompt": result["prompt"],
                     "shot_type": result["shot_type"],
@@ -310,7 +314,7 @@ def run_phase4_prompts(
 
             except Exception as e:
                 print(f"    ERROR generating prompt: {e}")
-                phase4_metadata["location_prompts"].append({
+                phase2_metadata["location_prompts"].append({
                     "location_name": loc_name,
                     "error": str(e),
                 })
@@ -392,7 +396,7 @@ def run_phase4_prompts(
                 print(f"      #{i}: {agent} - {comp} ({score} pts)")
 
             # Store ALL metadata in phase4_metadata (not in outline)
-            phase4_metadata["poster_prompts"] = {
+            phase2_metadata["poster_prompts"] = {
                 "art_style": art_style,
                 "candidates_generated": len(all_prompts),
                 "winners_selected": poster_prompt_count,
@@ -428,7 +432,7 @@ def run_phase4_prompts(
                 poster_prompt_count = 1
                 print(f"    Fallback generated 1 poster prompt")
 
-                phase4_metadata["poster_prompts"] = {
+                phase2_metadata["poster_prompts"] = {
                     "art_style": art_style,
                     "fallback_used": True,
                 }
@@ -436,7 +440,7 @@ def run_phase4_prompts(
             except Exception as fallback_e:
                 print(f"    FALLBACK ERROR: {fallback_e}")
                 outline["poster_prompts"] = []
-                phase4_metadata["poster_prompts"] = {"error": str(fallback_e)}
+                phase2_metadata["poster_prompts"] = {"error": str(fallback_e)}
 
         # Update outline in story and save after Step 3
         story["outline"] = outline
@@ -450,39 +454,37 @@ def run_phase4_prompts(
         print("\n>>> Step 3: Skipped (not in requested steps)")
 
     # =========================================================================
-    # Step 4: Scene Image Prompts (One representative image per scene)
+    # Step 4: Scene Image Prompts (One image per scene)
     # =========================================================================
     scene_image_prompt_count = 0
     narrative = story.get("narrative", {})
-    acts = narrative.get("acts", [])
+    chapters = narrative.get("chapters", [])
 
     # Count total scenes for progress reporting
-    total_scenes = 0
-    for act in acts:
-        total_scenes += len(act.get("scenes", []))
+    total_scenes = sum(len(ch.get("scenes", [])) for ch in chapters)
 
     if 4 in steps_to_run and total_scenes > 0:
         step_start = time.time()
         print(f"\n>>> Step 4: Generating scene image prompts...")
         print(f"    Total scenes to process: {total_scenes}")
 
-        phase4_metadata["scene_image_prompts"] = []
-        scene_index = 0
+        phase2_metadata["scene_image_prompts"] = []
 
-        for act_idx, act in enumerate(acts):
-            act_num = act.get("act_number", act_idx + 1)
+        scene_global_idx = 0
+        for chapter_idx, chapter in enumerate(chapters):
+            ch_num = chapter.get("chapter_number", chapter_idx + 1)
+            ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
 
-            for scene_idx, scene in enumerate(act.get("scenes", [])):
-                scene_index += 1
-                scene_num = scene.get("scene_number", scene_idx + 1)
-                scene_location = scene.get("location", "Unknown")
+            for scene_idx, scene in enumerate(chapter.get("scenes", [])):
+                sc_num = scene.get("scene_number", scene_idx + 1)
+                scene_global_idx += 1
 
-                print(f"\n    [{scene_index}/{total_scenes}] Act {act_num}, Scene {scene_num} ({scene_location})...")
+                print(f"\n    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {ch_title}...")
 
                 try:
                     result = generate_scene_image_prompt(
                         scene_data=scene,
-                        act_number=act_num,
+                        act_number=ch_num,  # Use chapter number as act context
                         codex=codex,
                         visual_style=visual_style,
                         model=model,
@@ -492,6 +494,8 @@ def run_phase4_prompts(
                     # Add scene image prompt to scene data
                     scene["scene_image_prompt"] = {
                         "prompt": result["prompt"],
+                        "chapter_number": ch_num,
+                        "scene_number": sc_num,
                         "location_name": result["location_name"],
                         "location_id": result.get("location_id", ""),
                         "characters_in_scene": result["characters_in_scene"],
@@ -504,11 +508,11 @@ def run_phase4_prompts(
                     }
 
                     # Store metadata
-                    phase4_metadata["scene_image_prompts"].append({
-                        "act": act_num,
-                        "scene": scene_num,
-                        "location": scene_location,
-                        "characters": scene.get("characters", []),
+                    phase2_metadata["scene_image_prompts"].append({
+                        "chapter_number": ch_num,
+                        "scene_number": sc_num,
+                        "location": result["location_name"],
+                        "characters": result["characters_in_scene"],
                         "revision_count": result["revision_count"],
                         "final_scores": result["final_scores"],
                         "critique_history": result["critique_history"],
@@ -520,13 +524,13 @@ def run_phase4_prompts(
 
                 except Exception as e:
                     print(f"        ERROR: {e}")
-                    phase4_metadata["scene_image_prompts"].append({
-                        "act": act_num,
-                        "scene": scene_num,
+                    phase2_metadata["scene_image_prompts"].append({
+                        "chapter_number": ch_num,
+                        "scene_number": sc_num,
                         "error": str(e),
                     })
 
-        # Update narrative with modified scenes and save after Step 4
+        # Update narrative with modified chapters and save after Step 4
         codex["story"]["narrative"] = narrative
         step_timings["step4_scene_images"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
@@ -534,7 +538,7 @@ def run_phase4_prompts(
         print(f"\n>>> Step 4 complete: {scene_image_prompt_count} scene image prompts generated ({step_timings['step4_scene_images']:.1f}s)")
     elif 4 in steps_to_run:
         print("\n>>> Step 4: No scenes found in narrative, skipping scene image prompts")
-        print("    (Run Phase 3 narrative generation first)")
+        print("    (Run Phase 1 narrative generation first)")
     else:
         print("\n>>> Step 4: Skipped (not in requested steps)")
 
@@ -572,7 +576,7 @@ def run_phase4_prompts(
             thumbnail_prompt_count = len(thumbnail_result["prompts"])
 
             # Store detailed metadata
-            phase4_metadata["thumbnail_prompts"] = {
+            phase2_metadata["thumbnail_prompts"] = {
                 "prompts_selected": thumbnail_prompt_count,
                 "total_candidates": len(thumbnail_result.get("all_candidates", [])),
                 "voting_results": thumbnail_result.get("voting_results", []),
@@ -584,7 +588,7 @@ def run_phase4_prompts(
         except Exception as e:
             print(f"\n    ERROR in thumbnail generation: {e}")
             codex["story"]["thumbnail"] = {"error": str(e)}
-            phase4_metadata["thumbnail_prompts"] = {"error": str(e)}
+            phase2_metadata["thumbnail_prompts"] = {"error": str(e)}
 
         # Save after Step 5
         step_timings["step5_thumbnails"] = round(time.time() - step_start, 2)
@@ -599,10 +603,10 @@ def run_phase4_prompts(
     codex["story"]["characters"] = characters
     codex["story"]["locations"] = locations
     codex["story"]["outline"] = story.get("outline", {})
-    codex["story_metadata"]["phase4_prompts"] = phase4_metadata
+    codex["metadata"]["phase_2"] = phase2_metadata
     save_codex(codex, codex_path)
 
-    print(f"\n>>> Phase 4 complete!")
+    print(f"\n>>> Phase 5 complete!")
     print(f"    Character prompts: {char_prompt_count}")
     print(f"    Location prompts: {loc_prompt_count}")
     print(f"    Poster prompts: {poster_prompt_count}")
@@ -610,7 +614,7 @@ def run_phase4_prompts(
     print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
     print(f">>> Saved to: {codex_path}")
 
-    return Phase4PromptsResult(
+    return Phase2PromptsResult(
         codex_path=codex_path,
         character_prompt_count=char_prompt_count,
         location_prompt_count=loc_prompt_count,
@@ -642,7 +646,7 @@ def main():
         nargs="+",
         type=int,
         choices=[1, 2, 3, 4, 5],
-        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Scene Images, 5: Thumbnails). Example: --steps 1 2"
+        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Chapter Images, 5: Thumbnails). Example: --steps 1 2"
     )
     args = parser.parse_args()
 
@@ -650,7 +654,7 @@ def main():
         print(f"ERROR: Codex not found: {args.codex_path}")
         sys.exit(1)
 
-    result = run_phase4_prompts(
+    result = run_phase2_prompts(
         args.codex_path,
         model=args.model,
         steps=args.steps,

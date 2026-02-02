@@ -272,10 +272,10 @@ def run_template1_editing(
     # Initialize counters
     scene_audio_count = 0
 
-    # Initialize metadata
-    if "story_metadata" not in codex:
-        codex["story_metadata"] = {}
-    phase6_metadata = {
+    # Initialize metadata in new structure
+    if "metadata" not in codex:
+        codex["metadata"] = {}
+    phase4_metadata = {
         "started_at": datetime.now().isoformat(),
         "steps_executed": [],
         "template": "static_audio",
@@ -285,80 +285,65 @@ def run_template1_editing(
     step_timings = {}
 
     narrative = codex.get("story", {}).get("narrative", {})
+    chapters = narrative.get("chapters", [])
+
+    # Helper function to get scene image path
+    def get_scene_image_path(ch_num: int, sc_num: int) -> Path | None:
+        """Get scene image path from chapter/scene numbers."""
+        for chapter in chapters:
+            if chapter.get("chapter_number") == ch_num:
+                for scene in chapter.get("scenes", []):
+                    if scene.get("scene_number") == sc_num:
+                        gen_data = scene.get("scene_image_prompt", {}).get("generation", {})
+                        rel_path = gen_data.get("output_path", "")
+                        if rel_path:
+                            return Path(comfyui_output_dir) / rel_path
+        return None
 
     # =========================================================================
-    # Step 1: Combine Sentences into Scene Audio
+    # Step 1: Verify Audio Items (audio already generated in Phase 3)
     # =========================================================================
     if 1 in steps_to_run:
         step_start = time.time()
         print(f"\n{'='*60}")
-        print("STEP 1: Combine Sentences into Scene Audio")
+        print("STEP 1: Verify Audio Items")
         print(f"{'='*60}")
 
-        scenes_dir = audio_dir / "scenes"
-        scenes_dir.mkdir(parents=True, exist_ok=True)
+        audio_gen_data = narrative.get("audio_generation", {})
+        audio_items = audio_gen_data.get("items", [])
 
-        total_scenes = sum(len(act.get("scenes", [])) for act in narrative.get("acts", []))
-        scene_idx = 0
+        if not audio_items:
+            print(">>> No audio items found in narrative.audio_generation.items")
+            print(">>> Run Phase 3 Step 1 (audio generation) first")
+        else:
+            completed = [i for i in audio_items if i.get("status") == "completed"]
+            print(f">>> Audio items found: {len(audio_items)}")
+            print(f">>> Completed: {len(completed)}")
 
-        for act in narrative.get("acts", []):
-            act_num = act.get("act_number", 0)
-            act_name = act.get("act_name", f"Act {act_num}")
+            # Count by type
+            titles = len([i for i in completed if i.get("type") == "title"])
+            ch_titles = len([i for i in completed if i.get("type") == "chapter_title"])
+            scenes = len([i for i in completed if i.get("type") == "scene"])
+            print(f"    - Book titles: {titles}")
+            print(f"    - Chapter titles: {ch_titles}")
+            print(f"    - Scenes: {scenes}")
 
-            print(f"\n>>> Act {act_num}: {act_name}")
+            scene_audio_count = len(completed)
 
-            for scene in act.get("scenes", []):
-                scene_num = scene.get("scene_number", 0)
-                scene_location = scene.get("location", "unknown")
-                audio_gen = scene.get("audio_generation", [])
-                scene_idx += 1
+        phase4_metadata["steps_executed"].append(1)
+        phase4_metadata["audio_items_count"] = len(audio_items) if audio_items else 0
+        step_timings["step1_verify_audio"] = round(time.time() - step_start, 2)
 
-                if not audio_gen:
-                    print(f"    Scene {scene_num} ({scene_location}): No audio data, skipping")
-                    continue
-
-                # Get completed audio paths in order by sentence_index
-                audio_paths = []
-                for audio in sorted(audio_gen, key=lambda x: x.get("sentence_index", 0)):
-                    if audio.get("status") == "completed" and audio.get("output_path"):
-                        full_path = get_audio_full_path(audio["output_path"], comfyui_output_dir)
-                        audio_paths.append(full_path)
-
-                if audio_paths:
-                    output_path = scenes_dir / f"act{act_num}_scene{scene_num}.mp3"
-                    print(f"    [{scene_idx}/{total_scenes}] Scene {scene_num} ({scene_location}): {len(audio_paths)} sentences...")
-
-                    success, duration = combine_audio_files(
-                        audio_paths, output_path, f"Act {act_num} Scene {scene_num}"
-                    )
-
-                    if success:
-                        scene["combined_audio"] = {
-                            "path": str(output_path),
-                            "duration": duration,
-                            "sentence_count": len(audio_paths),
-                        }
-                        scene_audio_count += 1
-                        print(f"        -> {output_path.name} ({format_duration(duration)})")
-                else:
-                    print(f"    Scene {scene_num} ({scene_location}): No completed audio files")
-
-        # Save codex after Step 1
-        save_codex(codex, codex_path)
-        phase6_metadata["steps_executed"].append(1)
-        phase6_metadata["scene_audio_count"] = scene_audio_count
-        step_timings["step1_combine_audio"] = round(time.time() - step_start, 2)
-
-        print(f"\n>>> Step 1 complete ({step_timings['step1_combine_audio']:.1f}s): {scene_audio_count} scene audio files created")
+        print(f"\n>>> Step 1 complete ({step_timings['step1_verify_audio']:.1f}s)")
 
     # =========================================================================
-    # Step 2: Generate Scene Videos (Image + Audio)
+    # Step 2: Generate Video Clips (Audio + Matched Images)
     # =========================================================================
     scene_video_count = 0
     if 2 in steps_to_run:
         step_start = time.time()
         print(f"\n{'='*60}")
-        print("STEP 2: Generate Scene Videos")
+        print("STEP 2: Generate Video Clips")
         print(f"{'='*60}")
 
         if not MOVIEPY_AVAILABLE:
@@ -367,61 +352,81 @@ def run_template1_editing(
             # Reload codex in case Step 1 was run in a previous invocation
             codex = load_codex(codex_path)
             narrative = codex.get("story", {}).get("narrative", {})
+            chapters = narrative.get("chapters", [])
 
             videos_dir = forge_dir / "videos"
             videos_dir.mkdir(parents=True, exist_ok=True)
 
-            total_scenes = sum(len(act.get("scenes", [])) for act in narrative.get("acts", []))
-            scene_idx = 0
+            audio_items = narrative.get("audio_generation", {}).get("items", [])
+            completed_items = [i for i in audio_items if i.get("status") == "completed"]
 
-            for act in narrative.get("acts", []):
-                act_num = act.get("act_number", 0)
+            if not completed_items:
+                print(">>> No completed audio items found")
+            else:
+                # Sort by sequence number
+                completed_items = sorted(completed_items, key=lambda x: x.get("sequence", 0))
 
-                for scene in act.get("scenes", []):
-                    scene_num = scene.get("scene_number", 0)
-                    scene_idx += 1
+                print(f">>> Creating {len(completed_items)} video clips...")
+                print(f">>> Image matching:")
+                print(f"    - title → Chapter 1, Scene 1 image")
+                print(f"    - chapter_title → That chapter's Scene 1 image")
+                print(f"    - scene → That scene's image")
 
-                    # Get combined audio path from Step 1
-                    combined_audio = scene.get("combined_audio", {})
-                    audio_path = Path(combined_audio.get("path", ""))
+                for item in completed_items:
+                    seq = item.get("sequence", 0)
+                    item_type = item.get("type", "unknown")
+                    ch_num = item.get("chapter_number", 1)
+                    sc_num = item.get("scene_number", 1)
 
-                    # Get scene image path from generation data (stored in Phase 5)
-                    scene_image_data = scene.get("scene_image_prompt", {}).get("generation", {})
-                    image_relative_path = scene_image_data.get("output_path", "")
-                    if image_relative_path:
-                        image_path = Path(comfyui_output_dir) / image_relative_path
-                    else:
-                        # No generation data - scene image wasn't generated
-                        image_path = None
+                    # Get audio path
+                    audio_rel_path = item.get("output_path", "")
+                    if not audio_rel_path:
+                        print(f"    [{seq}] {item_type} - No audio path, skipping")
+                        continue
 
+                    audio_path = Path(comfyui_output_dir) / audio_rel_path
                     if not audio_path.exists():
-                        print(f"    [{scene_idx}/{total_scenes}] Act {act_num} Scene {scene_num} - No audio, skipping")
-                        continue
-                    if image_path is None or not image_path.exists():
-                        print(f"    [{scene_idx}/{total_scenes}] Act {act_num} Scene {scene_num} - No image, skipping")
+                        print(f"    [{seq}] {item_type} - Audio file not found: {audio_path}")
                         continue
 
-                    output_path = videos_dir / f"act{act_num}_scene{scene_num}.mp4"
-                    print(f"    [{scene_idx}/{total_scenes}] Act {act_num} Scene {scene_num}...")
+                    # Get matching image based on type
+                    if item_type == "title":
+                        # Book title → Chapter 1, Scene 1 image
+                        image_path = get_scene_image_path(1, 1)
+                        label = "Book Title"
+                    elif item_type == "chapter_title":
+                        # Chapter title → That chapter's Scene 1 image
+                        image_path = get_scene_image_path(ch_num, 1)
+                        label = f"Ch{ch_num} Title"
+                    else:  # scene
+                        # Scene → That scene's image
+                        image_path = get_scene_image_path(ch_num, sc_num)
+                        label = f"Ch{ch_num} Sc{sc_num}"
+
+                    if image_path is None or not image_path.exists():
+                        print(f"    [{seq}] {label} - No image found, skipping")
+                        continue
+
+                    # Create video clip
+                    output_path = videos_dir / f"{seq:03d}_{item_type}.mp4"
+                    print(f"    [{seq}/{len(completed_items)}] {label}...")
 
                     success, duration = create_static_clip(
                         image_path, audio_path, output_path
                     )
 
                     if success:
-                        scene["video"] = {
-                            "path": str(output_path),
-                            "duration": duration,
-                        }
+                        item["video_path"] = str(output_path)
+                        item["video_duration"] = duration
                         scene_video_count += 1
                         print(f"        -> {output_path.name} ({format_duration(duration)})")
 
             save_codex(codex, codex_path)
-            phase6_metadata["steps_executed"].append(2)
-            phase6_metadata["scene_video_count"] = scene_video_count
-            step_timings["step2_scene_videos"] = round(time.time() - step_start, 2)
+            phase4_metadata["steps_executed"].append(2)
+            phase4_metadata["scene_video_count"] = scene_video_count
+            step_timings["step2_video_clips"] = round(time.time() - step_start, 2)
 
-            print(f"\n>>> Step 2 complete ({step_timings['step2_scene_videos']:.1f}s): {scene_video_count} scene videos created")
+            print(f"\n>>> Step 2 complete ({step_timings['step2_video_clips']:.1f}s): {scene_video_count} video clips created")
 
     # =========================================================================
     # Step 3: Concatenate into Final Video
@@ -441,19 +446,22 @@ def run_template1_editing(
             codex = load_codex(codex_path)
             narrative = codex.get("story", {}).get("narrative", {})
 
-            # Collect scene video paths in order
+            # Collect video paths from audio items in sequence order
+            audio_items = narrative.get("audio_generation", {}).get("items", [])
+            completed_items = sorted(
+                [i for i in audio_items if i.get("status") == "completed" and i.get("video_path")],
+                key=lambda x: x.get("sequence", 0)
+            )
+
             video_paths = []
-            for act in sorted(narrative.get("acts", []), key=lambda x: x.get("act_number", 0)):
-                for scene in sorted(act.get("scenes", []), key=lambda x: x.get("scene_number", 0)):
-                    video_info = scene.get("video", {})
-                    if video_info.get("path"):
-                        path = Path(video_info["path"])
-                        if path.exists():
-                            video_paths.append(path)
+            for item in completed_items:
+                path = Path(item["video_path"])
+                if path.exists():
+                    video_paths.append(path)
 
             if video_paths:
                 output_path = forge_dir / "final_video.mp4"
-                print(f">>> Concatenating {len(video_paths)} scene videos...")
+                print(f">>> Concatenating {len(video_paths)} video clips in sequence order...")
 
                 try:
                     clips = [VideoFileClip(str(p)) for p in video_paths]
@@ -475,11 +483,11 @@ def run_template1_editing(
                     video_output_path = output_path
                     video_duration = total_duration
 
-                    phase6_metadata["final_video"] = {
+                    phase4_metadata["final_video"] = {
                         "path": str(output_path),
                         "duration": total_duration,
                         "duration_formatted": format_duration(total_duration),
-                        "scene_count": len(video_paths),
+                        "clip_count": len(video_paths),
                     }
 
                     print(f"    -> {output_path.name} ({format_duration(total_duration)})")
@@ -488,15 +496,15 @@ def run_template1_editing(
                 except Exception as e:
                     print(f">>> ERROR: {e}")
             else:
-                print(">>> No scene videos found. Run Step 2 first.")
+                print(">>> No video clips found. Run Step 2 first.")
 
         step_timings["step3_final_video"] = round(time.time() - step_start, 2)
-        phase6_metadata["steps_executed"].append(3)
+        phase4_metadata["steps_executed"].append(3)
         print(f"\n>>> Step 3 complete ({step_timings['step3_final_video']:.1f}s)")
 
     # Finalize metadata
-    phase6_metadata["completed_at"] = datetime.now().isoformat()
-    codex["story_metadata"]["phase6_editing"] = phase6_metadata
+    phase4_metadata["completed_at"] = datetime.now().isoformat()
+    codex["metadata"]["phase_4"] = phase4_metadata
     save_codex(codex, codex_path)
 
     # Summary
