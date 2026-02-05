@@ -413,27 +413,27 @@ class CharacterPromptSchema(BaseModel):
 
 class CharacterPromptCritique(BaseModel):
     """Critique scores for character image prompt quality."""
-    face_detail_score: int = Field(
+    face_detail_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for face description completeness"
     )
-    clothing_detail_score: int = Field(
+    clothing_detail_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for clothing description detail"
     )
-    distinguishing_marks_score: int = Field(
+    distinguishing_marks_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for scars, tattoos, jewelry description"
     )
-    pose_expression_score: int = Field(
+    pose_expression_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for pose and expression clarity"
     )
-    quality_tags_score: int = Field(
+    quality_tags_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for lighting, resolution, style tags"
     )
-    overall_score: int = Field(
+    overall_score: float = Field(
         ..., ge=1, le=10,
         description="Overall quality score 1-10"
     )
@@ -473,31 +473,31 @@ class LocationPromptSchema(BaseModel):
 
 class LocationPromptCritique(BaseModel):
     """Critique scores for location image prompt quality."""
-    architecture_structure_score: int = Field(
+    architecture_structure_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for architecture and structure detail"
     )
-    lighting_time_score: int = Field(
+    lighting_time_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for lighting and time of day"
     )
-    atmosphere_weather_score: int = Field(
+    atmosphere_weather_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for atmosphere and weather effects"
     )
-    textures_materials_score: int = Field(
+    textures_materials_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for textures and materials"
     )
-    composition_depth_score: int = Field(
+    composition_depth_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for composition and depth layers"
     )
-    quality_tags_score: int = Field(
+    quality_tags_score: float = Field(
         ..., ge=1, le=10,
         description="Score 1-10 for quality and style tags"
     )
-    overall_score: int = Field(
+    overall_score: float = Field(
         ..., ge=1, le=10,
         description="Overall quality score 1-10"
     )
@@ -622,25 +622,25 @@ class StoryboardSchema(BaseModel):
 
 class VisualCritiqueSchema(BaseModel):
     """Visual critic's evaluation of storyboard."""
-    location_clarity_score: int = Field(..., ge=1, le=10, description="INT./EXT. and location specificity")
-    shot_composition_score: int = Field(..., ge=1, le=10, description="Shot size and depth layers")
-    camera_work_score: int = Field(..., ge=1, le=10, description="Camera movement motivation")
-    lighting_time_score: int = Field(..., ge=1, le=10, description="Lighting and time consistency")
-    character_blocking_score: int = Field(..., ge=1, le=10, description="Character positions clarity")
-    visual_storytelling_score: int = Field(..., ge=1, le=10, description="Visual focus and emphasis")
-    overall_score: int = Field(..., ge=1, le=10, description="Overall visual quality")
+    location_clarity_score: float = Field(..., ge=1, le=10, description="INT./EXT. and location specificity")
+    shot_composition_score: float = Field(..., ge=1, le=10, description="Shot size and depth layers")
+    camera_work_score: float = Field(..., ge=1, le=10, description="Camera movement motivation")
+    lighting_time_score: float = Field(..., ge=1, le=10, description="Lighting and time consistency")
+    character_blocking_score: float = Field(..., ge=1, le=10, description="Character positions clarity")
+    visual_storytelling_score: float = Field(..., ge=1, le=10, description="Visual focus and emphasis")
+    overall_score: float = Field(..., ge=1, le=10, description="Overall visual quality")
     needs_revision: bool = Field(..., description="True if any score < 7")
     suggestions: list[str] = Field(..., description="Specific visual improvements")
 
 
 class DialogueCritiqueSchema(BaseModel):
     """Dialogue critic's evaluation of storyboard."""
-    dialogue_length_score: int = Field(..., ge=1, le=10, description="Dialogue fits duration (25-35 words)")
-    delivery_notes_score: int = Field(..., ge=1, le=10, description="Parentheticals for tone")
-    natural_flow_score: int = Field(..., ge=1, le=10, description="Natural spoken dialogue")
-    character_voice_score: int = Field(..., ge=1, le=10, description="Consistent character voice")
-    audio_design_score: int = Field(..., ge=1, le=10, description="SFX, music, ambient quality")
-    overall_score: int = Field(..., ge=1, le=10, description="Overall dialogue quality")
+    dialogue_length_score: float = Field(..., ge=1, le=10, description="Dialogue fits duration (25-35 words)")
+    delivery_notes_score: float = Field(..., ge=1, le=10, description="Parentheticals for tone")
+    natural_flow_score: float = Field(..., ge=1, le=10, description="Natural spoken dialogue")
+    character_voice_score: float = Field(..., ge=1, le=10, description="Consistent character voice")
+    audio_design_score: float = Field(..., ge=1, le=10, description="SFX, music, ambient quality")
+    overall_score: float = Field(..., ge=1, le=10, description="Overall dialogue quality")
     needs_revision: bool = Field(..., description="True if any score < 7")
     word_count_violations: list[int] = Field(
         default=[],
@@ -651,13 +651,13 @@ class DialogueCritiqueSchema(BaseModel):
 
 class ContinuityCritiqueSchema(BaseModel):
     """Continuity critic's evaluation of storyboard."""
-    shot_flow_score: int = Field(..., ge=1, le=10, description="Logical shot connections, 180° rule")
-    character_continuity_score: int = Field(..., ge=1, le=10, description="Character position consistency")
-    location_continuity_score: int = Field(..., ge=1, le=10, description="Environment consistency")
-    story_context_score: int = Field(..., ge=1, le=10, description="Scene purpose and plot points")
-    pacing_rhythm_score: int = Field(..., ge=1, le=10, description="Shot variety and timing")
-    overall_coherence_score: int = Field(..., ge=1, le=10, description="Works as video sequence")
-    overall_score: int = Field(..., ge=1, le=10, description="Overall continuity quality")
+    shot_flow_score: float = Field(..., ge=1, le=10, description="Logical shot connections, 180° rule")
+    character_continuity_score: float = Field(..., ge=1, le=10, description="Character position consistency")
+    location_continuity_score: float = Field(..., ge=1, le=10, description="Environment consistency")
+    story_context_score: float = Field(..., ge=1, le=10, description="Scene purpose and plot points")
+    pacing_rhythm_score: float = Field(..., ge=1, le=10, description="Shot variety and timing")
+    overall_coherence_score: float = Field(..., ge=1, le=10, description="Works as video sequence")
+    overall_score: float = Field(..., ge=1, le=10, description="Overall continuity quality")
     needs_revision: bool = Field(..., description="True if any score < 7")
     continuity_errors: list[str] = Field(
         default=[],
@@ -781,12 +781,12 @@ class ShotFramePromptSchema(BaseModel):
 
 class ShotFrameCritiqueSchema(BaseModel):
     """Critique for shot frame prompts."""
-    character_accuracy_score: int = Field(..., ge=1, le=10, description="Are character descriptions accurate to profiles?")
-    location_accuracy_score: int = Field(..., ge=1, le=10, description="Does location match codex profile?")
-    framing_accuracy_score: int = Field(..., ge=1, le=10, description="Does framing match shot_size?")
-    lighting_mood_score: int = Field(..., ge=1, le=10, description="Does lighting match time_of_day and visual_style_notes?")
-    action_continuity_score: int = Field(..., ge=1, le=10, description="Does first→last frame show logical action progression?")
-    no_names_score: int = Field(..., ge=1, le=10, description="Are character NAMES absent (only descriptions)?")
+    character_accuracy_score: float = Field(..., ge=1, le=10, description="Are character descriptions accurate to profiles?")
+    location_accuracy_score: float = Field(..., ge=1, le=10, description="Does location match codex profile?")
+    framing_accuracy_score: float = Field(..., ge=1, le=10, description="Does framing match shot_size?")
+    lighting_mood_score: float = Field(..., ge=1, le=10, description="Does lighting match time_of_day and visual_style_notes?")
+    action_continuity_score: float = Field(..., ge=1, le=10, description="Does first→last frame show logical action progression?")
+    no_names_score: float = Field(..., ge=1, le=10, description="Are character NAMES absent (only descriptions)?")
     overall_score: float = Field(..., description="Average of all scores")
     needs_revision: bool = Field(..., description="True if any score < 7")
     suggestions: list[str] = Field(default=[], description="Specific improvements needed")
@@ -831,27 +831,27 @@ class VideoPromptSchema(BaseModel):
 
 class VideoPromptCritiqueSchema(BaseModel):
     """Critique for LTX video prompts."""
-    screenplay_format_score: int = Field(
+    screenplay_format_score: float = Field(
         ..., ge=1, le=10,
         description="Is the prompt in proper screenplay format (slugline, action, dialogue)?"
     )
-    character_description_score: int = Field(
+    character_description_score: float = Field(
         ..., ge=1, le=10,
         description="Are characters described by physical appearance, not names?"
     )
-    camera_movement_score: int = Field(
+    camera_movement_score: float = Field(
         ..., ge=1, le=10,
         description="Are camera movements clear and appropriate for the action?"
     )
-    atmosphere_detail_score: int = Field(
+    atmosphere_detail_score: float = Field(
         ..., ge=1, le=10,
         description="Is atmosphere (lighting, mood, weather) well described?"
     )
-    dialogue_accuracy_score: int = Field(
+    dialogue_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="If dialogue present, is it accurate to shot data with proper parentheticals?"
     )
-    no_names_score: int = Field(
+    no_names_score: float = Field(
         ..., ge=1, le=10,
         description="Score 10 if NO character names used, Score 1 if ANY names found"
     )
@@ -1326,23 +1326,23 @@ class SceneImagePromptSchema(BaseModel):
 
 class SceneImageCritiqueSchema(BaseModel):
     """Critique for scene image prompts."""
-    character_accuracy_score: int = Field(
+    character_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="Physical descriptions match codex character profiles"
     )
-    location_accuracy_score: int = Field(
+    location_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="Setting matches codex location profile"
     )
-    no_names_score: int = Field(
+    no_names_score: float = Field(
         ..., ge=1, le=10,
         description="Score 10 if NO character names used, Score 1 if ANY names found"
     )
-    visual_detail_score: int = Field(
+    visual_detail_score: float = Field(
         ..., ge=1, le=10,
         description="Sufficient detail for image generation"
     )
-    composition_score: int = Field(
+    composition_score: float = Field(
         ..., ge=1, le=10,
         description="Good framing and focus"
     )
@@ -1505,7 +1505,7 @@ class NarrativeProseProposal(BaseModel):
             "3-5 paragraphs developing the scene with dialogue, action, "
             "and character interaction. Each 100-150 words."
         ),
-        min_length=3,
+        min_length=1,
     )
     closing_paragraph: str = Field(
         ...,
@@ -1547,23 +1547,23 @@ class NarrativeProseCritique(BaseModel):
     target_agent: str = Field(..., description="Name of the agent being critiqued")
 
     # Dimension scores (1-10)
-    character_accuracy_score: int = Field(
+    character_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="Do characters match their codex profiles? Personality, speech, quirks?"
     )
-    sensory_immersion_score: int = Field(
+    sensory_immersion_score: float = Field(
         ..., ge=1, le=10,
         description="Are all senses engaged? Does location feel real?"
     )
-    world_integration_score: int = Field(
+    world_integration_score: float = Field(
         ..., ge=1, le=10,
         description="Are world details woven naturally? Food, customs, culture?"
     )
-    plot_urgency_score: int = Field(
+    plot_urgency_score: float = Field(
         ..., ge=1, le=10,
         description="Does scene advance plot? Is ticking clock felt?"
     )
-    prose_quality_score: int = Field(
+    prose_quality_score: float = Field(
         ..., ge=1, le=10,
         description="Is prose varied, engaging? Show don't tell? No cliches?"
     )
@@ -1756,11 +1756,11 @@ class ProsePolishCritique(BaseModel):
     )
 
     # Scores
-    sentence_variety_score: int = Field(
+    sentence_variety_score: float = Field(
         ..., ge=1, le=10,
         description="Score for sentence length variety (1-10)"
     )
-    overall_score: int = Field(
+    overall_score: float = Field(
         ..., ge=1, le=10,
         description="Overall prose polish score (1-10)"
     )
@@ -1805,23 +1805,23 @@ class CharacterVoiceCritique(BaseModel):
     )
 
     # Scores by factor
-    education_match_score: int = Field(
+    education_match_score: float = Field(
         ..., ge=1, le=10,
         description="Does vocabulary match character education level? (1-10)"
     )
-    profession_match_score: int = Field(
+    profession_match_score: float = Field(
         ..., ge=1, le=10,
         description="Does dialogue reflect character's profession/expertise? (1-10)"
     )
-    personality_match_score: int = Field(
+    personality_match_score: float = Field(
         ..., ge=1, le=10,
         description="Does speech pattern match personality (confident/timid/etc)? (1-10)"
     )
-    background_match_score: int = Field(
+    background_match_score: float = Field(
         ..., ge=1, le=10,
         description="Does dialogue reflect character's history/trauma/passions? (1-10)"
     )
-    overall_voice_score: int = Field(
+    overall_voice_score: float = Field(
         ..., ge=1, le=10,
         description="Overall character voice authenticity score (1-10)"
     )
@@ -1891,7 +1891,7 @@ class ContinuityCritique(BaseModel):
     )
 
     # Overall
-    overall_continuity_score: int = Field(
+    overall_continuity_score: float = Field(
         ..., ge=1, le=10,
         description="Overall continuity score (1-10)"
     )
@@ -1953,11 +1953,11 @@ class PacingTensionCritique(BaseModel):
     )
 
     # Scores
-    tension_arc_score: int = Field(
+    tension_arc_score: float = Field(
         ..., ge=1, le=10,
         description="Tension rises and falls appropriately (1-10)"
     )
-    overall_pacing_score: int = Field(
+    overall_pacing_score: float = Field(
         ..., ge=1, le=10,
         description="Overall pacing score (1-10)"
     )
@@ -2011,11 +2011,11 @@ class EmotionalResonanceCritique(BaseModel):
     )
 
     # Scores
-    micro_tension_score: int = Field(
+    micro_tension_score: float = Field(
         ..., ge=1, le=10,
         description="Line-by-line micro-tension present (1-10)"
     )
-    overall_emotional_score: int = Field(
+    overall_emotional_score: float = Field(
         ..., ge=1, le=10,
         description="Overall emotional resonance score (1-10)"
     )
