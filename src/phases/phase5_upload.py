@@ -65,7 +65,7 @@ def extract_story_data(codex: dict) -> dict:
 
     # Get title and logline - prioritize narrative.title (from Step 7 title naming)
     title = narrative.get("title", outline.get("title", "Untitled Story"))
-    logline = outline.get("logline", "An AI-generated story.")
+    logline = outline.get("logline", "A captivating story.")
 
     # Extract scene summaries from narrative (chapters structure)
     scene_summaries = []
@@ -224,8 +224,8 @@ def run_phase5_upload(
         print(">>> Using fallback metadata...")
         story_data = extract_story_data(codex)
         title = story_data["title"][:100]
-        description = f"{story_data['logline']}\n\nAn AI-generated story video.\n\n#AIStory #GeneratedStory"
-        tags = ["AI story", "generated story", "AI video", "storytelling"]
+        description = f"{story_data['logline']}\n\nA captivating story video.\n\n#Story #Fiction #ShortStory"
+        tags = ["story", "fiction", "short story", "storytelling", "narrative"]
 
     step_timings["step1_metadata"] = {"duration_seconds": round(time.time() - step_start, 2)}
     phase5_metadata["steps_executed"].append("step1_metadata")

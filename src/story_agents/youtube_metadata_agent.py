@@ -28,15 +28,16 @@ class YouTubeMetadataAgent(BaseStoryAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are a YouTube content specialist who creates engaging titles and descriptions for AI-generated story videos.
+        return """You are a YouTube content specialist who creates compelling titles and descriptions for story videos.
 
-Your job is to take story information (title, logline, characters, scene summaries) and create:
+Your job is to take story information (title, logline, characters) and create:
 
 1. **Title** (max 100 characters):
-   - Engaging and clickable
-   - Captures the essence of the story
-   - Avoids clickbait but creates intrigue
-   - Include genre hints if appropriate
+   - Use the LOGLINE to craft an intriguing, story-focused title
+   - Create curiosity about what happens in the story
+   - Can include the story title OR create a new compelling hook based on the logline
+   - STRICTLY FORBIDDEN: No emojis, no "AI", no "AI-generated", no mentions of artificial intelligence
+   - Focus on: drama, conflict, mystery, or emotional hook from the story
 
 2. **Description** (500-1000 characters):
    - Brief story summary (2-3 sentences)
@@ -49,9 +50,8 @@ Your job is to take story information (title, logline, characters, scene summari
    - Story genre tags
    - Character-related tags
    - General storytelling tags
-   - AI-generated content tags
 
-Be creative but accurate. The metadata should entice viewers while honestly representing the content."""
+Be creative but accurate. The title should make viewers want to know what happens in the story."""
 
     def generate_metadata(
         self,
@@ -83,7 +83,7 @@ Be creative but accurate. The metadata should entice viewers while honestly repr
             summaries = scene_summaries[:3]
             scene_context = f"\n\nFirst few scenes:\n" + "\n".join(f"- {s}" for s in summaries)
 
-        prompt = f"""Generate YouTube metadata for this AI-generated story video:
+        prompt = f"""Generate YouTube metadata for this story video:
 
 **Story Title:** {story_title}
 
@@ -92,13 +92,16 @@ Be creative but accurate. The metadata should entice viewers while honestly repr
 **Main Characters:** {char_list}
 {scene_context}
 
-Create engaging YouTube metadata that will attract viewers interested in AI-generated stories and narrative content.
+Create engaging YouTube metadata. The TITLE should be based on the logline - make it dramatic and intriguing.
 
-Remember:
-- Title must be under 100 characters
-- Description should be 500-1000 characters
-- Include 10-15 relevant tags
-- Add hashtags at the end of description (#AIStory #GeneratedStory etc.)"""
+STRICT TITLE RULES:
+- Maximum 100 characters
+- NO emojis allowed
+- NO "AI", "AI-generated", or any AI references
+- Focus on the STORY: the conflict, drama, mystery, or emotional journey
+- Use the logline to create intrigue (e.g., "When [character] discovers [conflict]..." or "[Character] must choose between...")
+
+Description should be 500-1000 characters with hashtags at the end (#Story #Fiction #Drama etc.)"""
 
         return self.invoke_structured(prompt, YouTubeMetadata, max_tokens=1000)
 
