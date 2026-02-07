@@ -28,16 +28,15 @@ class YouTubeMetadataAgent(BaseStoryAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are a YouTube content specialist who creates compelling titles and descriptions for story videos.
+        return """You are a YouTube content specialist who creates compelling descriptions and metadata for story videos.
 
 Your job is to take story information (title, logline, characters) and create:
 
 1. **Title** (max 100 characters):
-   - Use the LOGLINE to craft an intriguing, story-focused title
-   - Create curiosity about what happens in the story
-   - Can include the story title OR create a new compelling hook based on the logline
+   - Use the EXACT story title provided - do NOT modify or change it
+   - This is the book's official title and must be used as-is
    - STRICTLY FORBIDDEN: No emojis, no "AI", no "AI-generated", no mentions of artificial intelligence
-   - Focus on: drama, conflict, mystery, or emotional hook from the story
+   - If the title is too long (>100 chars), truncate cleanly with "..."
 
 2. **Description** (500-1000 characters):
    - Brief story summary (2-3 sentences)
@@ -51,7 +50,7 @@ Your job is to take story information (title, logline, characters) and create:
    - Character-related tags
    - General storytelling tags
 
-Be creative but accurate. The title should make viewers want to know what happens in the story."""
+Be accurate and use the provided story title exactly as given."""
 
     def generate_metadata(
         self,
@@ -92,14 +91,15 @@ Be creative but accurate. The title should make viewers want to know what happen
 **Main Characters:** {char_list}
 {scene_context}
 
-Create engaging YouTube metadata. The TITLE should be based on the logline - make it dramatic and intriguing.
+Create engaging YouTube metadata.
 
 STRICT TITLE RULES:
-- Maximum 100 characters
+- Use the EXACT story title: "{story_title}"
+- Do NOT modify, change, or create a different title
+- This is the official book title and must be used exactly as provided
+- Maximum 100 characters (truncate with "..." if needed)
 - NO emojis allowed
 - NO "AI", "AI-generated", or any AI references
-- Focus on the STORY: the conflict, drama, mystery, or emotional journey
-- Use the logline to create intrigue (e.g., "When [character] discovers [conflict]..." or "[Character] must choose between...")
 
 Description should be 500-1000 characters with hashtags at the end (#Story #Fiction #Drama etc.)"""
 
