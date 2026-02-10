@@ -156,8 +156,7 @@ if TYPE_CHECKING:
 @dataclass
 class Step0Result:
     """Result of Step 0: Theme Foundation."""
-    theme_foundation: dict  # Clean results only (no debates)
-    step0_debates: dict  # All debate details (proposals, critiques, votes)
+    theme_foundation: dict
     success: bool
     error: Optional[str] = None
     duration_seconds: float = 0.0
@@ -188,22 +187,7 @@ class Step1PlottingResult:
 
 @dataclass
 class Step2Result:
-    """Result of Step 2: Story Shape & Genre Selection via Multi-Agent Debate."""
-    story_shape: str  # Classic Plot (e.g., "The Quest")
-    save_the_cat_type: str  # STC type (e.g., "Dude with a Problem")
-    primary_genre: str  # Primary genre
-    secondary_genre: Optional[str]  # Optional secondary genre
-    tone_flavor: Optional[str]  # Tonal flavor
-    tropes: list[dict]  # Selected tropes with usage notes
-    step2_debates: dict  # All debate details for metadata
-    success: bool
-    error: Optional[str] = None
-    duration_seconds: float = 0.0
-
-
-@dataclass
-class Step2CharactersResult:
-    """Result of OLD Step 2: Character Generation (kept for backward compatibility)."""
+    """Result of Step 2: Character Generation via Multi-Agent Debate."""
     characters: list
     character_debates: list
     name_mapping: dict
@@ -214,20 +198,7 @@ class Step2CharactersResult:
 
 @dataclass
 class Step3Result:
-    """Result of NEW Step 3: Plot Structure (Character Arc + Story Beats)."""
-    integrated_beats: list[dict]  # 15 beats with plot + arc + theme
-    hero_arc_summary: str
-    villain_arc_summary: str
-    side_character_notes: str
-    step3_debates: dict  # All debate details for metadata
-    success: bool
-    error: Optional[str] = None
-    duration_seconds: float = 0.0
-
-
-@dataclass
-class Step3WorldBuildingResult:
-    """Result of OLD Step 3: World Building (Locations + World Context) - kept for backward compatibility."""
+    """Result of Step 3: World Building (Locations + World Context)."""
     locations: list
     world: dict
     location_debates: list
@@ -650,31 +621,10 @@ class BaseAuthorPhase1:
                 print(f"      Position: {p.position}")
 
             # =========================================================================
-            # BUILD THEME FOUNDATION OUTPUT (CLEAN - NO DEBATES)
+            # BUILD THEME FOUNDATION OUTPUT
             # =========================================================================
             theme_foundation = {
                 "central_question": winning_question.question,
-                "thematic_square": {
-                    "positive": winning_square.positive,
-                    "contradictory": winning_square.contradictory,
-                    "contrary": winning_square.contrary,
-                    "negation_of_negation": winning_square.negation_of_negation,
-                },
-                "perspectives": [
-                    {
-                        "perspective_name": p.perspective_name,
-                        "position": p.position,
-                        "corner": p.corner,
-                        "example_belief": p.example_belief,
-                    }
-                    for p in winning_perspectives
-                ],
-            }
-
-            # =========================================================================
-            # BUILD DEBATES OUTPUT (SEPARATE FOR METADATA)
-            # =========================================================================
-            step0_debates = {
                 "question_debate": {
                     "proposals": [
                         {
@@ -704,6 +654,12 @@ class BaseAuthorPhase1:
                         for v in question_votes
                     ],
                     "winner_index": winner_index,
+                },
+                "thematic_square": {
+                    "positive": winning_square.positive,
+                    "contradictory": winning_square.contradictory,
+                    "contrary": winning_square.contrary,
+                    "negation_of_negation": winning_square.negation_of_negation,
                 },
                 "square_debate": {
                     "proposals": [
@@ -739,6 +695,15 @@ class BaseAuthorPhase1:
                     ],
                     "winner_index": winner_index,
                 },
+                "perspectives": [
+                    {
+                        "perspective_name": p.perspective_name,
+                        "position": p.position,
+                        "corner": p.corner,
+                        "example_belief": p.example_belief,
+                    }
+                    for p in winning_perspectives
+                ],
                 "perspective_debate": {
                     "proposals": [
                         {
@@ -786,7 +751,6 @@ class BaseAuthorPhase1:
 
             return Step0Result(
                 theme_foundation=theme_foundation,
-                step0_debates=step0_debates,
                 success=True,
                 duration_seconds=duration,
             )
@@ -799,834 +763,9 @@ class BaseAuthorPhase1:
 
             return Step0Result(
                 theme_foundation={},
-                step0_debates={},
                 success=False,
                 error=str(e),
                 duration_seconds=duration,
-            )
-
-    # =========================================================================
-    # STEP 1: CHARACTER CREATION (Theme → Characters)
-    # =========================================================================
-
-    def step1_character_creation(self, codex: dict) -> Step1Result:
-        """Generate psychologically complex characters from Step 0 thematic perspectives.
-
-        For each of the 4 perspectives from Step 0, creates 1 character via multi-agent debate:
-
-        SUBSTEP 1: Lie/Truth Debate (3 agents)
-        - Define the Lie the character believes
-        - Define the Truth they need to learn
-        - Define Want (external goal) vs. Need (internal truth)
-
-        SUBSTEP 2: Shadow/Arc/Ghost Debates (3 agents, 3 separate debates)
-        - Shadow: Jungian unconscious opposites
-        - Arc Type: Positive Change/Flat/Disillusionment/Fall/Corruption
-        - Ghost: Backstory event that created the Lie
-
-        SUBSTEP 3: Name Generation (reuse existing 3-agent name debate)
-
-        SUBSTEP 4: Physical Appearance (reuse existing 4-agent physical debate)
-
-        Args:
-            codex: The codex dictionary with theme_foundation from Step 0
-
-        Returns:
-            Step1Result with characters list and full debate history
-        """
-        start_time = time.time()
-
-        try:
-            # Get Step 0 theme foundation
-            theme_foundation = codex.get("story", {}).get("theme_foundation", {})
-            if not theme_foundation:
-                return Step1Result(
-                    characters=[],
-                    character_debates=[],
-                    success=False,
-                    error="Step 0 (Theme Foundation) not run. Run --steps 0 first.",
-                )
-
-            perspectives = theme_foundation.get("perspectives", [])
-            central_question = theme_foundation.get("central_question", "")
-
-            if not perspectives:
-                return Step1Result(
-                    characters=[],
-                    character_debates=[],
-                    success=False,
-                    error="No perspectives found in theme_foundation",
-                )
-
-            # Get prompts for context
-            story_prompt, setting_prompt = self.extract_prompts(codex)
-
-            print(f"\n{'='*60}")
-            print("STEP 1: CHARACTER CREATION (Theme → Characters)")
-            print(f"{'='*60}")
-            print(f">>> Creating {len(perspectives)} characters from thematic perspectives")
-            print(f">>> Central Question: {central_question}")
-
-            # Import psychology agents
-            from src.story_agents.character_psychology_agents import (
-                LieTruthPhilosopherAgent,
-                LieTruthPsychologistAgent,
-                LieTruthNarrativeAgent,
-                ShadowArchetypeAgent,
-                ShadowNarrativeAgent,
-                ShadowPsychologistAgent,
-                ArcTypeAgent,
-                ArcTypeNarrativeAgent,
-                ArcTypeThematicAgent,
-                GhostAgent,
-                GhostEmotionalAgent,
-                GhostThematicAgent,
-            )
-
-            characters = []
-            all_character_debates = []  # Track debate history separately for metadata
-            existing_names = []
-
-            # Process each perspective → 1 character
-            for idx, perspective in enumerate(perspectives):
-                char_id = f"char_{idx+1:03d}"
-
-                print(f"\n{'='*60}")
-                print(f"CHARACTER {idx+1}/{len(perspectives)}: {perspective['perspective_name']}")
-                print(f"Corner: {perspective['corner']}")
-                print(f"{'='*60}")
-
-                character_debate_history = {
-                    "perspective": perspective,
-                    "lie_truth_debate": {},
-                    "shadow_debate": {},
-                    "arc_type_debate": {},
-                    "ghost_debate": {},
-                    "name_debate": {},
-                    "physical_debate": {},
-                }
-
-                # =========================================================
-                # SUBSTEP 1: LIE/TRUTH DEBATE
-                # =========================================================
-                print(f"\n--- SUBSTEP 1: LIE/TRUTH DEBATE ---")
-
-                # Initialize agents
-                lie_truth_philosopher = LieTruthPhilosopherAgent(model=self.model)
-                lie_truth_psychologist = LieTruthPsychologistAgent(model=self.model)
-                lie_truth_narrative = LieTruthNarrativeAgent(model=self.model)
-
-                lie_truth_agents = [lie_truth_philosopher, lie_truth_psychologist, lie_truth_narrative]
-
-                # Proposals
-                print(f"\n>>> Phase 1: Proposals (3 agents)")
-                lie_truth_proposals = []
-                for agent in lie_truth_agents:
-                    print(f"    - {agent.name} proposing...")
-                    proposal = agent.propose_lie_truth(
-                        perspective=perspective,
-                        central_question=central_question,
-                        square_corner=perspective['corner']
-                    )
-                    lie_truth_proposals.append(proposal)
-                    print(f"      Lie: {proposal.lie_character_believes[:60]}...")
-                    print(f"      Truth: {proposal.truth_character_needs[:60]}...")
-
-                # Critiques
-                print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-                all_lie_truth_critiques = []
-                for agent in lie_truth_agents:
-                    print(f"    - {agent.name} critiquing...")
-                    critiques = agent.critique_lie_truth(
-                        proposals=lie_truth_proposals,
-                        perspective=perspective,
-                        central_question=central_question
-                    )
-                    all_lie_truth_critiques.extend(critiques)
-                    for c in critiques:
-                        print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-                # Votes
-                print(f"\n>>> Phase 3: Voting (each agent votes)")
-                lie_truth_votes = []
-                for agent in lie_truth_agents:
-                    vote = agent.vote(proposals=lie_truth_proposals, perspective=perspective)
-                    lie_truth_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.voted_for_index}")
-
-                # Select winner
-                vote_counts = {}
-                for v in lie_truth_votes:
-                    vote_counts[v.voted_for_index] = vote_counts.get(v.voted_for_index, 0) + 1
-
-                winner_index = max(vote_counts, key=vote_counts.get)
-                winning_lie_truth = lie_truth_proposals[winner_index]
-
-                print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-                print(f">>> Lie: {winning_lie_truth.lie_character_believes}")
-                print(f">>> Truth: {winning_lie_truth.truth_character_needs}")
-                print(f">>> Want: {winning_lie_truth.want}")
-                print(f">>> Need: {winning_lie_truth.need}")
-
-                character_debate_history["lie_truth_debate"] = {
-                    "proposals": [p.model_dump() for p in lie_truth_proposals],
-                    "critiques": [c.model_dump() for c in all_lie_truth_critiques],
-                    "votes": [v.model_dump() for v in lie_truth_votes],
-                    "winner_index": winner_index,
-                    "winner": winning_lie_truth.model_dump()
-                }
-
-                # =========================================================
-                # SUBSTEP 2A: SHADOW DEBATE (3 agents)
-                # =========================================================
-                print(f"\n--- SUBSTEP 2A: SHADOW DEBATE ---")
-
-                # Initialize 3 shadow agents
-                shadow_archetype = ShadowArchetypeAgent(model=self.model)
-                shadow_narrative = ShadowNarrativeAgent(model=self.model)
-                shadow_psychologist = ShadowPsychologistAgent(model=self.model)
-
-                shadow_agents = [shadow_archetype, shadow_narrative, shadow_psychologist]
-
-                # Proposals
-                print(f"\n>>> Phase 1: Proposals (3 agents)")
-                shadow_proposals = []
-                for agent in shadow_agents:
-                    print(f"    - {agent.name} proposing...")
-                    proposal = agent.propose_shadow(
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes,
-                        truth=winning_lie_truth.truth_character_needs
-                    )
-                    shadow_proposals.append(proposal)
-                    trait_keys = list(proposal.shadow_traits.keys())[:2]
-                    print(f"      Shadow pairs: {', '.join(trait_keys)}...")
-
-                # Critiques
-                print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-                all_shadow_critiques = []
-                for agent in shadow_agents:
-                    print(f"    - {agent.name} critiquing...")
-                    critiques = agent.critique_shadow(
-                        proposals=shadow_proposals,
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes
-                    )
-                    all_shadow_critiques.extend(critiques)
-                    for c in critiques:
-                        print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-                # Votes
-                print(f"\n>>> Phase 3: Voting (each agent votes)")
-                shadow_votes = []
-                for agent in shadow_agents:
-                    vote = agent.vote(proposals=shadow_proposals, perspective=perspective)
-                    shadow_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.voted_for_index}")
-
-                # Select winner
-                vote_counts = {}
-                for v in shadow_votes:
-                    vote_counts[v.voted_for_index] = vote_counts.get(v.voted_for_index, 0) + 1
-
-                winner_index = max(vote_counts, key=vote_counts.get)
-                winning_shadow = shadow_proposals[winner_index]
-
-                print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-                print(f">>> Shadow Traits:")
-                for key, value in winning_shadow.shadow_traits.items():
-                    print(f"    {key}: {value}")
-
-                character_debate_history["shadow_debate"] = {
-                    "proposals": [p.model_dump() for p in shadow_proposals],
-                    "critiques": [c.model_dump() for c in all_shadow_critiques],
-                    "votes": [v.model_dump() for v in shadow_votes],
-                    "winner_index": winner_index,
-                    "winner": winning_shadow.model_dump()
-                }
-
-                # =========================================================
-                # SUBSTEP 2B: ARC TYPE DEBATE (3 agents)
-                # =========================================================
-                print(f"\n--- SUBSTEP 2B: ARC TYPE DEBATE ---")
-
-                # Initialize 3 arc type agents
-                arc_agent = ArcTypeAgent(model=self.model)
-                arc_narrative = ArcTypeNarrativeAgent(model=self.model)
-                arc_thematic = ArcTypeThematicAgent(model=self.model)
-
-                arc_agents = [arc_agent, arc_narrative, arc_thematic]
-
-                # Proposals
-                print(f"\n>>> Phase 1: Proposals (3 agents)")
-                arc_proposals = []
-                for agent in arc_agents:
-                    print(f"    - {agent.name} proposing...")
-                    proposal = agent.propose_arc_type(
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes,
-                        truth=winning_lie_truth.truth_character_needs,
-                        square_corner=perspective['corner']
-                    )
-                    arc_proposals.append(proposal)
-                    print(f"      Arc: {proposal.arc_type}")
-
-                # Critiques
-                print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-                all_arc_critiques = []
-                for agent in arc_agents:
-                    print(f"    - {agent.name} critiquing...")
-                    critiques = agent.critique_arc_type(
-                        proposals=arc_proposals,
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes,
-                        truth=winning_lie_truth.truth_character_needs
-                    )
-                    all_arc_critiques.extend(critiques)
-                    for c in critiques:
-                        print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-                # Votes
-                print(f"\n>>> Phase 3: Voting (each agent votes)")
-                arc_votes = []
-                for agent in arc_agents:
-                    vote = agent.vote(proposals=arc_proposals, perspective=perspective)
-                    arc_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.voted_for_index}")
-
-                # Select winner
-                vote_counts = {}
-                for v in arc_votes:
-                    vote_counts[v.voted_for_index] = vote_counts.get(v.voted_for_index, 0) + 1
-
-                winner_index = max(vote_counts, key=vote_counts.get)
-                winning_arc = arc_proposals[winner_index]
-
-                print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-                print(f">>> Arc Type: {winning_arc.arc_type}")
-                print(f">>> Journey: {winning_arc.arc_journey}")
-
-                character_debate_history["arc_type_debate"] = {
-                    "proposals": [p.model_dump() for p in arc_proposals],
-                    "critiques": [c.model_dump() for c in all_arc_critiques],
-                    "votes": [v.model_dump() for v in arc_votes],
-                    "winner_index": winner_index,
-                    "winner": winning_arc.model_dump()
-                }
-
-                # =========================================================
-                # SUBSTEP 2C: GHOST DEBATE (3 agents)
-                # =========================================================
-                print(f"\n--- SUBSTEP 2C: GHOST DEBATE ---")
-
-                # Initialize 3 ghost agents
-                ghost_agent = GhostAgent(model=self.model)
-                ghost_emotional = GhostEmotionalAgent(model=self.model)
-                ghost_thematic = GhostThematicAgent(model=self.model)
-
-                ghost_agents = [ghost_agent, ghost_emotional, ghost_thematic]
-
-                # Proposals
-                print(f"\n>>> Phase 1: Proposals (3 agents)")
-                ghost_proposals = []
-                for agent in ghost_agents:
-                    print(f"    - {agent.name} proposing...")
-                    proposal = agent.propose_ghost(
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes
-                    )
-                    ghost_proposals.append(proposal)
-                    print(f"      Event: {proposal.ghost_event[:60]}...")
-
-                # Critiques
-                print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-                all_ghost_critiques = []
-                for agent in ghost_agents:
-                    print(f"    - {agent.name} critiquing...")
-                    critiques = agent.critique_ghost(
-                        proposals=ghost_proposals,
-                        perspective=perspective,
-                        lie=winning_lie_truth.lie_character_believes
-                    )
-                    all_ghost_critiques.extend(critiques)
-                    for c in critiques:
-                        print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-                # Votes
-                print(f"\n>>> Phase 3: Voting (each agent votes)")
-                ghost_votes = []
-                for agent in ghost_agents:
-                    vote = agent.vote(proposals=ghost_proposals, perspective=perspective)
-                    ghost_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.voted_for_index}")
-
-                # Select winner
-                vote_counts = {}
-                for v in ghost_votes:
-                    vote_counts[v.voted_for_index] = vote_counts.get(v.voted_for_index, 0) + 1
-
-                winner_index = max(vote_counts, key=vote_counts.get)
-                winning_ghost = ghost_proposals[winner_index]
-
-                print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-                print(f">>> Ghost Event: {winning_ghost.ghost_event}")
-                print(f">>> How It Created Lie: {winning_ghost.how_it_created_lie}")
-
-                character_debate_history["ghost_debate"] = {
-                    "proposals": [p.model_dump() for p in ghost_proposals],
-                    "critiques": [c.model_dump() for c in all_ghost_critiques],
-                    "votes": [v.model_dump() for v in ghost_votes],
-                    "winner_index": winner_index,
-                    "winner": winning_ghost.model_dump()
-                }
-
-                # =========================================================
-                # SUBSTEP 3: NAME GENERATION (reuse existing system)
-                # =========================================================
-                print(f"\n--- SUBSTEP 3: NAME GENERATION ---")
-
-                import random
-                import string
-
-                first_initial = random.choice(string.ascii_uppercase)
-                last_initial = random.choice(string.ascii_uppercase)
-                print(f"    Initials: {first_initial}.{last_initial}.")
-
-                name_result = self._run_name_debate(
-                    character_role=perspective['perspective_name'],
-                    first_initial=first_initial,
-                    last_initial=last_initial,
-                    logline=story_prompt,
-                    setting_prompt=setting_prompt,
-                    existing_names=existing_names,
-                )
-
-                final_name = name_result["final_name"]
-                existing_names.append(final_name)
-                print(f"    >>> Name: {final_name}")
-
-                character_debate_history["name_debate"] = name_result.get("debate", {})
-
-                # =========================================================
-                # SUBSTEP 4: PHYSICAL APPEARANCE (reuse existing system)
-                # =========================================================
-                print(f"\n--- SUBSTEP 4: PHYSICAL APPEARANCE ---")
-
-                physical_result = self._run_physical_debate(
-                    character_role=perspective['perspective_name'],
-                    character_type="thematic",
-                    adjective=winning_lie_truth.lie_character_believes[:50],  # Use Lie as context
-                    goal=winning_lie_truth.want,
-                    stakes=winning_lie_truth.need,
-                    setting_prompt=setting_prompt,
-                )
-
-                # Extract physical description from winning proposal
-                winning_physical = physical_result.get("winning_physical", {})
-                final_physical = f"{winning_physical.get('body_build', 'average build')}, {winning_physical.get('height', 'average height')}, {winning_physical.get('hair_color', 'dark hair')}, {winning_physical.get('eye_color', 'brown eyes')}, {winning_physical.get('ethnicity', 'mixed heritage')}"
-                if winning_physical.get('distinguishing_features'):
-                    final_physical += f", {winning_physical['distinguishing_features']}"
-
-                print(f"    >>> Physical: {final_physical[:100]}...")
-
-                character_debate_history["physical_debate"] = {
-                    "proposals": physical_result.get("proposals", []),
-                    "critiques": physical_result.get("critiques", []),
-                    "votes": physical_result.get("votes", []),
-                    "winner": physical_result.get("winner", ""),
-                    "winning_physical": winning_physical,
-                    "winning_costume": physical_result.get("winning_costume", "")
-                }
-
-                # =========================================================
-                # BUILD CHARACTER DICT
-                # =========================================================
-
-                # Assign story role based on thematic corner
-                THEMATIC_ROLE_MAPPING = {
-                    "positive": "protagonist",      # Life-affirming = hero
-                    "contradictory": "supporting",  # Tension = ally/mentor
-                    "contrary": "supporting",       # Opposite = doubter/obstacle
-                    "negation": "antagonist"        # Darkest = villain
-                }
-                character_role = THEMATIC_ROLE_MAPPING.get(perspective['corner'], "supporting")
-
-                character = {
-                    "character_id": char_id,
-                    "name": final_name,
-                    "gender": winning_physical.get('gender', 'unknown'),
-                    "body_build": winning_physical.get('body_build', 'average build'),
-                    "height": winning_physical.get('height', 'average height'),
-                    "hair_color": winning_physical.get('hair_color', 'dark hair'),
-                    "eye_color": winning_physical.get('eye_color', 'brown eyes'),
-                    "ethnicity": winning_physical.get('ethnicity', 'mixed heritage'),
-                    "distinguishing_features": winning_physical.get('distinguishing_features', ''),
-                    "costume": winning_physical.get('costume', 'simple clothing'),
-                    "role": character_role,  # Story function (protagonist/antagonist/supporting)
-                    "thematic_perspective": perspective['perspective_name'],
-                    "thematic_corner": perspective['corner'],
-                    "thematic_position": perspective['position'],
-                    "lie_character_believes": winning_lie_truth.lie_character_believes,
-                    "truth_character_needs": winning_lie_truth.truth_character_needs,
-                    "want": winning_lie_truth.want,
-                    "need": winning_lie_truth.need,
-                    "shadow_traits": winning_shadow.shadow_traits,
-                    "arc_type": winning_arc.arc_type,
-                    "arc_journey": winning_arc.arc_journey,
-                    "ghost_event": winning_ghost.ghost_event,
-                    "how_ghost_created_lie": winning_ghost.how_it_created_lie,
-                }
-
-                characters.append(character)
-                all_character_debates.append(character_debate_history)
-
-                # UPDATE CODEX after each character
-                if "story" not in codex:
-                    codex["story"] = {}
-                codex["story"]["characters"] = characters
-
-                print(f"\n>>> Character {idx+1} complete!")
-
-            # Final summary
-            duration = time.time() - start_time
-
-            print(f"\n{'='*60}")
-            print(f"STEP 1 COMPLETE! Created {len(characters)} characters")
-            print(f"Duration: {duration:.1f}s")
-            print(f"{'='*60}")
-
-            for i, char in enumerate(characters):
-                print(f"\n{i+1}. {char['name']} ({char['thematic_perspective']})")
-                print(f"   Arc: {char['arc_type']}")
-                print(f"   Lie: {char['lie_character_believes'][:60]}...")
-                print(f"   Truth: {char['truth_character_needs'][:60]}...")
-
-            return Step1Result(
-                characters=characters,
-                character_debates=all_character_debates,
-                success=True,
-                duration_seconds=duration
-            )
-
-        except Exception as e:
-            duration = time.time() - start_time
-            print(f"\n>>> Step 1 FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-
-            return Step1Result(
-                characters=[],
-                character_debates=[],
-                success=False,
-                error=str(e),
-                duration_seconds=duration
-            )
-
-    # =========================================================================
-    # STEP 2: STORY SHAPE & GENRE SELECTION (Multi-Agent Debate)
-    # =========================================================================
-
-    def step2_story_shape_genre(self, codex: dict) -> Step2Result:
-        """Select story shape, genre, and tropes via multi-agent debate.
-
-        Uses multi-agent debates to determine:
-        1. Classic Story Shape (7 Basic Plots)
-        2. Save the Cat Type
-        3. Genre(s)
-        4. Tropes to use/subvert
-
-        Args:
-            codex: The codex with theme_foundation (Step 0) and characters (Step 1)
-
-        Returns:
-            Step2Result with story shape, genre, tropes, and debate history
-        """
-        start_time = time.time()
-
-        try:
-            # Get Step 0 and Step 1 results
-            theme_foundation = codex.get("story", {}).get("theme_foundation", {})
-            characters = codex.get("story", {}).get("characters", [])
-
-            if not theme_foundation:
-                return Step2Result(
-                    story_shape="", save_the_cat_type="", primary_genre="",
-                    secondary_genre=None, tone_flavor=None, tropes=[],
-                    step2_debates={}, success=False,
-                    error="Step 0 (Theme Foundation) not run. Run --steps 0 first."
-                )
-
-            if not characters:
-                return Step2Result(
-                    story_shape="", save_the_cat_type="", primary_genre="",
-                    secondary_genre=None, tone_flavor=None, tropes=[],
-                    step2_debates={}, success=False,
-                    error="Step 1 (Character Creation) not run. Run --steps 1 first."
-                )
-
-            # Get context
-            theme_question = theme_foundation.get("central_question", "")
-            story_prompt, setting_prompt = self.extract_prompts(codex)
-
-            print(f"\n{'='*60}")
-            print("STEP 2: STORY SHAPE & GENRE SELECTION")
-            print(f"{'='*60}")
-            print(f">>> Theme: {theme_question[:80]}...")
-            print(f">>> Characters: {len(characters)}")
-
-            # Import agents
-            from src.story_agents.story_shape_agents import (
-                StoryShapeJourneyAgent, StoryShapeEmotionalAgent, StoryShapeThematicAgent,
-                SaveTheCatStakesAgent, SaveTheCatCharacterAgent, SaveTheCatThematicAgent,
-                GenrePressureAgent, GenreToneAgent, GenreAudienceAgent,
-                TropeConventionAgent, TropeThematicAgent, TropeSubversionAgent,
-            )
-
-            step2_debates = {}
-
-            # ====================
-            # DEBATE 1: STORY SHAPE
-            # ====================
-            print(f"\n{'='*50}")
-            print("DEBATE 1: STORY SHAPE (7 Basic Plots)")
-            print(f"{'='*50}")
-
-            shape_agents = [
-                StoryShapeJourneyAgent(model=self.model),
-                StoryShapeEmotionalAgent(model=self.model),
-                StoryShapeThematicAgent(model=self.model),
-            ]
-
-            # Proposals
-            print(f"\n>>> Phase 1: Proposals (3 agents)")
-            shape_proposals = []
-            for agent in shape_agents:
-                print(f"    - {agent.name} proposing...")
-                proposal = agent.propose_story_shape(story_prompt, theme_question, characters)
-                shape_proposals.append(proposal)
-                print(f"      Shape: {proposal.story_shape}")
-
-            # Critiques
-            print(f"\n>>> Phase 2: Critiques")
-            all_shape_critiques = []
-            for agent in shape_agents:
-                critiques = agent.critique_story_shape(shape_proposals, story_prompt, characters)
-                all_shape_critiques.extend(critiques)
-                for c in critiques:
-                    print(f"    - {agent.name}: Proposal {c.proposal_index} = {c.score}/10")
-
-            # Votes
-            print(f"\n>>> Phase 3: Voting")
-            shape_votes = []
-            for agent in shape_agents:
-                vote = agent.vote(shape_proposals, story_prompt)
-                shape_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            # Determine winner
-            vote_counts = {}
-            for vote in shape_votes:
-                vote_counts[vote.chosen_proposal_index] = vote_counts.get(vote.chosen_proposal_index, 0) + 1
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_shape = shape_proposals[winner_index]
-
-            print(f"\n>>> WINNER: {winning_shape.story_shape} ({vote_counts[winner_index]} votes)")
-
-            step2_debates["story_shape_debate"] = {
-                "proposals": [p.dict() for p in shape_proposals],
-                "critiques": [c.dict() for c in all_shape_critiques],
-                "votes": [v.dict() for v in shape_votes],
-                "winner_index": winner_index
-            }
-
-            # ====================
-            # DEBATE 2: SAVE THE CAT TYPE
-            # ====================
-            print(f"\n{'='*50}")
-            print("DEBATE 2: SAVE THE CAT TYPE")
-            print(f"{'='*50}")
-
-            stc_agents = [
-                SaveTheCatStakesAgent(model=self.model),
-                SaveTheCatCharacterAgent(model=self.model),
-                SaveTheCatThematicAgent(model=self.model),
-            ]
-
-            print(f"\n>>> Phase 1: Proposals")
-            stc_proposals = []
-            for agent in stc_agents:
-                proposal = agent.propose_save_the_cat(story_prompt, theme_question, characters, winning_shape.story_shape)
-                stc_proposals.append(proposal)
-                print(f"    - {agent.name}: {proposal.save_the_cat_type}")
-
-            print(f"\n>>> Phase 2: Critiques")
-            all_stc_critiques = []
-            for agent in stc_agents:
-                critiques = agent.critique_save_the_cat(stc_proposals, story_prompt, characters)
-                all_stc_critiques.extend(critiques)
-
-            print(f"\n>>> Phase 3: Voting")
-            stc_votes = []
-            for agent in stc_agents:
-                vote = agent.vote(stc_proposals, story_prompt)
-                stc_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            vote_counts = {}
-            for vote in stc_votes:
-                vote_counts[vote.chosen_proposal_index] = vote_counts.get(vote.chosen_proposal_index, 0) + 1
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_stc = stc_proposals[winner_index]
-
-            print(f"\n>>> WINNER: {winning_stc.save_the_cat_type}")
-
-            step2_debates["save_the_cat_debate"] = {
-                "proposals": [p.dict() for p in stc_proposals],
-                "critiques": [c.dict() for c in all_stc_critiques],
-                "votes": [v.dict() for v in stc_votes],
-                "winner_index": winner_index
-            }
-
-            # ====================
-            # DEBATE 3: GENRE
-            # ====================
-            print(f"\n{'='*50}")
-            print("DEBATE 3: GENRE SELECTION")
-            print(f"{'='*50}")
-
-            genre_agents = [
-                GenrePressureAgent(model=self.model),
-                GenreToneAgent(model=self.model),
-                GenreAudienceAgent(model=self.model),
-            ]
-
-            print(f"\n>>> Phase 1: Proposals")
-            genre_proposals = []
-            for agent in genre_agents:
-                proposal = agent.propose_genre(story_prompt, theme_question, winning_shape.story_shape, winning_stc.save_the_cat_type)
-                genre_proposals.append(proposal)
-                print(f"    - {agent.name}: {proposal.primary_genre}/{proposal.secondary_genre or 'none'}")
-
-            print(f"\n>>> Phase 2: Critiques")
-            all_genre_critiques = []
-            for agent in genre_agents:
-                critiques = agent.critique_genre(genre_proposals, story_prompt)
-                all_genre_critiques.extend(critiques)
-
-            print(f"\n>>> Phase 3: Voting")
-            genre_votes = []
-            for agent in genre_agents:
-                vote = agent.vote(genre_proposals, story_prompt)
-                genre_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            vote_counts = {}
-            for vote in genre_votes:
-                vote_counts[vote.chosen_proposal_index] = vote_counts.get(vote.chosen_proposal_index, 0) + 1
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_genre = genre_proposals[winner_index]
-
-            print(f"\n>>> WINNER: {winning_genre.primary_genre}" +
-                  (f"/{winning_genre.secondary_genre}" if winning_genre.secondary_genre else ""))
-
-            step2_debates["genre_debate"] = {
-                "proposals": [p.dict() for p in genre_proposals],
-                "critiques": [c.dict() for c in all_genre_critiques],
-                "votes": [v.dict() for v in genre_votes],
-                "winner_index": winner_index
-            }
-
-            # ====================
-            # DEBATE 4: TROPES
-            # ====================
-            print(f"\n{'='*50}")
-            print("DEBATE 4: TROPE SELECTION")
-            print(f"{'='*50}")
-
-            trope_agents = [
-                TropeConventionAgent(model=self.model),
-                TropeThematicAgent(model=self.model),
-                TropeSubversionAgent(model=self.model),
-            ]
-
-            genres = [winning_genre.primary_genre]
-            if winning_genre.secondary_genre:
-                genres.append(winning_genre.secondary_genre)
-
-            print(f"\n>>> Phase 1: Proposals")
-            trope_proposals = []
-            for agent in trope_agents:
-                proposal = agent.propose_tropes(story_prompt, genres, winning_shape.story_shape, theme_question)
-                trope_proposals.append(proposal)
-                print(f"    - {agent.name}: {len(proposal.tropes)} tropes")
-
-            print(f"\n>>> Phase 2: Critiques")
-            all_trope_critiques = []
-            for agent in trope_agents:
-                critiques = agent.critique_tropes(trope_proposals, story_prompt, genres)
-                all_trope_critiques.extend(critiques)
-
-            print(f"\n>>> Phase 3: Voting")
-            trope_votes = []
-            for agent in trope_agents:
-                vote = agent.vote(trope_proposals, story_prompt)
-                trope_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            vote_counts = {}
-            for vote in trope_votes:
-                vote_counts[vote.chosen_proposal_index] = vote_counts.get(vote.chosen_proposal_index, 0) + 1
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_tropes = trope_proposals[winner_index]
-
-            print(f"\n>>> WINNER: {len(winning_tropes.tropes)} tropes selected")
-            for trope in winning_tropes.tropes:
-                print(f"    - {trope.name} ({trope.usage})")
-
-            step2_debates["trope_debate"] = {
-                "proposals": [p.dict() for p in trope_proposals],
-                "critiques": [c.dict() for c in all_trope_critiques],
-                "votes": [v.dict() for v in trope_votes],
-                "winner_index": winner_index
-            }
-
-            # Convert Trope objects to dicts for storage
-            tropes_as_dicts = [t.dict() for t in winning_tropes.tropes]
-
-            duration = time.time() - start_time
-
-            print(f"\n{'='*60}")
-            print(f"STEP 2 COMPLETE! Duration: {duration:.1f}s")
-            print(f"{'='*60}")
-            print(f">>> Story Shape: {winning_shape.story_shape}")
-            print(f">>> STC Type: {winning_stc.save_the_cat_type}")
-            print(f">>> Genre: {winning_genre.primary_genre}" +
-                  (f"/{winning_genre.secondary_genre}" if winning_genre.secondary_genre else ""))
-            print(f">>> Tropes: {len(winning_tropes.tropes)}")
-
-            return Step2Result(
-                story_shape=winning_shape.story_shape,
-                save_the_cat_type=winning_stc.save_the_cat_type,
-                primary_genre=winning_genre.primary_genre,
-                secondary_genre=winning_genre.secondary_genre,
-                tone_flavor=winning_genre.tone_flavor,
-                tropes=tropes_as_dicts,
-                step2_debates=step2_debates,
-                success=True,
-                duration_seconds=duration
-            )
-
-        except Exception as e:
-            duration = time.time() - start_time
-            print(f"\n>>> Step 2 FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-
-            return Step2Result(
-                story_shape="", save_the_cat_type="", primary_genre="",
-                secondary_genre=None, tone_flavor=None, tropes=[],
-                step2_debates={}, success=False,
-                error=str(e), duration_seconds=duration
             )
 
     # =========================================================================
@@ -2691,490 +1830,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             )
 
     # =========================================================================
-    # STEP 3: PLOT STRUCTURE (Character Arc + Story Beats)
-    # =========================================================================
-
-    def step3_plot_structure(self, codex: dict) -> Step3Result:
-        """Build plot structure via multi-agent debate.
-
-        Creates integrated beat structure combining:
-        1. Character arc beats (hero/villain focus, side characters minimal)
-        2. Save the Cat 15-beat structure
-        3. Integration of arcs + beats + theme
-
-        Args:
-            codex: The codex dictionary with previous steps' results
-
-        Returns:
-            Step3Result with integrated beats and arc summaries
-        """
-        start_time = time.time()
-
-        try:
-            # Import plot structure agents
-            from src.story_agents.plot_structure_agents import (
-                # Arc Beat agents
-                ArcBeatArchitectAgent, ArcBeatPsychologicalAgent, ArcBeatDramaticAgent,
-                # SaveTheCat agents
-                SaveTheCatStructureAgent, SaveTheCatPacingAgent, SaveTheCatGenreAgent,
-                # Integration agents
-                IntegrationWeaverAgent, IntegrationThematicAgent, IntegrationConflictAgent,
-            )
-
-            # Get previous results
-            story_prompt, _ = self.extract_prompts(codex)
-            theme_foundation = codex.get("story", {}).get("theme_foundation", {})
-            theme_question = theme_foundation.get("central_question", "Unknown theme")
-            characters = codex.get("story", {}).get("characters", [])
-            story_shape = codex.get("story", {}).get("story_shape", "Unknown")
-            save_the_cat_type = codex.get("story", {}).get("save_the_cat_type", "Unknown")
-            primary_genre = codex.get("story", {}).get("primary_genre", "Unknown")
-            secondary_genre = codex.get("story", {}).get("secondary_genre", "")
-
-            genres = [primary_genre]
-            if secondary_genre:
-                genres.append(secondary_genre)
-
-            if not characters:
-                return Step3Result(
-                    integrated_beats=[],
-                    hero_arc_summary="",
-                    villain_arc_summary="",
-                    side_character_notes="",
-                    step3_debates={},
-                    success=False,
-                    error="No characters found. Run Steps 0 and 1 first.",
-                )
-
-            print(f"\n{'='*60}")
-            print("STEP 3: PLOT STRUCTURE (Character Arc + Story Beats)")
-            print(f"{'='*60}")
-            print(f">>> Theme: {theme_question}")
-            print(f">>> Story Shape: {story_shape}")
-            print(f">>> STC Type: {save_the_cat_type}")
-            print(f">>> Genre: {'/'.join(genres)}")
-
-            # =========================================================================
-            # SUBSTEP 1: CHARACTER ARC BEAT MAPPING
-            # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 1: CHARACTER ARC BEAT MAPPING")
-            print(f"{'='*60}")
-            print(">>> Mapping arc beats for ALL major characters")
-            print(f">>> Characters: {len(characters)} (hero, villain, {len(characters)-2} supporting)")
-
-            arc_agents = [
-                ArcBeatArchitectAgent(model=self.model),
-                ArcBeatPsychologicalAgent(model=self.model),
-                ArcBeatDramaticAgent(model=self.model),
-            ]
-
-            print(f"\n>>> Phase 1: Proposals (3 agents)")
-            arc_proposals = []
-            for agent in arc_agents:
-                print(f"    - {agent.name} proposing...")
-                try:
-                    proposal = agent.propose_arc_beats(characters, story_shape, theme_question)
-                    if proposal is None:
-                        print(f"      ⚠️  {agent.name} returned None, skipping")
-                        continue
-                    arc_proposals.append(proposal)
-                    print(f"      Hero: {proposal.hero_arc.arc_type} ({len(proposal.hero_arc.arc_beats)} beats)")
-                    print(f"      Villain: {proposal.villain_arc.arc_type} ({len(proposal.villain_arc.arc_beats)} beats)")
-                    print(f"      Supporting: {len(proposal.supporting_arcs)} characters")
-                except Exception as e:
-                    print(f"      ❌ {agent.name} failed: {str(e)[:100]}")
-                    continue
-
-            if not arc_proposals:
-                return Step3Result(
-                    integrated_beats=[], hero_arc_summary="", villain_arc_summary="",
-                    side_character_notes="", step3_debates={},
-                    success=False, error="All arc beat agents failed to generate proposals"
-                )
-
-            print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-            all_arc_critiques = []
-            for agent in arc_agents:
-                print(f"    - {agent.name} critiquing...")
-                critiques = agent.critique_arc_beats(arc_proposals, theme_question)
-                all_arc_critiques.extend(critiques)
-                for c in critiques:
-                    print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-            print(f"\n>>> Phase 3: Voting (each agent votes)")
-            arc_votes = []
-            for agent in arc_agents:
-                vote = agent.vote(arc_proposals, theme_question)
-                arc_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            # Count votes
-            vote_counts = {}
-            for v in arc_votes:
-                vote_counts[v.chosen_proposal_index] = vote_counts.get(v.chosen_proposal_index, 0) + 1
-
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_arcs = arc_proposals[winner_index]
-
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Hero Arc: {winning_arcs.hero_arc.arc_summary}")
-            print(f">>> Villain Arc: {winning_arcs.villain_arc.arc_summary}")
-            if winning_arcs.supporting_arcs:
-                print(f">>> Supporting Characters: {len(winning_arcs.supporting_arcs)} micro-arcs")
-
-            # =========================================================================
-            # ATTACH ARC BEATS TO CHARACTER OBJECTS
-            # =========================================================================
-            print(f"\n>>> Attaching arc beats to character objects...")
-
-            # Create a mapping of character name to arc structure
-            arc_by_character = {
-                winning_arcs.hero_arc.character_name: winning_arcs.hero_arc,
-                winning_arcs.villain_arc.character_name: winning_arcs.villain_arc,
-            }
-            for arc in winning_arcs.supporting_arcs:
-                arc_by_character[arc.character_name] = arc
-
-            # Attach arc beats to each character in codex
-            for character in characters:
-                char_name = character.get("name", "")
-                if char_name in arc_by_character:
-                    arc = arc_by_character[char_name]
-                    character["arc_beats"] = [
-                        {
-                            "beat_name": beat.beat_name,
-                            "timing": beat.timing,
-                            "description": beat.description,
-                            "ties_to_lie_truth": beat.ties_to_lie_truth,
-                        }
-                        for beat in arc.arc_beats
-                    ]
-                    print(f"    - {char_name}: {len(arc.arc_beats)} beats attached")
-
-            # Verify attachment worked
-            chars_with_beats = sum(1 for c in characters if "arc_beats" in c)
-            print(f"\n>>> ✅ Arc beats attached to {chars_with_beats}/{len(characters)} characters")
-            if chars_with_beats < len(characters):
-                print(f">>> ⚠️  WARNING: {len(characters) - chars_with_beats} characters missing arc beats!")
-
-            # =========================================================================
-            # SUBSTEP 2: SAVE THE CAT 15-BEAT STRUCTURE
-            # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 2: SAVE THE CAT 15-BEAT STRUCTURE")
-            print(f"{'='*60}")
-
-            stc_agents = [
-                SaveTheCatStructureAgent(model=self.model),
-                SaveTheCatPacingAgent(model=self.model),
-                SaveTheCatGenreAgent(model=self.model),
-            ]
-
-            print(f"\n>>> Phase 1: Proposals (3 agents)")
-            stc_proposals = []
-            for agent in stc_agents:
-                print(f"    - {agent.name} proposing...")
-                if agent.name == "STC_GENRE":
-                    proposal = agent.propose_beats(story_shape, save_the_cat_type, theme_question, story_prompt, genres)
-                else:
-                    proposal = agent.propose_beats(story_shape, save_the_cat_type, theme_question, story_prompt)
-                stc_proposals.append(proposal)
-                print(f"      Pacing: {proposal.overall_pacing[:50]}...")
-
-            print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-            all_stc_critiques = []
-            for agent in stc_agents:
-                print(f"    - {agent.name} critiquing...")
-                if agent.name == "STC_GENRE":
-                    critiques = agent.critique_beats(stc_proposals, theme_question, genres)
-                else:
-                    critiques = agent.critique_beats(stc_proposals, theme_question)
-                all_stc_critiques.extend(critiques)
-                for c in critiques:
-                    print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-            print(f"\n>>> Phase 3: Voting (each agent votes)")
-            stc_votes = []
-            for agent in stc_agents:
-                vote = agent.vote(stc_proposals, theme_question)
-                stc_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            # Count votes
-            vote_counts = {}
-            for v in stc_votes:
-                vote_counts[v.chosen_proposal_index] = vote_counts.get(v.chosen_proposal_index, 0) + 1
-
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_stc = stc_proposals[winner_index]
-
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Beats: {len(winning_stc.beats)} Save the Cat beats")
-
-            # =========================================================================
-            # SUBSTEP 3: BEAT INTEGRATION
-            # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 3: BEAT INTEGRATION (Arc + Plot + Theme)")
-            print(f"{'='*60}")
-
-            integration_agents = [
-                IntegrationWeaverAgent(model=self.model),
-                IntegrationThematicAgent(model=self.model),
-                IntegrationConflictAgent(model=self.model),
-            ]
-
-            print(f"\n>>> Phase 1: Proposals (3 agents)")
-            integration_proposals = []
-            for agent in integration_agents:
-                print(f"    - {agent.name} proposing...")
-                proposal = agent.propose_integration(
-                    winning_arcs.hero_arc,
-                    winning_arcs.villain_arc,
-                    winning_arcs.supporting_arcs,
-                    winning_stc.beats,
-                    theme_question
-                )
-                integration_proposals.append(proposal)
-                print(f"      {len(proposal.integrated_beats)} integrated beats")
-
-            print(f"\n>>> Phase 2: Critiques (each agent critiques all 3)")
-            all_integration_critiques = []
-            for agent in integration_agents:
-                print(f"    - {agent.name} critiquing...")
-                critiques = agent.critique_integration(integration_proposals, theme_question)
-                all_integration_critiques.extend(critiques)
-                for c in critiques:
-                    print(f"      Proposal {c.proposal_index}: {c.score}/10")
-
-            print(f"\n>>> Phase 3: Voting (each agent votes)")
-            integration_votes = []
-            for agent in integration_agents:
-                vote = agent.vote(integration_proposals, theme_question)
-                integration_votes.append(vote)
-                print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
-
-            # Count votes
-            vote_counts = {}
-            for v in integration_votes:
-                vote_counts[v.chosen_proposal_index] = vote_counts.get(v.chosen_proposal_index, 0) + 1
-
-            winner_index = max(vote_counts, key=vote_counts.get)
-            winning_integration = integration_proposals[winner_index]
-
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Integrated Beats: {len(winning_integration.integrated_beats)}")
-
-            # =========================================================================
-            # BUILD STEP 3 OUTPUT
-            # =========================================================================
-
-            # Convert integrated beats to dicts
-            integrated_beats_dicts = [
-                {
-                    "beat_name": b.beat_name,
-                    "timing_percentage": b.timing_percentage,
-                    "plot_event": b.plot_event,
-                    "character_arcs": b.character_arcs,  # Dict of all character names to arc beats
-                    "thematic_test": b.thematic_test,
-                }
-                for b in winning_integration.integrated_beats
-            ]
-
-            # Ensure exactly 15 beats (pad or trim if needed)
-            if len(integrated_beats_dicts) < 15:
-                print(f">>> WARNING: Only {len(integrated_beats_dicts)} beats generated, padding to 15")
-                # Pad with minimal placeholder beats
-                # Create placeholder character_arcs dict with all characters
-                placeholder_arcs = {char["name"]: "[To be developed]" for char in characters}
-                while len(integrated_beats_dicts) < 15:
-                    beat_num = len(integrated_beats_dicts) + 1
-                    integrated_beats_dicts.append({
-                        "beat_name": f"Beat {beat_num}",
-                        "timing_percentage": "N/A",
-                        "plot_event": f"[Placeholder for beat {beat_num}]",
-                        "character_arcs": placeholder_arcs.copy(),
-                        "thematic_test": f"Tests theme: {theme_question}",
-                    })
-            elif len(integrated_beats_dicts) > 15:
-                print(f">>> WARNING: {len(integrated_beats_dicts)} beats generated, trimming to 15")
-                integrated_beats_dicts = integrated_beats_dicts[:15]
-
-            # Build step3_debates for metadata
-            step3_debates = {
-                "arc_beat_debate": {
-                    "proposals": [
-                        {
-                            "agent_name": p.agent_name,
-                            "hero_arc": {
-                                "character_name": p.hero_arc.character_name,
-                                "arc_type": p.hero_arc.arc_type,
-                                "arc_summary": p.hero_arc.arc_summary,
-                                "beats": [{"beat_name": b.beat_name, "description": b.description} for b in p.hero_arc.arc_beats],
-                            },
-                            "villain_arc": {
-                                "character_name": p.villain_arc.character_name,
-                                "arc_type": p.villain_arc.arc_type,
-                                "arc_summary": p.villain_arc.arc_summary,
-                                "beats": [{"beat_name": b.beat_name, "description": b.description} for b in p.villain_arc.arc_beats],
-                            },
-                            "supporting_arcs": [
-                                {
-                                    "character_name": arc.character_name,
-                                    "arc_type": arc.arc_type,
-                                    "arc_summary": arc.arc_summary,
-                                    "beats": [{"beat_name": b.beat_name, "description": b.description} for b in arc.arc_beats],
-                                }
-                                for arc in p.supporting_arcs
-                            ],
-                            "reasoning": p.reasoning,
-                        }
-                        for p in arc_proposals
-                    ],
-                    "critiques": [
-                        {
-                            "agent_name": c.agent_name,
-                            "proposal_index": c.proposal_index,
-                            "score": c.score,
-                            "strengths": c.strengths,
-                            "weaknesses": c.weaknesses,
-                        }
-                        for c in all_arc_critiques
-                    ],
-                    "votes": [
-                        {
-                            "agent_name": v.agent_name,
-                            "chosen_proposal_index": v.chosen_proposal_index,
-                            "reasoning": v.reasoning,
-                        }
-                        for v in arc_votes
-                    ],
-                    "winner_index": winner_index,
-                },
-                "save_the_cat_debate": {
-                    "proposals": [
-                        {
-                            "agent_name": p.agent_name,
-                            "beats": [{"beat_name": b.beat_name, "timing": b.timing_percentage, "plot": b.plot_event[:100]} for b in p.beats],
-                            "pacing": p.overall_pacing,
-                        }
-                        for p in stc_proposals
-                    ],
-                    "critiques": [
-                        {
-                            "agent_name": c.agent_name,
-                            "proposal_index": c.proposal_index,
-                            "score": c.score,
-                            "strengths": c.strengths,
-                            "weaknesses": c.weaknesses,
-                        }
-                        for c in all_stc_critiques
-                    ],
-                    "votes": [
-                        {
-                            "agent_name": v.agent_name,
-                            "chosen_proposal_index": v.chosen_proposal_index,
-                            "reasoning": v.reasoning,
-                        }
-                        for v in stc_votes
-                    ],
-                    "winner_index": winner_index,
-                },
-                "integration_debate": {
-                    "proposals": [
-                        {
-                            "agent_name": p.agent_name,
-                            "beats_count": len(p.integrated_beats),
-                            "reasoning": p.reasoning[:200] + "..." if len(p.reasoning) > 200 else p.reasoning,
-                        }
-                        for p in integration_proposals
-                    ],
-                    "critiques": [
-                        {
-                            "agent_name": c.agent_name,
-                            "proposal_index": c.proposal_index,
-                            "score": c.score,
-                            "strengths": c.strengths,
-                            "weaknesses": c.weaknesses,
-                        }
-                        for c in all_integration_critiques
-                    ],
-                    "votes": [
-                        {
-                            "agent_name": v.agent_name,
-                            "chosen_proposal_index": v.chosen_proposal_index,
-                            "reasoning": v.reasoning,
-                        }
-                        for v in integration_votes
-                    ],
-                    "winner_index": winner_index,
-                },
-            }
-
-            # Generate side character summary from integrated beats
-            hero_name = winning_arcs.hero_arc.character_name
-            villain_name = winning_arcs.villain_arc.character_name
-            supporting_char_names = [arc.character_name for arc in winning_arcs.supporting_arcs]
-
-            if supporting_char_names:
-                side_char_summary = (
-                    f"Supporting characters ({', '.join(supporting_char_names)}) appear throughout "
-                    f"all {len(integrated_beats_dicts)} beats with their micro-arcs integrated into "
-                    f"the main narrative alongside {hero_name} and {villain_name}."
-                )
-            else:
-                side_char_summary = "No supporting characters in this story."
-
-            # Store character arc beats summary in codex for easy reference in Step 4
-            character_arc_summaries = {}
-            for char in characters:
-                if "arc_beats" in char:
-                    character_arc_summaries[char["name"]] = {
-                        "arc_type": char.get("arc_type", "unknown"),
-                        "num_beats": len(char["arc_beats"]),
-                        "beat_names": [b["beat_name"] for b in char["arc_beats"]],
-                    }
-
-            if character_arc_summaries:
-                codex["story"]["character_arc_beats_summary"] = character_arc_summaries
-                print(f"\n>>> Stored arc beat summaries for {len(character_arc_summaries)} characters")
-
-            duration = time.time() - start_time
-
-            print(f"\n{'='*60}")
-            print(f"STEP 3 COMPLETE! Duration: {duration:.1f}s")
-            print(f"{'='*60}")
-
-            return Step3Result(
-                integrated_beats=integrated_beats_dicts,
-                hero_arc_summary=winning_arcs.hero_arc.arc_summary,
-                villain_arc_summary=winning_arcs.villain_arc.arc_summary,
-                side_character_notes=side_char_summary,
-                step3_debates=step3_debates,
-                success=True,
-                duration_seconds=duration,
-            )
-
-        except Exception as e:
-            duration = time.time() - start_time
-            print(f"\n>>> Step 3 FAILED: {e}")
-            import traceback
-            traceback.print_exc()
-
-            return Step3Result(
-                integrated_beats=[],
-                hero_arc_summary="",
-                villain_arc_summary="",
-                side_character_notes="",
-                step3_debates={},
-                success=False,
-                error=str(e),
-                duration_seconds=duration,
-            )
-
-    # =========================================================================
-    # STEP 3: WORLD BUILDING (Locations + World Context) - OLD
+    # STEP 3: WORLD BUILDING (Locations + World Context)
     # =========================================================================
 
     def _parse_deck_of_worlds_prompt(self, codex: dict) -> dict:
@@ -4914,12 +3570,6 @@ RELIGION:
         if "outline" not in codex["story"]:
             codex["story"]["outline"] = {}
 
-        # Initialize metadata structure (needed for storing debates)
-        if "metadata" not in codex:
-            codex["metadata"] = {}
-        if "phase_1" not in codex["metadata"]:
-            codex["metadata"]["phase_1"] = {}
-
         # Step 0: Theme Foundation
         if 0 in steps_to_run:
             print(f"\n{'='*60}")
@@ -4933,80 +3583,76 @@ RELIGION:
                 # Store theme foundation at story.theme_foundation
                 codex["story"]["theme_foundation"] = result.theme_foundation
 
-                # Store debate details in metadata
-                codex["metadata"]["phase_1"]["step0_debates"] = result.step0_debates
-
                 steps_completed.append(0)
                 step_timings["step0_theme_foundation"] = result.duration_seconds
             else:
                 print(f">>> Step 0 FAILED: {result.error}")
 
-        # Step 1: Character Creation (Theme → Characters)
+        # Step 1: Plotting (7-Point Structure)
         if 1 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 1: Character Creation (Theme → Characters)")
+            print("STEP 1: Plotting (7-Point Structure via Multi-Agent Debate)")
             print(f"{'='*60}")
 
-            result = self.step1_character_creation(codex)
+            result = self.step1_plotting(codex)
             results["step1"] = result
 
             if result.success:
-                # Characters already stored to codex during step execution
-                # (updated after each character is created)
+                # Store parsed story seed
+                codex["story"]["outline"]["story_seed_parsed"] = result.story_seed_parsed
+
+                # Store 7-point structure beats
+                codex["story"]["outline"]["structure_beats"] = result.structure_beats
+
+                # Store theme and title
+                codex["story"]["outline"]["theme"] = result.theme
+                codex["story"]["outline"]["title"] = result.title_suggestion
+
                 steps_completed.append(1)
-                step_timings["step1_character_creation"] = result.duration_seconds
+                step_timings["step1_plotting"] = result.duration_seconds
             else:
                 print(f">>> Step 1 FAILED: {result.error}")
 
-        # Step 2: Story Shape & Genre Selection
+        # Step 2: Character Generation
         if 2 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 2: Story Shape & Genre Selection (Multi-Agent Debate)")
+            print("STEP 2: Character Generation (Multi-Agent Debate)")
             print(f"{'='*60}")
 
-            result = self.step2_story_shape_genre(codex)
+            result = self.step2_characters(codex)
             results["step2"] = result
 
             if result.success:
-                # Store story shape and genre in story section
-                codex["story"]["story_shape"] = result.story_shape
-                codex["story"]["save_the_cat_type"] = result.save_the_cat_type
-                codex["story"]["primary_genre"] = result.primary_genre
-                if result.secondary_genre:
-                    codex["story"]["secondary_genre"] = result.secondary_genre
-                if result.tone_flavor:
-                    codex["story"]["tone_flavor"] = result.tone_flavor
-                codex["story"]["tropes"] = result.tropes
+                # Store characters at story.characters
+                codex["story"]["characters"] = result.characters
 
-                # Store debate details in metadata
-                codex["metadata"]["phase_1"]["step2_debates"] = result.step2_debates
+                # Store name mapping for later use
+                if "outline" in codex["story"]:
+                    codex["story"]["outline"]["name_mapping"] = result.name_mapping
 
                 steps_completed.append(2)
-                step_timings["step2_story_shape_genre"] = result.duration_seconds
+                step_timings["step2_characters"] = result.duration_seconds
             else:
                 print(f">>> Step 2 FAILED: {result.error}")
 
-        # Step 3: Plot Structure (Character Arc + Story Beats)
+        # Step 3: World Building (Locations + World Context)
         if 3 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 3: Plot Structure (Character Arc + Story Beats)")
+            print("STEP 3: World Building (Locations + World Context)")
             print(f"{'='*60}")
 
-            result = self.step3_plot_structure(codex)
+            result = self.step3_world_building(codex)
             results["step3"] = result
 
             if result.success:
-                # Store integrated beats in story section
-                codex["story"]["integrated_beats"] = result.integrated_beats
-                codex["story"]["hero_arc_summary"] = result.hero_arc_summary
-                codex["story"]["villain_arc_summary"] = result.villain_arc_summary
-                codex["story"]["side_character_notes"] = result.side_character_notes
+                # Store locations at story.locations
+                codex["story"]["locations"] = result.locations
 
-                # Store debate details in metadata
-                codex["metadata"]["phase_1"]["step3_debates"] = result.step3_debates
+                # Store world context at story.world
+                codex["story"]["world"] = result.world
 
                 steps_completed.append(3)
-                step_timings["step3_plot_structure"] = result.duration_seconds
+                step_timings["step3_world_building"] = result.duration_seconds
             else:
                 print(f">>> Step 3 FAILED: {result.error}")
 
@@ -5078,8 +3724,10 @@ RELIGION:
             if step_num in steps_to_run:
                 print(f"\n>>> Step {step_num}: Not yet implemented")
 
-        # Update metadata with phase completion info
-        codex["metadata"]["phase_1"].update({
+        # Update metadata
+        if "metadata" not in codex:
+            codex["metadata"] = {}
+        codex["metadata"]["phase_1"] = {
             "phase": 1,
             "name": "Author-Driven Story Creation",
             "author_id": self.author.id,
@@ -5087,11 +3735,19 @@ RELIGION:
             "structure_used": self.author.preferred_structure,
             "steps_completed": steps_completed,
             "step_timings": step_timings,
-        })
+        }
 
-        # Add character debates to metadata (NEW Step 1)
+        # Add debate summary to metadata
         if "step1" in results and results["step1"].success:
-            codex["metadata"]["phase_1"]["character_debates"] = results["step1"].character_debates
+            codex["metadata"]["phase_1"]["debate_summary"] = results["step1"].debate_summary
+
+        # Add character debates to metadata
+        if "step2" in results and results["step2"].success:
+            codex["metadata"]["phase_1"]["character_debates"] = results["step2"].character_debates
+
+        # Add location debates to metadata
+        if "step3" in results and results["step3"].success:
+            codex["metadata"]["phase_1"]["location_debates"] = results["step3"].location_debates
 
         # Add scene debates to metadata
         if "step4" in results and results["step4"].success:

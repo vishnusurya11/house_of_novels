@@ -2,10 +2,11 @@
 """
 Phase 1: Author-Driven Story Creation
 
-Unified Phase 1 with 9 selective sub-steps, driven by the author's unique approach.
+Unified Phase 1 with 10 selective sub-steps, driven by the author's unique approach.
 Each author can implement the steps differently while maintaining the same I/O contract.
 
 Steps:
+    0: Theme Foundation - Extract theme from logline → Build thematic square → Generate character perspectives
     1: Plotting - Structure research → Beat sheet → Scene outline
     2: Characters - Generate characters, name mapping
     3: World Building - Expand setting + Generate lore/rules + Locations
@@ -18,8 +19,8 @@ Steps:
 
 Usage (standalone):
     uv run python -m src.phases.phase1_author forge/xxx/codex.json
-    uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1
-    uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1 2 3
+    uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 0
+    uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 0 1 2 3
 """
 
 import sys
@@ -209,11 +210,14 @@ Examples:
   # Run all steps
   uv run python -m src.phases.phase1_author forge/xxx/codex.json
 
+  # Run only Step 0 (Theme Foundation)
+  uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 0
+
   # Run only Step 1 (Plotting)
   uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1
 
-  # Run Steps 1-3
-  uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 1 2 3
+  # Run Steps 0-3
+  uv run python -m src.phases.phase1_author forge/xxx/codex.json --steps 0 1 2 3
         """
     )
     parser.add_argument(
@@ -230,8 +234,8 @@ Examples:
         "--steps",
         nargs="+",
         type=int,
-        choices=list(range(1, 10)),
-        help="Run specific steps (1-9). Example: --steps 1 2 3"
+        choices=list(range(0, 10)),
+        help="Run specific steps (0-9). Example: --steps 0 or --steps 0 1 2 3"
     )
     parser.add_argument(
         "--revision-passes",

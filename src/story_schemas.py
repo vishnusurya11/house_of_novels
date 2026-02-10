@@ -7,7 +7,7 @@ These schemas define the JSON structure for:
 - Phase 3: Narrative prose
 """
 
-from typing import Optional
+from typing import Optional, Dict
 from pydantic import BaseModel, Field
 
 
@@ -90,6 +90,10 @@ class NameVote(BaseModel):
 
 class PhysicalDescriptionSchema(BaseModel):
     """Physical attributes emphasizing visual storytelling."""
+    gender: str = Field(
+        ...,
+        description="Character's gender: male or female"
+    )
     body_build: str = Field(
         ...,
         description="Body type/build that reflects character's life (e.g., 'wiry from years of labor', 'stocky and muscular from training')"
@@ -2069,3 +2073,601 @@ class SceneCritiqueBundle(BaseModel):
 
     class Config:
         extra = "ignore"
+
+
+# =============================================================================
+# Phase 1 Step 0: Theme Foundation Schemas
+# =============================================================================
+
+class ThematicQuestionSchema(BaseModel):
+    """A potential thematic question extracted from the logline."""
+    question: str = Field(
+        ...,
+        description="The thematic question (e.g., 'Is authenticity worth the cost?')"
+    )
+    explanation: str = Field(
+        ...,
+        description="Why this theme emerges from the logline"
+    )
+
+
+# Substep 1: Theme Question Debate
+class ThemeQuestionProposal(BaseModel):
+    """A proposed thematic question from an agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    question: ThematicQuestionSchema = Field(..., description="The proposed thematic question")
+    reasoning: str = Field(
+        default="",
+        description="Why this question is the best choice for the story"
+    )
+
+
+class ThemeQuestionCritique(BaseModel):
+    """Critique of a proposed thematic question."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued (0, 1, 2)")
+    strengths: str = Field(..., description="What works about this theme question")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class ThemeQuestionVote(BaseModel):
+    """An agent's vote for the best thematic question."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this is the best thematic question")
+
+
+# Thematic Square Schema (used in Substep 2)
+class ThematicSquareSchema(BaseModel):
+    """Robert McKee's Thematic Square - 4 corners exploring theme."""
+    positive: str = Field(
+        ...,
+        description="THE TRUTH - The liberating insight (e.g., 'Authenticity liberates')"
+    )
+    contradictory: str = Field(
+        ...,
+        description="THE LIE - The false belief opposite of truth (e.g., 'Deception protects')"
+    )
+    contrary: str = Field(
+        ...,
+        description="NUANCED NEGATIVE - The dark side of the truth (e.g., 'Authenticity isolates')"
+    )
+    negation_of_negation: str = Field(
+        ...,
+        description="EXTREME - The worst possible outcome (e.g., 'Total self-destruction through lies')"
+    )
+
+
+# Substep 2: Thematic Square Debate
+class ThematicSquareProposal(BaseModel):
+    """A proposed thematic square from an agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    thematic_square: ThematicSquareSchema = Field(..., description="The proposed thematic square")
+    reasoning: str = Field(
+        default="",
+        description="Why this square best explores the theme"
+    )
+
+
+class ThematicSquareCritique(BaseModel):
+    """Critique of a proposed thematic square."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about this square")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class ThematicSquareVote(BaseModel):
+    """An agent's vote for a thematic square."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this square is best")
+
+
+# Perspective Schema (used in Substep 3)
+class ThematicPerspectiveSchema(BaseModel):
+    """A character perspective on the theme."""
+    perspective_name: str = Field(
+        ...,
+        description="Name for this perspective (e.g., 'The Believer', 'The Skeptic')"
+    )
+    position: str = Field(
+        ...,
+        description="This perspective's position on the thematic question"
+    )
+    corner: str = Field(
+        ...,
+        description="Which corner of thematic square this maps to: 'positive', 'contradictory', 'contrary', or 'negation_of_negation'"
+    )
+    example_belief: str = Field(
+        ...,
+        description="An example belief this perspective might hold"
+    )
+
+
+# Substep 3: Perspective Debate
+class PerspectiveSetProposal(BaseModel):
+    """A proposed set of 3-5 character perspectives from an agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    perspectives: list[ThematicPerspectiveSchema] = Field(
+        ...,
+        min_length=3,
+        max_length=5,
+        description="3-5 proposed character perspectives"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Why this set of perspectives best serves the story"
+    )
+
+
+class PerspectiveSetCritique(BaseModel):
+    """Critique of a proposed perspective set."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about this perspective set")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class PerspectiveSetVote(BaseModel):
+    """An agent's vote for a perspective set."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this perspective set is best")
+
+
+# =============================================================================
+# Phase 1 Step 1: Character Psychology Schemas (Lie/Truth, Shadow, Arc, Ghost)
+# =============================================================================
+
+# SUBSTEP 1: Lie/Truth Debate Schemas
+class LieTruthProposal(BaseModel):
+    """Proposed Lie, Truth, Want, and Need for a character."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    lie_character_believes: str = Field(
+        ...,
+        description="The specific misconception the character believes (Lie)"
+    )
+    truth_character_needs: str = Field(
+        ...,
+        description="The liberating insight the character needs to learn (Truth)"
+    )
+    want: str = Field(..., description="External goal driven by the Lie")
+    need: str = Field(..., description="Internal truth they actually need")
+    reasoning: str = Field(
+        default="",
+        description="Why this Lie/Truth pair best serves the character"
+    )
+
+
+class LieTruthCritique(BaseModel):
+    """Critique of a Lie/Truth proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about this Lie/Truth pair")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class LieTruthVote(BaseModel):
+    """Vote for best Lie/Truth proposal."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this Lie/Truth is best")
+
+
+# SUBSTEP 2A: Shadow Debate Schemas
+class ShadowProposal(BaseModel):
+    """Proposed Jungian shadow traits for a character."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    conscious_strength: str = Field(..., description="Conscious strength/trait")
+    shadow_weakness: str = Field(..., description="Unconscious weakness opposite of strength")
+    conscious_value: str = Field(..., description="Conscious value/belief")
+    shadow_fear: str = Field(..., description="Unconscious fear opposite of value")
+    conscious_desire: str = Field(..., description="Conscious desire/goal")
+    shadow_opposite: str = Field(..., description="Unconscious opposite of desire")
+    conscious_rejection: str = Field(..., description="What they consciously reject")
+    shadow_attraction: str = Field(..., description="What they unconsciously want")
+    reasoning: str = Field(
+        default="",
+        description="Why this shadow deepens the character"
+    )
+
+    @property
+    def shadow_traits(self) -> Dict[str, str]:
+        """Convert individual fields back to dict format for compatibility."""
+        return {
+            self.conscious_strength: self.shadow_weakness,
+            self.conscious_value: self.shadow_fear,
+            self.conscious_desire: self.shadow_opposite,
+            self.conscious_rejection: self.shadow_attraction
+        }
+
+
+class ShadowCritique(BaseModel):
+    """Critique of a shadow proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about these shadow traits")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class ShadowVote(BaseModel):
+    """Vote for best shadow proposal."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this shadow is best")
+
+
+# SUBSTEP 2B: Arc Type Debate Schemas
+class ArcTypeProposal(BaseModel):
+    """Proposed character arc type."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    arc_type: str = Field(
+        ...,
+        description="Arc type: Positive Change Arc | Flat Arc | Disillusionment Arc | Fall Arc | Corruption Arc"
+    )
+    arc_journey: str = Field(
+        ...,
+        description="Description of the character's transformation path"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Why this arc type fits the character's role"
+    )
+
+
+class ArcTypeCritique(BaseModel):
+    """Critique of an arc type proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about this arc type")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class ArcTypeVote(BaseModel):
+    """Vote for best arc type proposal."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this arc type is best")
+
+
+# SUBSTEP 2C: Ghost Debate Schemas
+class GhostProposal(BaseModel):
+    """Proposed Ghost (backstory wound that created the Lie)."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    ghost_event: str = Field(
+        ...,
+        description="The specific past event that created the Lie (the 'Ghost')"
+    )
+    how_it_created_lie: str = Field(
+        ...,
+        description="Why this event led the character to believe the Lie"
+    )
+    reasoning: str = Field(
+        default="",
+        description="Why this Ghost deepens the character arc"
+    )
+
+
+class GhostCritique(BaseModel):
+    """Critique of a Ghost proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Which proposal is being critiqued")
+    strengths: str = Field(..., description="What works about this Ghost")
+    weaknesses: str = Field(..., description="What could be improved")
+    score: float = Field(..., ge=1.0, le=10.0, description="Score 1-10")
+
+
+class GhostVote(BaseModel):
+    """Vote for best Ghost proposal."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_index: int = Field(..., description="Index of the proposal voted for")
+    vote_reasoning: str = Field(..., description="Why this Ghost is best")
+
+
+class ThemeFoundationSchema(BaseModel):
+    """Complete theme foundation - Step 0 output."""
+    central_question: str = Field(
+        ...,
+        description="The primary thematic question driving the story"
+    )
+    thematic_square: ThematicSquareSchema = Field(
+        ...,
+        description="The 4-corner thematic square"
+    )
+    perspectives: list[ThematicPerspectiveSchema] = Field(
+        ...,
+        min_length=3,
+        max_length=5,
+        description="3-5 thematic perspectives for characters to embody"
+    )
+
+
+# =============================================================================
+# STEP 2: STORY SHAPE & GENRE SELECTION SCHEMAS
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Story Shape (7 Basic Plots) Debate
+# -----------------------------------------------------------------------------
+
+class StoryShapeProposal(BaseModel):
+    """Proposed story shape from 7 Basic Plots."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    story_shape: str = Field(
+        ...,
+        description="Chosen shape: 'Overcoming the Monster', 'Rags to Riches', 'The Quest', 'Voyage and Return', 'Comedy', 'Tragedy', or 'Rebirth'"
+    )
+    why_this_shape: str = Field(..., description="Why this shape fits the logline journey")
+    how_it_explores_theme: str = Field(..., description="How this shape will explore the theme")
+    emotional_promise: str = Field(..., description="What emotional journey this shape promises readers")
+    reasoning: str = Field(default="", description="Additional reasoning for this choice")
+
+
+class StoryShapeCritique(BaseModel):
+    """Critique of a story shape proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: int = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works about this shape choice")
+    weaknesses: str = Field(..., description="What could be better")
+
+
+class StoryShapeVote(BaseModel):
+    """Vote for best story shape."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this shape is best for the story")
+
+
+# -----------------------------------------------------------------------------
+# Save the Cat Type Debate
+# -----------------------------------------------------------------------------
+
+class SaveTheCatProposal(BaseModel):
+    """Proposed Save the Cat story type."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    save_the_cat_type: str = Field(
+        ...,
+        description="Chosen type: 'Monster in the House', 'Golden Fleece', 'Out of the Bottle', 'Dude with a Problem', 'Rites of Passage', 'Buddy Love', 'Whydunit', 'The Fool Triumphant', 'Institutionalized', or 'Superhero'"
+    )
+    why_this_type: str = Field(..., description="Why this type matches the emotional stakes")
+    character_fit: str = Field(..., description="How character arcs align with this type")
+    thematic_fit: str = Field(..., description="How this type serves the theme")
+    reasoning: str = Field(default="", description="Additional reasoning")
+
+
+class SaveTheCatCritique(BaseModel):
+    """Critique of a Save the Cat proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: int = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works about this type")
+    weaknesses: str = Field(..., description="Potential issues with this type")
+
+
+class SaveTheCatVote(BaseModel):
+    """Vote for best Save the Cat type."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this type is best")
+
+
+# -----------------------------------------------------------------------------
+# Genre Selection Debate
+# -----------------------------------------------------------------------------
+
+class GenreProposal(BaseModel):
+    """Proposed genre(s) for the story."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    primary_genre: str = Field(..., description="Primary genre (e.g., 'thriller', 'mystery', 'horror', 'sci-fi', 'fantasy', 'romance', 'action')")
+    secondary_genre: Optional[str] = Field(None, description="Optional secondary genre for blending")
+    tone_flavor: Optional[str] = Field(None, description="Tonal flavor (e.g., 'psychological', 'dark', 'comedic', 'epic')")
+    pressure_type: str = Field(..., description="What kind of pressure/danger creates tension")
+    genre_promises: str = Field(..., description="What this genre promises readers")
+    reasoning: str = Field(default="", description="Why these genres fit")
+
+
+class GenreCritique(BaseModel):
+    """Critique of a genre proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: int = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works about these genre choices")
+    weaknesses: str = Field(..., description="Potential genre mismatch issues")
+
+
+class GenreVote(BaseModel):
+    """Vote for best genre selection."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why these genres are best")
+
+
+# -----------------------------------------------------------------------------
+# Trope Selection Debate
+# -----------------------------------------------------------------------------
+
+class Trope(BaseModel):
+    """A single trope with usage strategy."""
+    name: str = Field(..., description="The trope name (e.g., 'The Chosen One', 'MacGuffin')")
+    usage: str = Field(..., description="How to use: 'straight' (as-is), 'invert' (flip it), or 'subvert' (set up then defy)")
+    purpose: str = Field(..., description="Why this trope serves the story")
+
+
+class TropeProposal(BaseModel):
+    """Proposed tropes for the story."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    tropes: list[Trope] = Field(
+        ...,
+        min_length=3,
+        max_length=5,
+        description="List of 3-5 tropes with name, usage strategy, and purpose"
+    )
+    how_tropes_serve_theme: str = Field(..., description="How these tropes explore the theme")
+    audience_expectations: str = Field(..., description="What audience will expect/get from these tropes")
+    reasoning: str = Field(default="", description="Why these tropes")
+
+
+class TropeCritique(BaseModel):
+    """Critique of a trope proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: int = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What trope selections work well")
+    weaknesses: str = Field(..., description="Tropes that might not work or be overused")
+
+
+class TropeVote(BaseModel):
+    """Vote for best trope selection."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this trope set is best")
+
+# =========================================================================
+# STEP 3: PLOT STRUCTURE (Character Arc + Story Beats)
+# =========================================================================
+
+# -------------------------------------------------------------------------
+# Save the Cat 15-Beat Schemas
+# -------------------------------------------------------------------------
+
+class SaveTheCatBeat(BaseModel):
+    """A single beat in the Save the Cat 15-beat structure."""
+    beat_name: str = Field(..., description="Name of the beat (e.g., 'Opening Image', 'Catalyst')")
+    timing_percentage: str = Field(..., description="When this beat occurs (e.g., '0-1%', '10%', '50%')")
+    plot_event: str = Field(..., description="What happens in this beat (plot-level)")
+    thematic_test: str = Field(..., description="How this beat tests the thematic question")
+
+
+class SaveTheCatProposal(BaseModel):
+    """Proposed Save the Cat 15-beat structure."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    beats: list[SaveTheCatBeat] = Field(
+        ...,
+        min_length=13,
+        max_length=16,
+        description="13-16 Save the Cat beats (ideally all 15)"
+    )
+    overall_pacing: str = Field(..., description="Fast/Medium/Slow pacing with justification")
+    reasoning: str = Field(..., description="Why this beat structure serves the story")
+
+
+class SaveTheCatCritique(BaseModel):
+    """Critique of a Save the Cat proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What beats work well")
+    weaknesses: str = Field(..., description="Beats that need improvement")
+
+
+class SaveTheCatVote(BaseModel):
+    """Vote for best Save the Cat structure."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this beat structure is best")
+
+
+# -------------------------------------------------------------------------
+# Character Arc Beat Schemas
+# -------------------------------------------------------------------------
+
+class CharacterArcBeat(BaseModel):
+    """A single beat in a character's arc."""
+    beat_name: str = Field(..., description="Name of the arc beat (e.g., 'Characteristic Moment', 'Midpoint Glimpse')")
+    timing: str = Field(default="", description="When this beat occurs (e.g., '0-10%', '25%', '50%')")
+    description: str = Field(..., description="What happens to this character at this beat")
+    ties_to_lie_truth: str = Field(..., description="How this beat relates to character's Lie/Truth")
+
+
+class CharacterArcStructure(BaseModel):
+    """Full arc structure for one character."""
+    character_name: str = Field(..., description="Name of the character")
+    arc_type: str = Field(..., description="positive_change / flat / negative / disillusionment / corruption / fall")
+    arc_beats: list[CharacterArcBeat] = Field(
+        ...,
+        description="Sequence of arc beats for this character"
+    )
+    arc_summary: str = Field(
+        default="Character transformation arc",
+        description="One-sentence summary of character's journey"
+    )
+
+
+class ArcBeatProposal(BaseModel):
+    """Proposed character arc structures for ALL major characters."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    hero_arc: CharacterArcStructure = Field(..., description="Protagonist's arc structure")
+    villain_arc: CharacterArcStructure = Field(..., description="Antagonist's arc structure")
+    supporting_arcs: list[CharacterArcStructure] = Field(
+        default_factory=list,
+        description="Arc structures for supporting characters (micro-arcs with 5-7 key beats)"
+    )
+    reasoning: str = Field(..., description="Why these arc structures serve the theme")
+
+
+class ArcBeatCritique(BaseModel):
+    """Critique of character arc proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What arc beats work well")
+    weaknesses: str = Field(..., description="Arc beats that need improvement")
+
+
+class ArcBeatVote(BaseModel):
+    """Vote for best character arc structure."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why these arc structures are best")
+
+
+# -------------------------------------------------------------------------
+# Beat Integration Schemas (Arc + STC merged)
+# -------------------------------------------------------------------------
+
+class IntegratedBeat(BaseModel):
+    """A single beat with plot and all character arcs integrated."""
+    beat_name: str = Field(..., description="Name of the beat")
+    timing_percentage: str = Field(..., description="When this occurs (e.g., '10%', '50%')")
+    plot_event: str = Field(..., description="What happens (plot-level)")
+    character_arcs: dict[str, str] = Field(
+        ...,
+        description="Dict mapping character names to their arc beat at this moment. Include ALL major characters."
+    )
+    thematic_test: str = Field(..., description="How this beat tests the theme")
+
+
+class BeatIntegrationProposal(BaseModel):
+    """Proposed integration of arcs + beats for all characters."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    integrated_beats: list[IntegratedBeat] = Field(
+        ...,
+        min_length=13,
+        max_length=16,
+        description="13-16 integrated beats (ideally all 15) with all character arcs"
+    )
+    reasoning: str = Field(..., description="Why this integration works")
+
+
+class BeatIntegrationCritique(BaseModel):
+    """Critique of beat integration."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What integration works well")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class BeatIntegrationVote(BaseModel):
+    """Vote for best beat integration."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this integration is best")

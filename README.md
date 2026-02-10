@@ -97,9 +97,12 @@ uv run python -m src.phases.phase0_codex
 uv run python -m src.phases.phase0_codex --output-dir forge/20260105143022
 
 # Phase 1: Generate story outline (requires codex from Phase 0)
-uv run python -m src.phases.phase1_author forge\20260131132743\codex_20260131132743.json
+uv run python -m src.phases.phase1_author forge/20260131132743/codex_20260131132743.json
 
-uv run python -m src.phases.phase1_outline forge/20260105143022/codex_20260105143022.json --steps 1 
+# Phase 1 with specific steps (NEW: Step 0 = Theme Foundation)
+uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 0      # Step 0 only (Theme Foundation)
+uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 0 1    # Steps 0-1 (Theme + Plotting)
+uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 1      # Step 1 only (Plotting) 
 
 # Phase 2: Generate characters & locations (requires Phase 1)
 uv run python -m src.phases.phase2_characters forge\20260116191326\codex_20260116191326.json
