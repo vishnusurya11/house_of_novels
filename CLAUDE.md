@@ -14,3 +14,4 @@
 - Ask before deleting files or making destructive operations
 - Do not automatically run tests or builds unless asked
 - Prefer editing existing files over creating new ones
+- **CRITICAL**: Do NOT run long-running jobs (5+ minutes) without asking user first - they cannot see progress logs and find it frustrating

@@ -103,4 +103,15 @@ class BaseStoryAgent(ABC):
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=user_prompt),
         ]
-        return limited_llm.invoke(messages)
+        try:
+            result = limited_llm.invoke(messages)
+            if result is None:
+                print(f"\n⚠️  WARNING: {self.name} received None from LLM (schema: {schema.__name__})")
+                print(f"   This usually means the LLM response couldn't be parsed into the schema.")
+            return result
+        except Exception as e:
+            error_msg = str(e)
+            print(f"\n❌ ERROR in {self.name}.invoke_structured():")
+            print(f"   Schema: {schema.__name__}")
+            print(f"   Error: {error_msg[:300]}")
+            raise  # Re-raise so caller's except block can handle it

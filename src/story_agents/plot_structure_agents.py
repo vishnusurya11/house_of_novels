@@ -16,6 +16,7 @@ from src.story_schemas import (
     ArcBeatProposal, ArcBeatCritique, ArcBeatVote,
     # SaveTheCat schemas
     SaveTheCatProposal, SaveTheCatCritique, SaveTheCatVote,
+    SaveTheCatBeatProposal, SaveTheCatBeatCritique, SaveTheCatBeatVote,
     # Integration schemas
     BeatIntegrationProposal, BeatIntegrationCritique, BeatIntegrationVote,
 )
@@ -25,6 +26,13 @@ from pydantic import BaseModel
 _config_path = Path(__file__).parent.parent / "config" / "character_arc_beats.yaml"
 with open(_config_path) as f:
     ARC_BEAT_DEFINITIONS = yaml.safe_load(f)
+
+
+def _get_arc_beat_count(arc_type: str) -> int:
+    """Get the exact number of beats defined for an arc type."""
+    if arc_type not in ARC_BEAT_DEFINITIONS:
+        arc_type = "positive_change"
+    return len(ARC_BEAT_DEFINITIONS[arc_type]['beats'])
 
 
 def _format_arc_beats_for_prompt(arc_type: str) -> str:
@@ -125,9 +133,11 @@ Focus on:
         hero_arc_type = hero.get("arc_type", "positive_change")
         villain_arc_type = villain.get("arc_type", "flat")
 
-        # Get arc-specific beat templates
+        # Get arc-specific beat templates and counts
         hero_beats_template = _format_arc_beats_for_prompt(hero_arc_type)
         villain_beats_template = _format_arc_beats_for_prompt(villain_arc_type)
+        hero_beat_count = _get_arc_beat_count(hero_arc_type)
+        villain_beat_count = _get_arc_beat_count(villain_arc_type)
 
         # Build supporting character section
         supporting_section = ""
@@ -161,6 +171,11 @@ VILLAIN: {villain.get('name', 'Unknown')}
 {villain_beats_template}
 {supporting_section}
 
+CRITICAL: Generate EXACTLY the right number of beats for each character:
+- HERO: EXACTLY {hero_beat_count} beats (no more, no less)
+- VILLAIN: EXACTLY {villain_beat_count} beats (no more, no less)
+- SUPPORTING CHARACTERS: 5-7 key beats each (micro-arcs)
+
 Create:
 - ALL beats listed above for HERO (full arc)
 - ALL beats listed above for VILLAIN (full arc)
@@ -173,7 +188,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why these arcs work together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=6000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique all arc beat proposals."""
@@ -268,9 +283,11 @@ Focus on:
         hero_arc_type = hero.get("arc_type", "positive_change")
         villain_arc_type = villain.get("arc_type", "flat")
 
-        # Get arc-specific beat templates
+        # Get arc-specific beat templates and counts
         hero_beats_template = _format_arc_beats_for_prompt(hero_arc_type)
         villain_beats_template = _format_arc_beats_for_prompt(villain_arc_type)
+        hero_beat_count = _get_arc_beat_count(hero_arc_type)
+        villain_beat_count = _get_arc_beat_count(villain_arc_type)
 
         # Build supporting character section
         supporting_section = ""
@@ -304,6 +321,11 @@ VILLAIN: {villain.get('name', 'Unknown')}
 {villain_beats_template}
 {supporting_section}
 
+CRITICAL: Generate EXACTLY the right number of beats for each character:
+- HERO: EXACTLY {hero_beat_count} beats (no more, no less)
+- VILLAIN: EXACTLY {villain_beat_count} beats (no more, no less)
+- SUPPORTING CHARACTERS: 5-7 key beats each (micro-arcs)
+
 Create:
 - ALL beats listed above for HERO showing psychological transformation
 - ALL beats listed above for VILLAIN showing their arc
@@ -316,7 +338,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why these arcs are psychologically sound together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=6000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique arc proposals for psychological realism."""
@@ -401,9 +423,11 @@ Focus on:
         hero_arc_type = hero.get("arc_type", "positive_change")
         villain_arc_type = villain.get("arc_type", "flat")
 
-        # Get arc-specific beat templates
+        # Get arc-specific beat templates and counts
         hero_beats_template = _format_arc_beats_for_prompt(hero_arc_type)
         villain_beats_template = _format_arc_beats_for_prompt(villain_arc_type)
+        hero_beat_count = _get_arc_beat_count(hero_arc_type)
+        villain_beat_count = _get_arc_beat_count(villain_arc_type)
 
         # Build supporting character section
         supporting_section = ""
@@ -432,6 +456,11 @@ VILLAIN: {villain.get('name', 'Unknown')}
 {villain_beats_template}
 {supporting_section}
 
+CRITICAL: Generate EXACTLY the right number of beats for each character:
+- HERO: EXACTLY {hero_beat_count} beats (no more, no less)
+- VILLAIN: EXACTLY {villain_beat_count} beats (no more, no less)
+- SUPPORTING CHARACTERS: 5-7 key beats each (micro-arcs)
+
 Create:
 - ALL beats listed above for HERO maximizing dramatic tension
 - ALL beats listed above for VILLAIN creating opposition
@@ -444,7 +473,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why dramatically powerful together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=6000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique arc proposals for dramatic impact."""
@@ -513,7 +542,7 @@ Focus on:
 - Following proven STC principles
 """
 
-    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str) -> SaveTheCatProposal:
+    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str) -> SaveTheCatBeatProposal:
         """Propose Save the Cat 15-beat structure."""
         user_prompt = f"""Design a Save the Cat 15-beat structure.
 
@@ -551,7 +580,7 @@ Return format:
 - overall_pacing: Fast/Medium/Slow with justification
 - reasoning: Why this structure works
 """
-        return self.invoke_structured(user_prompt, SaveTheCatProposal)
+        return self.invoke_structured(user_prompt, SaveTheCatBeatProposal)
 
     def critique_beats(self, proposals: list[SaveTheCatProposal], theme_question: str) -> list[SaveTheCatCritique]:
         """Critique Save the Cat proposals."""
@@ -616,7 +645,7 @@ Focus on:
 - Avoiding narrative sag
 """
 
-    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str) -> SaveTheCatProposal:
+    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str) -> SaveTheCatBeatProposal:
         """Propose STC structure optimized for pacing."""
         user_prompt = f"""Design a well-paced Save the Cat structure.
 
@@ -649,7 +678,7 @@ Return format:
 - overall_pacing: Pacing strategy
 - reasoning: Why this pacing works
 """
-        return self.invoke_structured(user_prompt, SaveTheCatProposal)
+        return self.invoke_structured(user_prompt, SaveTheCatBeatProposal)
 
     def critique_beats(self, proposals: list[SaveTheCatProposal], theme_question: str) -> list[SaveTheCatCritique]:
         """Critique for pacing."""
@@ -714,7 +743,7 @@ Focus on:
 - Satisfying the target audience
 """
 
-    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str, genres: list) -> SaveTheCatProposal:
+    def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str, genres: list) -> SaveTheCatBeatProposal:
         """Propose genre-appropriate STC structure."""
         genre_str = f"{genres[0]}" + (f"/{genres[1]}" if len(genres) > 1 else "")
 
@@ -749,7 +778,7 @@ Return format:
 - overall_pacing: Genre-appropriate pacing
 - reasoning: How this serves genre
 """
-        return self.invoke_structured(user_prompt, SaveTheCatProposal)
+        return self.invoke_structured(user_prompt, SaveTheCatBeatProposal)
 
     def critique_beats(self, proposals: list[SaveTheCatProposal], theme_question: str, genres: list) -> list[SaveTheCatCritique]:
         """Critique for genre fit."""
@@ -864,13 +893,23 @@ Create ALL 15 integrated beats above where:
 - Each beat has character_arcs dict mapping ALL character names to their arc beat at this moment
   (Include hero, villain, and all supporting characters)
 - Each beat tests the theme
+- Each beat has location_type indicating WHERE this beat occurs
+
+LOCATION_TYPE EXAMPLES (choose appropriate for your genre):
+- Fantasy: "Sacred Temple", "Public Square", "Dark Forest", "Throne Room"
+- Sci-Fi: "Central Hub", "Remote Outpost", "Docking Bay", "Command Center"
+- Mystery: "Crime Scene", "Police Station", "Suspect's Home", "Hidden Location"
+- Romance: "First Meeting Place", "Intimate Setting", "Public Gathering", "Private Retreat"
+- Horror: "Haunted Location", "Safe Haven", "Abandoned Place", "Final Confrontation Site"
+
+Assign a location_type to each beat based on what type of setting makes sense for that story moment.
 
 In IntegratedBeat.character_arcs, use character names as keys and their arc beat description as values.
 Example: {{"Elara": "Characteristic Moment showing her Lie", "Marcus": "Representing the Truth"}}
 
 Return format:
 - agent_name: "{self.name}"
-- integrated_beats: list of 15 IntegratedBeat objects
+- integrated_beats: list of 15 IntegratedBeat objects (each with location_type)
 - reasoning: Why this integration works for all characters
 """
         return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)
@@ -981,10 +1020,20 @@ Create ALL 15 integrated beats above with:
 - plot_event (from STC)
 - character_arcs dict mapping ALL character names to their arc beat at this moment
 - thematic_test (how this beat explores the theme)
+- location_type (WHERE this beat occurs)
+
+LOCATION_TYPE EXAMPLES (choose appropriate for your genre):
+- Fantasy: "Sacred Temple", "Public Square", "Dark Forest", "Throne Room"
+- Sci-Fi: "Central Hub", "Remote Outpost", "Docking Bay", "Command Center"
+- Mystery: "Crime Scene", "Police Station", "Suspect's Home", "Hidden Location"
+- Romance: "First Meeting Place", "Intimate Setting", "Public Gathering", "Private Retreat"
+- Horror: "Haunted Location", "Safe Haven", "Abandoned Place", "Final Confrontation Site"
+
+Assign a location_type to each beat based on what type of setting makes sense for that story moment.
 
 Return format:
 - agent_name: "{self.name}"
-- integrated_beats: 15 IntegratedBeat objects (each with clear thematic_test)
+- integrated_beats: 15 IntegratedBeat objects (each with clear thematic_test and location_type)
 - reasoning: How theme is explored through all characters
 """
         return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)
@@ -1096,12 +1145,22 @@ Create ALL 15 integrated beats above with:
 - plot_event (from STC)
 - character_arcs dict mapping ALL character names to their arc beat at this moment
 - thematic_test (how beat explores theme through conflict)
+- location_type (WHERE this beat occurs)
+
+LOCATION_TYPE EXAMPLES (choose appropriate for your genre):
+- Fantasy: "Sacred Temple", "Public Square", "Dark Forest", "Throne Room"
+- Sci-Fi: "Central Hub", "Remote Outpost", "Docking Bay", "Command Center"
+- Mystery: "Crime Scene", "Police Station", "Suspect's Home", "Hidden Location"
+- Romance: "First Meeting Place", "Intimate Setting", "Public Gathering", "Private Retreat"
+- Horror: "Haunted Location", "Safe Haven", "Abandoned Place", "Final Confrontation Site"
+
+Assign a location_type to each beat based on what type of setting makes sense for that story moment.
 
 Include escalating conflict between hero/villain and involving supporting characters.
 
 Return format:
 - agent_name: "{self.name}"
-- integrated_beats: 15 IntegratedBeat objects (strong conflict focus)
+- integrated_beats: 15 IntegratedBeat objects (strong conflict focus, with location_type)
 - reasoning: How conflict escalates through all characters
 """
         return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)

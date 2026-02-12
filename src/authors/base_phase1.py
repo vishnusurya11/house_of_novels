@@ -11,9 +11,9 @@ import string
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, TypeVar, Type
 
-from src.config import DEFAULT_MODEL
+from src.config import DEFAULT_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
 from src.story_structures import get_structure
 from src.story_structures.base_structure import BaseStructure
 from src.story_agents.structure_debate_agents import (
@@ -41,17 +41,32 @@ from src.story_agents.name_agents import (
     NameAuthenticAgent,
     NameDistinctiveAgent,
 )
-from src.story_agents.location_debate_agents import (
+from src.story_agents.location_debate_agents_OLD_STEP3A import (
     LocationArchitectAgent,
     LocationAtmosphereAgent,
     LocationNarrativeAgent,
     LocationAudienceAgent,
 )
-from src.story_agents.world_building_agents import (
-    WorldSociologistAgent,
-    WorldEconomistAgent,
-    WorldPoliticianAgent,
-    WorldCulturalistAgent,
+from src.story_agents.location_debate_agents import (
+    # NEW Step 4 Location Debate Agents
+    LocationNameCreativeAgent,
+    LocationNameAuthenticAgent,
+    LocationNameThematicAgent,
+    LocationPhysicalSensoryAgent,
+    LocationPhysicalFunctionalAgent,
+    LocationPhysicalSymbolicAgent,
+    LocationAtmosphereMoodAgent,
+    LocationAtmosphereConflictAgent,
+    LocationAtmosphereCharacterAgent,
+    LocationThematicResonanceAgent,
+    LocationThematicContrastAgent,
+    LocationThematicEvolutionAgent,
+)
+from src.story_agents.world_pressure_agents import (
+    WorldSociologistAgent as WorldPressureSociologistAgent,
+    WorldEconomistAgent as WorldPressureEconomistAgent,
+    WorldPoliticianAgent as WorldPressurePoliticianAgent,
+    WorldCulturalistAgent as WorldPressureCulturalistAgent,
 )
 from src.story_agents.scene_debate_agents import (
     ScenePlotAgent,
@@ -88,6 +103,9 @@ from src.story_agents.theme_agents import (
     PerspectiveStoryAgent,
     PerspectiveBalanceAgent,
 )
+# TypeVar for generic structured output
+T = TypeVar('T')
+
 from src.story_schemas import (
     # Step 0: Theme Foundation schemas
     ThematicQuestionSchema,
@@ -238,7 +256,18 @@ class Step3WorldBuildingResult:
 
 @dataclass
 class Step4Result:
-    """Result of Step 4: Chapter/Scene Outline."""
+    """Result of NEW Step 4: World Building (World Pressure + Major Locations)."""
+    world_pressure: dict
+    locations: list[dict]  # Major locations (dynamically extracted from beats)
+    step4_debates: dict  # All debate details for metadata
+    success: bool
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+@dataclass
+class Step4ChapterOutlineResult:
+    """Result of OLD Step 4: Chapter/Scene Outline (kept for backward compatibility)."""
     chapter_outline: dict
     scene_debates: list
     total_chapters: int
@@ -326,6 +355,36 @@ class BaseAuthorPhase1:
         """
         self.author = author
         self.model = model or DEFAULT_MODEL
+
+    def invoke_structured(self, user_prompt: str, schema: Type[T], max_tokens: int = 2000) -> T:
+        """
+        Invoke LLM with structured output enforcement via Pydantic schema.
+
+        Args:
+            user_prompt: The prompt to send
+            schema: Pydantic model class to enforce
+            max_tokens: Maximum completion tokens
+
+        Returns:
+            Parsed Pydantic model instance
+        """
+        from langchain_openai import ChatOpenAI
+        from langchain_core.messages import HumanMessage
+
+        # Create LLM instance
+        llm = ChatOpenAI(
+            model=self.model,
+            api_key=OPENROUTER_API_KEY,
+            base_url=OPENROUTER_BASE_URL,
+            temperature=0.7,
+        )
+
+        # Use structured output
+        structured_llm = llm.with_structured_output(schema, method="function_calling")
+        limited_llm = structured_llm.bind(max_tokens=max_tokens)
+
+        messages = [HumanMessage(content=user_prompt)]
+        return limited_llm.invoke(messages)
 
     def _normalize_agent_name(self, name: str) -> str:
         """Normalize agent name for matching."""
@@ -2978,6 +3037,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     "plot_event": b.plot_event,
                     "character_arcs": b.character_arcs,  # Dict of all character names to arc beats
                     "thematic_test": b.thematic_test,
+                    "location_type": b.location_type,  # Where this beat occurs
                 }
                 for b in winning_integration.integrated_beats
             ]
@@ -3696,7 +3756,883 @@ Theme: {outline.get('theme', '')}
 
         return max(vote_counts, key=vote_counts.get)
 
-    def step4_chapter_outline(self, codex: dict) -> Step4Result:
+    def step4_world_building(self, codex: dict) -> Step4Result:
+        """Step 4: World Building (World Pressure + Dynamic Locations).
+
+        Substeps:
+        1. World Pressure Debate (4 agents council)
+        2. Extract unique location types from Step 3 beats
+        3. For each location type: Generate location (4 debates: Name, Physical, Atmosphere, Thematic)
+
+        Args:
+            codex: The codex dictionary with previous steps' results
+
+        Returns:
+            Step4Result with world_pressure, locations, and debate metadata
+        """
+        start_time = time.time()
+
+        try:
+            # Get previous results
+            story_prompt, world_context = self.extract_prompts(codex)
+            theme_foundation = codex.get("story", {}).get("theme_foundation", {})
+            theme_question = theme_foundation.get("central_question", "Unknown theme")
+            story_shape = codex.get("story", {}).get("story_shape", "Unknown")
+            primary_genre = codex.get("story", {}).get("primary_genre", "Unknown")
+            tone_flavor = codex.get("story", {}).get("tone_flavor", "")
+            integrated_beats = codex.get("story", {}).get("integrated_beats", [])
+
+            # Validate prerequisites
+            if not integrated_beats:
+                return Step4Result(
+                    world_pressure={},
+                    locations=[],
+                    step4_debates={},
+                    success=False,
+                    error="No integrated beats found. Run Step 3 first.",
+                )
+
+            # Extract key scenes from integrated beats for location context
+            key_scenes = []
+            for beat in integrated_beats[:10]:  # Use first 10 beats for context
+                beat_name = beat.get("beat_name", "")
+                description = beat.get("description", "")
+                if beat_name and description:
+                    key_scenes.append(f"{beat_name}: {description[:100]}")
+
+            # Initialize debate storage
+            step4_debates = {
+                "world_pressure": {},
+                "location_1": {},
+                "location_2": {},
+            }
+
+            print(f"\n{'='*60}")
+            print("STEP 4: WORLD BUILDING")
+            print(f"{'='*60}")
+            print(f">>> Theme: {theme_question}")
+            print(f">>> Story Shape: {story_shape}")
+            print(f">>> Genre: {primary_genre}")
+            if tone_flavor:
+                print(f">>> Tone: {tone_flavor}")
+
+            # =========================================================================
+            # SUBSTEP 1: WORLD PRESSURE DEBATE (4 agents council)
+            # =========================================================================
+            print(f"\n{'='*60}")
+            print("SUBSTEP 1: WORLD PRESSURE DEBATE")
+            print(f"{'='*60}")
+            print(">>> 4-agent council debate on thematic world pressures")
+
+            world_pressure_agents = [
+                WorldPressureSociologistAgent(model=self.model),
+                WorldPressureEconomistAgent(model=self.model),
+                WorldPressurePoliticianAgent(model=self.model),
+                WorldPressureCulturalistAgent(model=self.model),
+            ]
+
+            # Phase 1: Proposals
+            print(f"\n>>> Phase 1: Proposals (4 agents)")
+            wp_proposals = []
+            for agent in world_pressure_agents:
+                print(f"    - {agent.name} proposing...")
+                try:
+                    proposal = agent.propose_world_pressure(
+                        theme_question=theme_question,
+                        story_shape=story_shape,
+                        world_context=world_context,
+                    )
+                    if proposal is None:
+                        print(f"      Warning: {agent.name} returned None, skipping")
+                        continue
+                    wp_proposals.append(proposal)
+                    print(f"      Societal: {proposal.world_pressure.societal[:80]}...")
+                except Exception as e:
+                    print(f"      Error: {agent.name} failed: {str(e)[:100]}")
+                    continue
+
+            if not wp_proposals:
+                return Step4Result(
+                    world_pressure={},
+                    locations=[],
+                    step4_debates=step4_debates,
+                    success=False,
+                    error="All world pressure agents failed to generate proposals",
+                )
+
+            # Phase 2: Critiques
+            print(f"\n>>> Phase 2: Critiques (each agent critiques all {len(wp_proposals)} proposals)")
+            all_wp_critiques = []
+            for agent in world_pressure_agents:
+                print(f"    - {agent.name} critiquing...")
+                try:
+                    critiques = agent.critique_world_pressures(wp_proposals, theme_question)
+                    all_wp_critiques.extend(critiques)
+                    for c in critiques:
+                        print(f"      Proposal {c.proposal_index}: {c.score}/10")
+                except Exception as e:
+                    print(f"      Error: {agent.name} critique failed: {str(e)[:100]}")
+                    continue
+
+            # Phase 3: Voting
+            print(f"\n>>> Phase 3: Voting (each agent votes)")
+            wp_votes = []
+            for agent in world_pressure_agents:
+                try:
+                    vote = agent.vote(wp_proposals, theme_question)
+                    wp_votes.append(vote)
+                    print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
+                except Exception as e:
+                    print(f"    Error: {agent.name} vote failed: {str(e)[:100]}")
+                    continue
+
+            # Tally votes
+            if not wp_votes:
+                winner_index = 0
+            else:
+                vote_counts = {}
+                for v in wp_votes:
+                    vote_counts[v.chosen_proposal_index] = vote_counts.get(v.chosen_proposal_index, 0) + 1
+                winner_index = max(vote_counts, key=vote_counts.get)
+
+            winning_wp = wp_proposals[winner_index]
+            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts.get(winner_index, 0)} votes)")
+            print(f">>> Societal: {winning_wp.world_pressure.societal}")
+            print(f">>> Economic: {winning_wp.world_pressure.economic}")
+            print(f">>> Political: {winning_wp.world_pressure.political}")
+            print(f">>> Cultural: {winning_wp.world_pressure.cultural}")
+
+            # Store world pressure in codex and debates
+            world_pressure_dict = {
+                "societal": winning_wp.world_pressure.societal,
+                "economic": winning_wp.world_pressure.economic,
+                "political": winning_wp.world_pressure.political,
+                "cultural": winning_wp.world_pressure.cultural,
+                "thematic_integration": winning_wp.world_pressure.thematic_integration,
+            }
+            codex["story"]["world_pressure"] = world_pressure_dict
+
+            step4_debates["world_pressure"] = {
+                "proposals": [p.model_dump() for p in wp_proposals],
+                "critiques": [c.model_dump() for c in all_wp_critiques],
+                "votes": [v.model_dump() for v in wp_votes],
+                "winner_index": winner_index,
+            }
+
+            # =========================================================================
+            # SUBSTEP 2: GENERATE LOCATIONS FROM INTEGRATED BEATS
+            # =========================================================================
+            # Extract unique location types from integrated beats
+            location_types_from_beats = []
+            beat_location_types_set = set()
+
+            for beat in integrated_beats:
+                beat_loc_type = beat.get("location_type")
+                if beat_loc_type and beat_loc_type not in beat_location_types_set:
+                    beat_location_types_set.add(beat_loc_type)
+                    location_types_from_beats.append(beat_loc_type)
+
+            # Use extracted location types if available, otherwise fall back to genre-based defaults
+            if location_types_from_beats:
+                location_types = location_types_from_beats
+                print(f"\n>>> Extracted {len(location_types)} unique location types from Step 3 beats")
+                for loc_type in location_types:
+                    print(f"    - {loc_type}")
+            else:
+                # Fallback: use genre-based location types if no beats have location data
+                print("\n>>> WARNING: No location types found in beats, using genre-based defaults")
+                if "fantasy" in primary_genre.lower() or "magic" in world_context.lower():
+                    location_types = ["Sacred Temple or Shrine", "Public Gathering Place"]
+                elif "sci-fi" in primary_genre.lower() or "space" in world_context.lower():
+                    location_types = ["Central Hub or Station", "Remote Outpost"]
+                elif "mystery" in primary_genre.lower() or "crime" in primary_genre.lower():
+                    location_types = ["Crime Scene Location", "Investigation Headquarters"]
+                elif "romance" in primary_genre.lower():
+                    location_types = ["Meeting Place", "Intimate Setting"]
+                elif "horror" in primary_genre.lower():
+                    location_types = ["Haunted Location", "Safe Haven"]
+                elif "thriller" in primary_genre.lower():
+                    location_types = ["High-Stakes Location", "Safe House"]
+                else:
+                    # Generic fallback
+                    location_types = ["Primary Story Location", "Secondary Story Location"]
+
+            # Generate locations dynamically (one per unique location type)
+            locations = []
+            for i, location_type in enumerate(location_types, start=1):
+                print(f"\n{'='*60}")
+                print(f"SUBSTEP {i+1}: LOCATION {i} DESIGN ({location_type})")
+                print(f"{'='*60}")
+
+                location_result = self._debate_location(
+                    location_number=i,
+                    location_type=location_type,
+                    setting=world_context,
+                    tone=tone_flavor if tone_flavor else primary_genre,
+                    thematic_question=theme_question,
+                    key_scenes=key_scenes,
+                )
+
+                # Store location in codex
+                if "locations" not in codex["story"]:
+                    codex["story"]["locations"] = []
+                codex["story"]["locations"].append(location_result["location"])
+                locations.append(location_result["location"])
+                step4_debates[f"location_{i}"] = location_result["debates"]
+
+            # =========================================================================
+            # SUBSTEP 3+: GENERATE COMPREHENSIVE WORLD DETAILS
+            # =========================================================================
+            print(f"\n{'='*60}")
+            print("GENERATING COMPREHENSIVE WORLD DETAILS")
+            print(f"{'='*60}")
+
+            from src.world_schemas import (
+                DailyLife, SocialStructure, Economy, GovernmentLaw,
+                EducationHealth, Entertainment, ReligionBeliefs, CultureCustoms
+            )
+
+            # Build context for world generation
+            world_context_prompt = f"""
+WORLD PRESSURE:
+- Societal: {world_pressure_dict['societal'][:200]}...
+- Economic: {world_pressure_dict['economic'][:200]}...
+- Political: {world_pressure_dict['political'][:200]}...
+- Cultural: {world_pressure_dict['cultural'][:200]}...
+
+THEME: {theme_question}
+GENRE: {primary_genre}
+SETTING: {world_context}
+TONE: {tone_flavor if tone_flavor else primary_genre}
+
+LOCATIONS: {', '.join([loc['name'] for loc in locations])}
+"""
+
+            # Generate each world component
+            world_dict = {}
+
+            # 1. DAILY LIFE
+            print("\n>>> Generating Daily Life...")
+            daily_life_prompt = f"""{world_context_prompt}
+
+Create detailed daily life information for this world.
+Focus on: common foods, eating customs, clothing styles, and shelter types.
+Make it realistic and thematically resonant.
+
+Provide a DailyLife schema with all required fields."""
+
+            daily_life = self.invoke_structured(daily_life_prompt, DailyLife, max_tokens=2500)
+            world_dict["daily_life"] = daily_life.model_dump()
+            print(f"    ✓ Foods: {len(daily_life.common_foods)} items")
+
+            # 2. SOCIAL STRUCTURE
+            print("\n>>> Generating Social Structure...")
+            social_prompt = f"""{world_context_prompt}
+
+Create a compelling social hierarchy for this world.
+Focus on: class system, common jobs, desirable jobs, lowly jobs, and guilds/organizations.
+Show clear class divisions and their consequences.
+
+Provide a SocialStructure schema with all required fields."""
+
+            social_structure = self.invoke_structured(social_prompt, SocialStructure, max_tokens=2500)
+            world_dict["social_structure"] = social_structure.model_dump()
+            print(f"    ✓ Jobs: {len(social_structure.common_jobs)} common, {len(social_structure.desirable_jobs)} desirable")
+
+            # 3. ECONOMY
+            print("\n>>> Generating Economy...")
+            economy_prompt = f"""{world_context_prompt}
+
+Create an economy with meaningful currency and resources.
+Focus on: currency name, trade goods, resources, and taxation system.
+Show economic pressure and inequality.
+
+Provide an Economy schema with all required fields."""
+
+            economy = self.invoke_structured(economy_prompt, Economy, max_tokens=2000)
+            world_dict["economy"] = economy.model_dump()
+            print(f"    ✓ Currency: {economy.currency}")
+
+            # 4. GOVERNMENT & LAW
+            print("\n>>> Generating Government & Law...")
+            gov_prompt = f"""{world_context_prompt}
+
+Create a government and legal system.
+Focus on: government type, law enforcement, courts/trials, punishments, and military.
+Show how power is wielded and maintained.
+
+Provide a GovernmentLaw schema with all required fields."""
+
+            government = self.invoke_structured(gov_prompt, GovernmentLaw, max_tokens=2000)
+            world_dict["government_law"] = government.model_dump()
+            print(f"    ✓ Government: {government.government_type}")
+
+            # 5. EDUCATION & HEALTH
+            print("\n>>> Generating Education & Health...")
+            edu_prompt = f"""{world_context_prompt}
+
+Create education and healthcare systems.
+Focus on: education system, medicine availability, healers, and common ailments.
+Show how knowledge and health are distributed (or withheld).
+
+Provide an EducationHealth schema with all required fields."""
+
+            education = self.invoke_structured(edu_prompt, EducationHealth, max_tokens=2500)
+            world_dict["education_health"] = education.model_dump()
+            print(f"    ✓ Ailments: {len(education.common_ailments)} common diseases")
+
+            # 6. ENTERTAINMENT
+            print("\n>>> Generating Entertainment...")
+            entertainment_prompt = f"""{world_context_prompt}
+
+Create entertainment and leisure activities.
+Focus on: how poor people entertain themselves, how rich people entertain themselves, festivals, and art forms.
+Show class divisions through entertainment.
+
+Provide an Entertainment schema with all required fields."""
+
+            entertainment = self.invoke_structured(entertainment_prompt, Entertainment, max_tokens=2500)
+            world_dict["entertainment"] = entertainment.model_dump()
+            print(f"    ✓ Festivals: {len(entertainment.festivals)} major celebrations")
+
+            # 7. RELIGION & BELIEFS
+            print("\n>>> Generating Religion & Beliefs...")
+            religion_prompt = f"""{world_context_prompt}
+
+Create religious and spiritual beliefs.
+Focus on: main religion, gods/deities, temples/worship, superstitions, and taboos.
+Make beliefs thematically meaningful.
+
+Provide a ReligionBeliefs schema with all required fields."""
+
+            religion = self.invoke_structured(religion_prompt, ReligionBeliefs, max_tokens=2000)
+            world_dict["religion_beliefs"] = religion.model_dump()
+            print(f"    ✓ Religion: {religion.main_religion}")
+
+            # 8. CULTURE & CUSTOMS
+            print("\n>>> Generating Culture & Customs...")
+            culture_prompt = f"""{world_context_prompt}
+
+Create cultural norms and social customs.
+Focus on: social rules, gestures of respect, gestures of rudeness, family structure, and naming conventions.
+Show how culture shapes daily interactions.
+
+Provide a CultureCustoms schema with all required fields."""
+
+            culture = self.invoke_structured(culture_prompt, CultureCustoms, max_tokens=2500)
+            world_dict["culture_customs"] = culture.model_dump()
+            print(f"    ✓ Social Rules: {len(culture.social_rules)} key rules")
+
+            # Store world in codex
+            codex["story"]["world"] = world_dict
+            print(f"\n>>> World building complete: 8 components generated")
+
+            duration = time.time() - start_time
+
+            print(f"\n{'='*60}")
+            print(f"STEP 4 COMPLETE ({duration:.1f}s)")
+            print(f"{'='*60}")
+            print(f">>> World Pressure: Defined")
+            for i, loc in enumerate(locations, start=1):
+                print(f">>> Location {i}: {loc['name']} ({loc['type']})")
+            print(f">>> World Details: 8 components (daily_life, social_structure, economy, government_law, education_health, entertainment, religion_beliefs, culture_customs)")
+            print(f">>>   Currency: {world_dict['economy']['currency']}")
+            print(f">>>   Religion: {world_dict['religion_beliefs']['main_religion']}")
+            print(f">>>   Government: {world_dict['government_law']['government_type']}")
+
+            return Step4Result(
+                world_pressure=world_pressure_dict,
+                locations=locations,
+                step4_debates=step4_debates,
+                success=True,
+                duration_seconds=duration,
+            )
+
+        except Exception as e:
+            duration = time.time() - start_time
+            print(f"\nError in step4_world_building: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Step4Result(
+                world_pressure={},
+                locations=[],
+                step4_debates={},
+                success=False,
+                error=str(e),
+                duration_seconds=duration,
+            )
+
+    def _debate_location(
+        self,
+        location_number: int,
+        location_type: str,
+        setting: str,
+        tone: str,
+        thematic_question: str,
+        key_scenes: list[str],
+    ) -> dict:
+        """Run 4 sequential debates for a single location.
+
+        Returns:
+            dict with "location" (final location dict) and "debates" (all debate metadata)
+        """
+        debates = {
+            "name": {},
+            "physical": {},
+            "atmosphere": {},
+            "thematic": {},
+        }
+
+        # -------------------------------------------------------------------------
+        # DEBATE 1: NAME (3 agents)
+        # -------------------------------------------------------------------------
+        print(f"\n>>> DEBATE 1: NAME")
+        name_agents = [
+            LocationNameCreativeAgent(model=self.model),
+            LocationNameAuthenticAgent(model=self.model),
+            LocationNameThematicAgent(model=self.model),
+        ]
+
+        print(f"    Phase 1: Proposals (3 agents)")
+        name_proposals = []
+        for agent in name_agents:
+            print(f"      - {agent.name} proposing...")
+            try:
+                proposal = agent.propose_name(
+                    location_type=location_type,
+                    setting=setting,
+                    tone=tone,
+                    thematic_question=thematic_question,
+                )
+                name_proposals.append(proposal)
+                print(f"        Name: {proposal.location_name}")
+            except Exception as e:
+                print(f"        Error: {str(e)[:100]}")
+                continue
+
+        if not name_proposals:
+            # Fallback name
+            winning_name = f"Location_{location_number}"
+            print(f"    WARNING: No name proposals, using fallback: {winning_name}")
+        else:
+            # Critiques
+            print(f"    Phase 2: Critiques")
+            name_critiques = []
+            for agent in name_agents:
+                for proposal in name_proposals:
+                    try:
+                        # Call each agent with their specific required parameters
+                        if isinstance(agent, LocationNameCreativeAgent):
+                            critique = agent.critique_name(proposal, location_type, tone)
+                        elif isinstance(agent, LocationNameAuthenticAgent):
+                            critique = agent.critique_name(proposal, location_type, setting)
+                        elif isinstance(agent, LocationNameThematicAgent):
+                            critique = agent.critique_name(proposal, location_type, thematic_question)
+                        else:
+                            continue
+
+                        if critique:
+                            name_critiques.append(critique)
+                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                    except Exception as e:
+                        print(f"      Error: {str(e)[:50]}")
+                        continue
+
+            # Votes
+            print(f"    Phase 3: Voting")
+            name_votes = []
+            for agent in name_agents:
+                try:
+                    # Call each agent with their specific required parameters
+                    if isinstance(agent, LocationNameCreativeAgent):
+                        vote = agent.vote(name_proposals, location_type, tone)
+                    elif isinstance(agent, LocationNameAuthenticAgent):
+                        vote = agent.vote(name_proposals, location_type, setting)
+                    elif isinstance(agent, LocationNameThematicAgent):
+                        vote = agent.vote(name_proposals, location_type, thematic_question)
+                    else:
+                        continue
+
+                    name_votes.append(vote)
+                    voted_name = name_proposals[vote.chosen_proposal_index].location_name if vote.chosen_proposal_index < len(name_proposals) else "invalid"
+                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_name})")
+                except Exception as e:
+                    print(f"      Error: {str(e)[:50]}")
+                    continue
+
+            # Tally
+            if name_votes:
+                # Map votes to agent names
+                vote_counts = Counter(
+                    name_proposals[v.chosen_proposal_index].agent_name
+                    for v in name_votes
+                    if v.chosen_proposal_index < len(name_proposals)
+                )
+                winner_agent = max(vote_counts, key=vote_counts.get)
+                winning_proposal = next((p for p in name_proposals if p.agent_name == winner_agent), name_proposals[0])
+                winning_name = winning_proposal.location_name
+                print(f"    WINNER: {winning_name} (by {winner_agent})")
+            else:
+                winning_name = name_proposals[0].location_name
+                print(f"    WINNER (default): {winning_name}")
+
+        debates["name"] = {
+            "proposals": [p.model_dump() for p in name_proposals] if name_proposals else [],
+            "critiques": [c.model_dump() for c in name_critiques if c is not None],
+            "votes": [v.model_dump() for v in name_votes if v is not None],
+            "winner_name": winning_name,
+        }
+
+        # -------------------------------------------------------------------------
+        # DEBATE 2: PHYSICAL DESCRIPTION (3 agents)
+        # -------------------------------------------------------------------------
+        print(f"\n>>> DEBATE 2: PHYSICAL DESCRIPTION")
+        physical_agents = [
+            LocationPhysicalSensoryAgent(model=self.model),
+            LocationPhysicalFunctionalAgent(model=self.model),
+            LocationPhysicalSymbolicAgent(model=self.model),
+        ]
+
+        print(f"    Phase 1: Proposals (3 agents)")
+        physical_proposals = []
+        for agent in physical_agents:
+            print(f"      - {agent.name} proposing...")
+            try:
+                proposal = agent.propose_physical(
+                    location_name=winning_name,
+                    location_type=location_type,
+                    setting=setting,
+                    thematic_question=thematic_question,
+                )
+                physical_proposals.append(proposal)
+                print(f"        {proposal.physical_description[:60]}...")
+            except Exception as e:
+                print(f"        Error: {str(e)[:100]}")
+                continue
+
+        if not physical_proposals:
+            winning_physical = f"A {location_type.lower()} called {winning_name}"
+            print(f"    WARNING: No physical proposals, using fallback")
+        else:
+            # Critiques
+            print(f"    Phase 2: Critiques")
+            physical_critiques = []
+            for agent in physical_agents:
+                for proposal in physical_proposals:
+                    try:
+                        # Symbolic agent needs thematic_question, others don't
+                        if isinstance(agent, LocationPhysicalSymbolicAgent):
+                            critique = agent.critique_physical(proposal, location_type, thematic_question)
+                        else:
+                            critique = agent.critique_physical(proposal, location_type)
+
+                        if critique:
+                            physical_critiques.append(critique)
+                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                    except Exception as e:
+                        print(f"      Error: {str(e)[:50]}")
+                        continue
+
+            # Votes
+            print(f"    Phase 3: Voting")
+            physical_votes = []
+            for agent in physical_agents:
+                try:
+                    # Symbolic agent needs thematic_question, others don't
+                    if isinstance(agent, LocationPhysicalSymbolicAgent):
+                        vote = agent.vote(physical_proposals, location_type, thematic_question)
+                    else:
+                        vote = agent.vote(physical_proposals, location_type)
+
+                    physical_votes.append(vote)
+                    voted_desc = physical_proposals[vote.chosen_proposal_index].physical_description[:40] if vote.chosen_proposal_index < len(physical_proposals) else "invalid"
+                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_desc}...)")
+                except Exception as e:
+                    print(f"      Error: {str(e)[:50]}")
+                    continue
+
+            # Tally
+            if physical_votes:
+                # Map votes to agent names
+                vote_counts = Counter(
+                    physical_proposals[v.chosen_proposal_index].agent_name
+                    for v in physical_votes
+                    if v.chosen_proposal_index < len(physical_proposals)
+                )
+                winner_agent = max(vote_counts, key=vote_counts.get)
+                winning_proposal = next((p for p in physical_proposals if p.agent_name == winner_agent), physical_proposals[0])
+                winning_physical = winning_proposal.physical_description
+                print(f"    WINNER: {winning_physical[:60]}... (by {winner_agent})")
+            else:
+                winning_physical = physical_proposals[0].physical_description
+                print(f"    WINNER (default): {winning_physical[:60]}...")
+
+        debates["physical"] = {
+            "proposals": [p.model_dump() for p in physical_proposals] if physical_proposals else [],
+            "critiques": [c.model_dump() for c in physical_critiques if c is not None],
+            "votes": [v.model_dump() for v in physical_votes if v is not None],
+            "winner_description": winning_physical,
+        }
+
+        # -------------------------------------------------------------------------
+        # DEBATE 3: ATMOSPHERE (3 agents)
+        # -------------------------------------------------------------------------
+        print(f"\n>>> DEBATE 3: ATMOSPHERE")
+        atmosphere_agents = [
+            LocationAtmosphereMoodAgent(model=self.model),
+            LocationAtmosphereConflictAgent(model=self.model),
+            LocationAtmosphereCharacterAgent(model=self.model),
+        ]
+
+        print(f"    Phase 1: Proposals (3 agents)")
+        atmosphere_proposals = []
+        for agent in atmosphere_agents:
+            print(f"      - {agent.name} proposing...")
+            try:
+                proposal = agent.propose_atmosphere(
+                    location_name=winning_name,
+                    location_type=location_type,
+                    physical_description=winning_physical,
+                    thematic_question=thematic_question,
+                )
+                atmosphere_proposals.append(proposal)
+                print(f"        {proposal.atmosphere[:60]}...")
+            except Exception as e:
+                print(f"        Error: {str(e)[:100]}")
+                continue
+
+        if not atmosphere_proposals:
+            winning_atmosphere = "A place of significance and meaning."
+            print(f"    WARNING: No atmosphere proposals, using fallback")
+        else:
+            # Critiques
+            print(f"    Phase 2: Critiques")
+            atmosphere_critiques = []
+            for agent in atmosphere_agents:
+                for proposal in atmosphere_proposals:
+                    try:
+                        # Mood and Conflict agents need location_type, Character needs both
+                        if isinstance(agent, LocationAtmosphereCharacterAgent):
+                            critique = agent.critique_atmosphere(proposal, location_type, thematic_question)
+                        else:
+                            critique = agent.critique_atmosphere(proposal, location_type)
+
+                        if critique:
+                            atmosphere_critiques.append(critique)
+                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                    except Exception as e:
+                        print(f"      Error: {str(e)[:50]}")
+                        continue
+
+            # Votes
+            print(f"    Phase 3: Voting")
+            atmosphere_votes = []
+            for agent in atmosphere_agents:
+                try:
+                    vote = agent.vote(atmosphere_proposals, location_type)
+                    atmosphere_votes.append(vote)
+                    voted_atmos = atmosphere_proposals[vote.chosen_proposal_index].atmosphere[:40] if vote.chosen_proposal_index < len(atmosphere_proposals) else "invalid"
+                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_atmos}...)")
+                except Exception as e:
+                    print(f"      Error: {str(e)[:50]}")
+                    continue
+
+            # Tally
+            if atmosphere_votes:
+                # Map votes to agent names
+                vote_counts = Counter(
+                    atmosphere_proposals[v.chosen_proposal_index].agent_name
+                    for v in atmosphere_votes
+                    if v.chosen_proposal_index < len(atmosphere_proposals)
+                )
+                winner_agent = max(vote_counts, key=vote_counts.get)
+                winning_proposal = next((p for p in atmosphere_proposals if p.agent_name == winner_agent), atmosphere_proposals[0])
+                winning_atmosphere = winning_proposal.atmosphere
+                print(f"    WINNER: {winning_atmosphere[:60]}... (by {winner_agent})")
+            else:
+                winning_atmosphere = atmosphere_proposals[0].atmosphere
+                print(f"    WINNER (default): {winning_atmosphere[:60]}...")
+
+        debates["atmosphere"] = {
+            "proposals": [p.model_dump() for p in atmosphere_proposals] if atmosphere_proposals else [],
+            "critiques": [c.model_dump() for c in atmosphere_critiques if c is not None],
+            "votes": [v.model_dump() for v in atmosphere_votes if v is not None],
+            "winner_atmosphere": winning_atmosphere,
+        }
+
+        # -------------------------------------------------------------------------
+        # DEBATE 4: THEMATIC SIGNIFICANCE (3 agents)
+        # -------------------------------------------------------------------------
+        print(f"\n>>> DEBATE 4: THEMATIC SIGNIFICANCE")
+        thematic_agents = [
+            LocationThematicResonanceAgent(model=self.model),
+            LocationThematicContrastAgent(model=self.model),
+            LocationThematicEvolutionAgent(model=self.model),
+        ]
+
+        print(f"    Phase 1: Proposals (3 agents)")
+        thematic_proposals = []
+        for agent in thematic_agents:
+            print(f"      - {agent.name} proposing...")
+            try:
+                proposal = agent.propose_thematic(
+                    location_name=winning_name,
+                    location_type=location_type,
+                    physical_description=winning_physical,
+                    atmosphere=winning_atmosphere,
+                    thematic_question=thematic_question,
+                    key_scenes=key_scenes,
+                )
+                thematic_proposals.append(proposal)
+                print(f"        {proposal.thematic_significance[:60]}...")
+            except Exception as e:
+                print(f"        Error: {str(e)[:100]}")
+                continue
+
+        if not thematic_proposals:
+            winning_thematic = f"This location embodies aspects of the theme: {thematic_question}"
+            print(f"    WARNING: No thematic proposals, using fallback")
+        else:
+            # Critiques
+            print(f"    Phase 2: Critiques")
+            thematic_critiques = []
+            for agent in thematic_agents:
+                for proposal in thematic_proposals:
+                    try:
+                        # All thematic agents need both location_type and thematic_question
+                        critique = agent.critique_thematic(proposal, location_type, thematic_question)
+                        if critique:
+                            thematic_critiques.append(critique)
+                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                    except Exception as e:
+                        print(f"      Error: {str(e)[:50]}")
+                        continue
+
+            # Votes
+            print(f"    Phase 3: Voting")
+            thematic_votes = []
+            for agent in thematic_agents:
+                try:
+                    vote = agent.vote(thematic_proposals, location_type, thematic_question)
+                    thematic_votes.append(vote)
+                    voted_them = thematic_proposals[vote.chosen_proposal_index].thematic_significance[:40] if vote.chosen_proposal_index < len(thematic_proposals) else "invalid"
+                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_them}...)")
+                except Exception as e:
+                    print(f"      Error: {str(e)[:50]}")
+                    continue
+
+            # Tally
+            if thematic_votes:
+                # Map votes to agent names
+                vote_counts = Counter(
+                    thematic_proposals[v.chosen_proposal_index].agent_name
+                    for v in thematic_votes
+                    if v.chosen_proposal_index < len(thematic_proposals)
+                )
+                winner_agent = max(vote_counts, key=vote_counts.get)
+                winning_proposal = next((p for p in thematic_proposals if p.agent_name == winner_agent), thematic_proposals[0])
+                winning_thematic = winning_proposal.thematic_significance
+                winning_scenes = winning_proposal.key_scenes
+                print(f"    WINNER: {winning_thematic[:60]}... (by {winner_agent})")
+            else:
+                winning_thematic = thematic_proposals[0].thematic_significance
+                winning_scenes = thematic_proposals[0].key_scenes
+                print(f"    WINNER (default): {winning_thematic[:60]}...")
+
+        debates["thematic"] = {
+            "proposals": [p.model_dump() for p in thematic_proposals] if thematic_proposals else [],
+            "critiques": [c.model_dump() for c in thematic_critiques if c is not None],
+            "votes": [v.model_dump() for v in thematic_votes if v is not None],
+            "winner_significance": winning_thematic,
+        }
+
+        # Extract key features from physical description (3-5 bullet points)
+        # Use simple sentence splitting to extract features
+        key_features = []
+        if winning_physical:
+            # Try to extract meaningful features from the description
+            sentences = winning_physical.replace(". ", ".|").split("|")
+            for sentence in sentences[:5]:  # Max 5 features
+                sentence = sentence.strip().rstrip(".")
+                if len(sentence) > 20 and len(sentence) < 150:  # Reasonable feature length
+                    # Simplify to key feature format
+                    if "," in sentence:
+                        # Take first clause if multiple
+                        feature = sentence.split(",")[0].strip()
+                    else:
+                        feature = sentence
+                    if feature and feature not in key_features:
+                        key_features.append(feature)
+
+        # Ensure we have at least 3 features
+        if len(key_features) < 3:
+            key_features.extend([
+                f"Distinctive {location_type.lower()} architecture",
+                f"Atmospheric {location_type.lower()} setting",
+                "Thematically significant space"
+            ])
+            key_features = key_features[:5]  # Max 5
+
+        # Extract sensory details from physical description and atmosphere
+        sensory_details = ""
+        if winning_physical and winning_atmosphere:
+            # Combine sensory aspects from both
+            sensory_parts = []
+            if "scent" in winning_physical.lower() or "smell" in winning_physical.lower():
+                # Extract scent-related sentences
+                for sent in winning_physical.split("."):
+                    if "scent" in sent.lower() or "smell" in sent.lower():
+                        sensory_parts.append(sent.strip())
+                        break
+            if "sound" in winning_physical.lower() or "echo" in winning_physical.lower():
+                # Extract sound-related sentences
+                for sent in winning_physical.split("."):
+                    if "sound" in sent.lower() or "echo" in sent.lower():
+                        sensory_parts.append(sent.strip())
+                        break
+            if "texture" in winning_physical.lower() or "feel" in winning_physical.lower():
+                # Extract texture-related sentences
+                for sent in winning_physical.split("."):
+                    if "texture" in sent.lower() or "feel" in sent.lower():
+                        sensory_parts.append(sent.strip())
+                        break
+
+            if sensory_parts:
+                sensory_details = " ".join(sensory_parts)
+            else:
+                # Fallback: combine physical and atmosphere excerpts
+                sensory_details = f"{winning_physical[:150]}... {winning_atmosphere[:150]}..."
+        else:
+            sensory_details = winning_physical[:200] if winning_physical else f"A {location_type.lower()} with distinctive sensory qualities."
+
+        # Assemble final location with ALL required fields
+        location = {
+            "id": f"loc_{location_number:03d}",  # Format as loc_001, loc_002, etc.
+            "name": winning_name,
+            "type": location_type,
+            "description": winning_physical,  # Rename physical_description to description
+            "atmosphere": winning_atmosphere,
+            "key_features": key_features,  # NEW: List of 3-5 features
+            "sensory_details": sensory_details,  # NEW: Combined sensory information
+            "connection_to_story": "story_location",  # NEW: Mark as story location (will be refined later)
+            "location_prompt": {},  # NEW: Empty dict for now (image generation added later)
+        }
+
+        print(f"\n>>> LOCATION {location_number} COMPLETE")
+        print(f"    ID: {location['id']}")
+        print(f"    Name: {winning_name}")
+        print(f"    Type: {location_type}")
+        print(f"    Description: {winning_physical[:60]}...")
+        print(f"    Atmosphere: {winning_atmosphere[:60]}...")
+        print(f"    Key Features: {len(key_features)} features")
+        print(f"    Thematic: {winning_thematic[:60]}...")
+
+        return {
+            "location": location,
+            "debates": debates,
+        }
+
+    def step4_chapter_outline(self, codex: dict) -> Step4ChapterOutlineResult:
         """Generate detailed chapter/scene outline via multi-agent debate.
 
         Uses 4 scene debate agents:
@@ -5010,21 +5946,25 @@ RELIGION:
             else:
                 print(f">>> Step 3 FAILED: {result.error}")
 
-        # Step 4: Chapter/Scene Outline
+        # Step 4: World Building (World Pressure + Dynamic Major Locations)
         if 4 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 4: Chapter/Scene Outline (Multi-Agent Debate)")
+            print("STEP 4: World Building (World Pressure + Major Locations)")
             print(f"{'='*60}")
 
-            result = self.step4_chapter_outline(codex)
+            result = self.step4_world_building(codex)
             results["step4"] = result
 
             if result.success:
-                # Store chapter outline at story.chapter_outline
-                codex["story"]["chapter_outline"] = result.chapter_outline
+                # Store world pressure and locations in story section
+                codex["story"]["world_pressure"] = result.world_pressure
+                codex["story"]["locations"] = result.locations
+
+                # Store debate details in metadata
+                codex["metadata"]["phase_1"]["step4_debates"] = result.step4_debates
 
                 steps_completed.append(4)
-                step_timings["step4_chapter_outline"] = result.duration_seconds
+                step_timings["step4_world_building"] = result.duration_seconds
             else:
                 print(f">>> Step 4 FAILED: {result.error}")
 
@@ -5093,9 +6033,9 @@ RELIGION:
         if "step1" in results and results["step1"].success:
             codex["metadata"]["phase_1"]["character_debates"] = results["step1"].character_debates
 
-        # Add scene debates to metadata
-        if "step4" in results and results["step4"].success:
-            codex["metadata"]["phase_1"]["scene_debates"] = results["step4"].scene_debates
+        # Add scene debates to metadata (OLD Step 4 only - now skipped for NEW Step 4 World Building)
+        # if "step4" in results and results["step4"].success:
+        #     codex["metadata"]["phase_1"]["scene_debates"] = results["step4"].scene_debates
 
         # Add narrative debates to metadata
         if "step5" in results and results["step5"].success:

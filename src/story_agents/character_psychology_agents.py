@@ -179,7 +179,7 @@ Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -334,7 +334,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -479,7 +479,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -631,7 +631,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -780,7 +780,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -933,7 +933,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1104,7 +1104,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1261,7 +1261,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1415,7 +1415,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1559,7 +1559,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1720,7 +1720,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,
@@ -1880,7 +1880,7 @@ Score 1-10. Use agent_name: "{self.name}"
 """
 
         result = self.invoke_structured(user_prompt, CritiqueList)
-        return result.critiques
+        return result.critiques if result else []
 
     def vote(
         self,

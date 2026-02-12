@@ -7,8 +7,8 @@ These schemas define the JSON structure for:
 - Phase 3: Narrative prose
 """
 
-from typing import Optional, Dict
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 
 # =============================================================================
@@ -2546,7 +2546,7 @@ class SaveTheCatBeat(BaseModel):
     thematic_test: str = Field(..., description="How this beat tests the thematic question")
 
 
-class SaveTheCatProposal(BaseModel):
+class SaveTheCatBeatProposal(BaseModel):
     """Proposed Save the Cat 15-beat structure."""
     agent_name: str = Field(..., description="Name of the proposing agent")
     beats: list[SaveTheCatBeat] = Field(
@@ -2559,8 +2559,8 @@ class SaveTheCatProposal(BaseModel):
     reasoning: str = Field(..., description="Why this beat structure serves the story")
 
 
-class SaveTheCatCritique(BaseModel):
-    """Critique of a Save the Cat proposal."""
+class SaveTheCatBeatCritique(BaseModel):
+    """Critique of a Save the Cat beat proposal."""
     agent_name: str = Field(..., description="Name of the critiquing agent")
     proposal_index: int = Field(..., description="Index of proposal being critiqued")
     score: float = Field(..., ge=1, le=10, description="Score from 1-10")
@@ -2568,8 +2568,8 @@ class SaveTheCatCritique(BaseModel):
     weaknesses: str = Field(..., description="Beats that need improvement")
 
 
-class SaveTheCatVote(BaseModel):
-    """Vote for best Save the Cat structure."""
+class SaveTheCatBeatVote(BaseModel):
+    """Vote for best Save the Cat beat structure."""
     agent_name: str = Field(..., description="Name of the voting agent")
     chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
     reasoning: str = Field(..., description="Why this beat structure is best")
@@ -2581,10 +2581,14 @@ class SaveTheCatVote(BaseModel):
 
 class CharacterArcBeat(BaseModel):
     """A single beat in a character's arc."""
-    beat_name: str = Field(..., description="Name of the arc beat (e.g., 'Characteristic Moment', 'Midpoint Glimpse')")
+    beat_name: str = Field(default="Arc Beat", description="Name of the arc beat (e.g., 'Characteristic Moment', 'Midpoint Glimpse')")
     timing: str = Field(default="", description="When this beat occurs (e.g., '0-10%', '25%', '50%')")
-    description: str = Field(..., description="What happens to this character at this beat")
-    ties_to_lie_truth: str = Field(..., description="How this beat relates to character's Lie/Truth")
+    description: Optional[str] = Field(default=None, description="What happens to this character at this beat")
+    ties_to_lie_truth: Optional[str] = Field(default=None, description="How this beat relates to character's Lie/Truth")
+
+    class Config:
+        # Allow extra fields to be ignored (in case LLM adds unexpected fields)
+        extra = "ignore"
 
 
 class CharacterArcStructure(BaseModel):
@@ -2592,13 +2596,56 @@ class CharacterArcStructure(BaseModel):
     character_name: str = Field(..., description="Name of the character")
     arc_type: str = Field(..., description="positive_change / flat / negative / disillusionment / corruption / fall")
     arc_beats: list[CharacterArcBeat] = Field(
-        ...,
+        default_factory=list,
         description="Sequence of arc beats for this character"
     )
-    arc_summary: str = Field(
-        default="Character transformation arc",
-        description="One-sentence summary of character's journey"
+    arc_summary: Optional[str] = Field(
+        default=None,
+        description="One-sentence summary of character's journey (optional)"
     )
+
+    @field_validator('arc_beats', mode='before')
+    @classmethod
+    def clean_and_truncate_beats(cls, v: Any, info: ValidationInfo) -> list:
+        """Clean invalid beats and truncate to expected count for arc type."""
+        if not isinstance(v, list):
+            return []
+
+        # Filter out non-dict items and try to parse each beat
+        valid_beats = []
+        for item in v:
+            if isinstance(item, dict):
+                try:
+                    # Try to construct CharacterArcBeat - will use defaults for missing fields
+                    beat = CharacterArcBeat(**item)
+                    valid_beats.append(item)  # Keep the dict, not the object
+                except Exception:
+                    # Skip malformed beats
+                    continue
+            elif hasattr(item, '__dict__'):
+                # Already a CharacterArcBeat object
+                valid_beats.append(item)
+
+        # Get expected beat count based on arc type
+        arc_type = info.data.get('arc_type', 'positive_change')
+
+        # Load arc definitions to get beat count
+        try:
+            import yaml
+            from pathlib import Path
+            config_path = Path(__file__).parent / "config" / "character_arc_beats.yaml"
+            with open(config_path) as f:
+                arc_defs = yaml.safe_load(f)
+
+            if arc_type not in arc_defs:
+                arc_type = 'positive_change'
+            expected_count = len(arc_defs[arc_type]['beats'])
+
+            # Truncate to expected count
+            return valid_beats[:expected_count] if expected_count else valid_beats
+        except Exception:
+            # If can't load config, just return what we have
+            return valid_beats
 
 
 class ArcBeatProposal(BaseModel):
@@ -2610,7 +2657,7 @@ class ArcBeatProposal(BaseModel):
         default_factory=list,
         description="Arc structures for supporting characters (micro-arcs with 5-7 key beats)"
     )
-    reasoning: str = Field(..., description="Why these arc structures serve the theme")
+    reasoning: str = Field(default="Arc structures designed for thematic coherence", description="Why these arc structures serve the theme")
 
 
 class ArcBeatCritique(BaseModel):
@@ -2643,6 +2690,10 @@ class IntegratedBeat(BaseModel):
         description="Dict mapping character names to their arc beat at this moment. Include ALL major characters."
     )
     thematic_test: str = Field(..., description="How this beat tests the theme")
+    location_type: Optional[str] = Field(
+        default=None,
+        description="Type of location where this beat occurs (e.g., 'Sacred Temple', 'Central Hub', 'Remote Outpost')"
+    )
 
 
 class BeatIntegrationProposal(BaseModel):
@@ -2671,3 +2722,197 @@ class BeatIntegrationVote(BaseModel):
     agent_name: str = Field(..., description="Name of the voting agent")
     chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
     reasoning: str = Field(..., description="Why this integration is best")
+
+
+# =========================================================================
+# STEP 4: WORLD BUILDING SCHEMAS
+# =========================================================================
+
+# -------------------------------------------------------------------------
+# World Pressure Schemas (Council of 4 agents)
+# -------------------------------------------------------------------------
+
+class WorldPressureSchema(BaseModel):
+    """Thematic world pressures that create conflict and stakes."""
+    societal: str = Field(
+        ...,
+        description="Class/caste/social hierarchy pressures that affect characters"
+    )
+    economic: str = Field(
+        ...,
+        description="Resource scarcity, wealth inequality, survival pressures"
+    )
+    political: str = Field(
+        ...,
+        description="Power structures, laws, governance that constrain choices"
+    )
+    cultural: str = Field(
+        ...,
+        description="Beliefs, traditions, taboos that shape worldview"
+    )
+    thematic_integration: str = Field(
+        ...,
+        description="How these pressures test the central thematic question"
+    )
+
+
+class WorldPressureProposal(BaseModel):
+    """Proposed world pressure structure."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    world_pressure: WorldPressureSchema
+    reasoning: str = Field(..., description="Why these pressures serve the theme")
+
+
+class WorldPressureCritique(BaseModel):
+    """Critique of world pressure proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What world pressures work well")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class WorldPressureVote(BaseModel):
+    """Vote for best world pressure structure."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why these world pressures are best")
+
+
+# -------------------------------------------------------------------------
+# Location Schemas (2 major locations, 4 debates each)
+# -------------------------------------------------------------------------
+
+class LocationSchema(BaseModel):
+    """A major location in the story."""
+    name: str = Field(..., description="Location name")
+    location_type: str = Field(
+        ...,
+        description="Type of location (e.g., city, fortress, wasteland, hidden sanctuary)"
+    )
+    physical_description: str = Field(
+        ...,
+        description="Sensory details: what you see, hear, smell, feel"
+    )
+    atmosphere: str = Field(
+        ...,
+        description="Emotional tone and mood of the location"
+    )
+    thematic_significance: str = Field(
+        ...,
+        description="How this location embodies or tests the theme"
+    )
+    key_scenes: str = Field(
+        default="",
+        description="Which story beats will occur here (references to beat names)"
+    )
+
+
+# Location Name Debate
+class LocationNameProposal(BaseModel):
+    """Proposed location name."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    location_name: str = Field(..., description="Proposed name for the location")
+    location_type: str = Field(..., description="Type of location")
+    reasoning: str = Field(..., description="Why this name works")
+
+
+class LocationNameCritique(BaseModel):
+    """Critique of location name proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works about this name")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class LocationNameVote(BaseModel):
+    """Vote for best location name."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this name is best")
+
+
+# Location Physical Description Debate
+class LocationPhysicalProposal(BaseModel):
+    """Proposed physical description for location."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    physical_description: str = Field(
+        ...,
+        description="Sensory-rich physical description of the location"
+    )
+    reasoning: str = Field(..., description="Why this description works")
+
+
+class LocationPhysicalCritique(BaseModel):
+    """Critique of physical description proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works in this description")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class LocationPhysicalVote(BaseModel):
+    """Vote for best physical description."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this description is best")
+
+
+# Location Atmosphere Debate
+class LocationAtmosphereProposal(BaseModel):
+    """Proposed atmosphere for location."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    atmosphere: str = Field(
+        ...,
+        description="Emotional tone and mood of the location"
+    )
+    reasoning: str = Field(..., description="Why this atmosphere works")
+
+
+class LocationAtmosphereCritique(BaseModel):
+    """Critique of atmosphere proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works in this atmosphere")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class LocationAtmosphereVote(BaseModel):
+    """Vote for best atmosphere."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this atmosphere is best")
+
+
+# Location Thematic Significance Debate
+class LocationThematicProposal(BaseModel):
+    """Proposed thematic significance for location."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    thematic_significance: str = Field(
+        ...,
+        description="How this location embodies or tests the central thematic question"
+    )
+    key_scenes: str = Field(
+        ...,
+        description="Which story beats will occur here (specific beat names/numbers)"
+    )
+    reasoning: str = Field(..., description="Why this thematic connection works")
+
+
+class LocationThematicCritique(BaseModel):
+    """Critique of thematic significance proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    proposal_index: int = Field(..., description="Index of proposal being critiqued")
+    score: float = Field(..., ge=1, le=10, description="Score from 1-10")
+    strengths: str = Field(..., description="What works in this thematic connection")
+    weaknesses: str = Field(..., description="What needs improvement")
+
+
+class LocationThematicVote(BaseModel):
+    """Vote for best thematic significance."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
+    reasoning: str = Field(..., description="Why this thematic connection is best")
