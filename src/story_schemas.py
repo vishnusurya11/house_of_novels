@@ -2916,3 +2916,314 @@ class LocationThematicVote(BaseModel):
     agent_name: str = Field(..., description="Name of the voting agent")
     chosen_proposal_index: int = Field(..., description="Index of chosen proposal")
     reasoning: str = Field(..., description="Why this thematic connection is best")
+
+
+# ============================================================================
+# STEP 5: Chapter & Scene Breakdown Schemas
+# ============================================================================
+
+class Scene(BaseModel):
+    """Individual scene within a chapter."""
+    scene_number: int = Field(..., description="Overall scene number across all chapters")
+    beat_name: str = Field(..., description="Which Save the Cat beat this scene advances")
+    scene_summary: str = Field(
+        ...,
+        description="What happens in this scene: purpose, key events, and emotional tone (1-2 concise sentences, ~40 words max)"
+    )
+    pov_character: str = Field(..., description="Whose perspective we experience this scene through")
+    pov_character_id: str = Field(default="", description="ID of POV character for easy lookup")
+    location: str = Field(..., description="Where this scene takes place (from Step 4 locations)")
+    location_id: str = Field(default="", description="ID of location for easy lookup and matching")
+    characters_present: list[str] = Field(..., description="Names of characters in this scene")
+    character_ids: list[str] = Field(default_factory=list, description="IDs of all characters present for easy lookup")
+    tropes_manifesting: list[str] = Field(
+        ...,
+        description="Which story tropes are actively shown/used in this scene (from Step 2 tropes)"
+    )
+    character_arc_progression: dict[str, str] = Field(
+        default_factory=dict,
+        description="Character arc status for EACH character present: {character_name: brief arc state/emotion, ~10 words}"
+    )
+    estimated_word_count: int = Field(
+        ...,
+        description="Target word count for this scene based on genre pacing (thriller: 750-1800)"
+    )
+    scene_type: str = Field(
+        ...,
+        description="Scene category: action, dialogue, introspection, confrontation, revelation, transition"
+    )
+
+    # Enhanced Chekhov's Gun / Rule of Three tracking
+    # Can accept either dict (for backward compat) or SetupPayoffTracking objects
+    setup_payoff_tracking: list[dict] = Field(
+        default_factory=list,
+        description="Rich tracking for EVERY element readers need to notice (skills, traits, world rules, relationships, etc.) - uses Rule of Three for cognitive salience. Accepts SetupPayoffTracking model dicts."
+    )
+
+    # STEP 5C: Complete Interconnection Fields (NEW)
+    # Note: These fields are Optional to support progressive enrichment:
+    # - Step 5 (scene creation) may return None for these fields
+    # - Step 5C (interconnection analysis) populates them with actual data
+    # - None = "not yet analyzed", [] = "analyzed but none found", [data] = "populated"
+    scene_causality: Optional['SceneCausality'] = Field(default=None, description="What caused this scene and what it causes next")
+    active_plot_threads: Optional[list['PlotThreadReference']] = Field(default=None, description="Plot threads active in this scene")
+    character_arc_beats: Optional[list['CharacterSceneArc']] = Field(default=None, description="Character emotional states in this scene")
+    thematic_beat: Optional['ThematicBeat'] = Field(default=None, description="How this scene tests thematic question")
+    scene_function: Optional['SceneFunction'] = Field(default=None, description="Plot/Character/Theme triple function validation")
+    narrative_rope: Optional['NarrativeRope'] = Field(default=None, description="Thread convergence tracking")
+
+
+class ChapterSkeleton(BaseModel):
+    """Chapter structure without scenes (for two-stage generation)."""
+    chapter_number: int = Field(..., description="Chapter number")
+    chapter_title: str = Field(..., description="Title for this chapter")
+    chapter_summary: str = Field(..., description="Brief summary of what happens in this chapter (2-3 concise sentences)")
+    beats_covered: list[str] = Field(
+        ...,
+        description="Save the Cat beat names covered in this chapter"
+    )
+    num_scenes: int = Field(..., description="Number of scenes planned for this chapter (2-4)")
+
+
+class Chapter(BaseModel):
+    """Individual chapter with its scenes."""
+    chapter_number: int = Field(..., description="Chapter number")
+    chapter_title: str = Field(..., description="Title for this chapter")
+    chapter_summary: str = Field(..., description="Brief summary of what happens in this chapter")
+    beats_covered: list[str] = Field(
+        ...,
+        description="Save the Cat beat names covered in this chapter"
+    )
+    scenes: list[Scene] = Field(..., description="Scenes in this chapter (2-4 scenes)")
+
+
+class ChapterSkeletonProposal(BaseModel):
+    """Proposed chapter structure WITHOUT scenes (two-stage generation - stage 1)."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    num_chapters: int = Field(..., description="Number of chapters in the outline")
+    ticking_clock: str = Field(
+        ...,
+        description="Time pressure or deadline driving the story forward (1 concise sentence)"
+    )
+    chapters: list[ChapterSkeleton] = Field(..., description="All chapters WITHOUT scenes")
+    reasoning: str = Field(..., description="Why this chapter structure works (2-3 sentences)")
+
+
+class ChapterOutlineProposal(BaseModel):
+    """Proposed chapter and scene breakdown for the story."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    num_chapters: int = Field(..., description="Number of chapters in the outline")
+    ticking_clock: str = Field(
+        ...,
+        description="Time pressure or deadline driving the story forward"
+    )
+    chapters: list[Chapter] = Field(..., description="All chapters with their scenes")
+    reasoning: str = Field(..., description="Why this chapter/scene structure works")
+
+
+class ChapterOutlineCritique(BaseModel):
+    """Critique of a chapter outline proposal."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    critiques: list[str] = Field(
+        ...,
+        description="3-5 specific critiques (both strengths and weaknesses)"
+    )
+    overall_assessment: str = Field(
+        ...,
+        description="Overall judgment of this chapter/scene structure"
+    )
+
+
+class ChapterScenesProposal(BaseModel):
+    """Scenes to add to a single chapter (two-stage generation - stage 2)."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    chapter_number: int = Field(..., description="Which chapter these scenes are for")
+    scenes: list[Scene] = Field(..., description="All scenes for this chapter (2-4 scenes)")
+    reasoning: str = Field(default="Scene proposal for chapter.", description="Why these scenes work for this chapter (1-2 sentences)")
+
+
+class ChapterOutlineVote(BaseModel):
+    """Vote for best chapter outline proposal."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    chosen_agent: str = Field(..., description="Name of agent whose proposal is chosen")
+    reasoning: str = Field(..., description="Why this chapter outline is best")
+
+
+# ============================================================================
+# STEP 5B: Foreshadowing & Setup/Payoff Schemas
+# ============================================================================
+
+class SetupPayoffTracking(BaseModel):
+    """Simple, powerful tracking for Chekhov's Gun / Rule of Three - everything introduced must pay off."""
+
+    # Core identification (required) - links all setups/payoffs
+    tracking_id: str = Field(..., description="Unique ID linking setup chain: 'family_loyalty_001', 'lockpicking_skill_001'")
+    trait_or_element: str = Field(..., description="What's being tracked (skill, trait, rule, object, relationship)")
+    position: str = Field(..., description="'1 of 3', '2 of 3', '3 of 3' (or '4 of 5' if very important)")
+    setup_type: str = Field(..., description="character_skill, character_trait, plot_element, trope_hint, world_rule, relationship")
+    payoff_scene: str = Field(default="", description="Final payoff scene ref - ONLY filled in setups (1 of 3, 2 of 3), empty in payoff")
+
+    # Character context (optional)
+    character_id: str = Field(default="", description="Character this relates to")
+    character_name: str = Field(default="", description="Character name")
+
+    # Narrative function (optional but important)
+    demonstrates_how: str = Field(default="", description="'Through action', 'Through consequence', 'Through observation' - NEVER dialogue")
+    emotional_stake: str = Field(default="", description="'Low', 'Medium', 'High' - MUST escalate across chain")
+    subtlety_level: str = Field(default="Subtle", description="'Obvious', 'Moderate', 'Subtle' - prefer subtle")
+
+
+class SetupRequirement(BaseModel):
+    """A required setup scene to be inserted retroactively."""
+    insert_location: str = Field(..., description="Where to insert: 'Ch2, after Scene 4'")
+    setup_type: str = Field(..., description="character_skill, trope_hint, plot_element, character_trait")
+    scene_bullet: str = Field(..., description="Bullet point (1-2 sentences, no full prose)")
+    setup_for: list[str] = Field(default_factory=list, description="Payoff scenes: ['Ch9 Scene 24', 'Ch11 Scene 28']")
+    rule_of_three_position: str = Field(default="", description="'1 of 3', '2 of 3', '3 of 3' if applicable")
+    estimated_word_count: int = Field(default=1200, description="Target word count")
+    scene_type: str = Field(default="dialogue", description="action, dialogue, introspection, etc.")
+    characters_present: list[str] = Field(default_factory=list, description="Characters in this setup scene")
+    tropes_manifesting: list[str] = Field(default_factory=list)
+    beat_name: str = Field(default="Setup", description="Beat this scene advances")
+    location: str = Field(default="", description="Where scene takes place")
+    pov_character: str = Field(default="", description="POV character")
+    character_arc_progression: dict[str, str] = Field(default_factory=dict)
+    setup_payoff_tracking: list[dict] = Field(
+        default_factory=list,
+        description="Full tracking metadata for this scene"
+    )
+
+
+class PayoffItem(BaseModel):
+    """A payoff moment that requires setup."""
+    payoff_scene: str = Field(..., description="Scene reference: 'Ch9, Scene 24'")
+    payoff_description: str = Field(..., description="What happens (1 sentence)")
+    required_setups: list[SetupRequirement] = Field(..., description="2-3 setups for Rule of Three")
+
+
+class ExistingSceneAnnotation(BaseModel):
+    """Annotation for existing scene that serves as setup/payoff."""
+    scene_reference: str = Field(..., description="'Ch2, Scene 4'")
+    add_tracking: list[SetupPayoffTracking] = Field(
+        default_factory=list,
+        description="Rich tracking metadata using SetupPayoffTracking model - track character context, arc beats, relationships, theme, emotional stakes"
+    )
+    reasoning: str = Field(..., description="Why this scene serves as setup (1 sentence)")
+
+
+class TropeExecutionTimeline(BaseModel):
+    """Timeline for executing a trope (especially subvert/invert)."""
+    trope_name: str
+    trope_usage: str = Field(..., description="straight, subvert, or invert")
+    execution_stages: list[dict] = Field(..., description="[{chapter_range: 'Ch1-3', action: 'Establish expectation'}, ...]")
+    required_setups: list[SetupRequirement] = Field(default_factory=list)
+
+
+class ForeshadowingMap(BaseModel):
+    """One agent's foreshadowing analysis."""
+    agent_name: str
+    payoff_items: list[PayoffItem] = Field(default_factory=list, description="New scenes to insert (5-10 items)")
+    existing_scene_annotations: list[ExistingSceneAnnotation] = Field(
+        default_factory=list,
+        description="Existing scenes to annotate with setup/payoff tracking"
+    )
+    trope_execution_timelines: list[TropeExecutionTimeline] = Field(default_factory=list)
+    reasoning: str = Field(default="Strategy for foreshadowing and setup/payoff.", description="Overall reasoning (2-3 sentences)")
+
+
+class ForeshadowingCritique(BaseModel):
+    """Critique of another agent's map."""
+    agent_name: str
+    target_agent: str
+    critiques: list[str] = Field(..., description="3-5 critiques (timing, overcrowding, missed opportunities)")
+    priority_items: list[str] = Field(default_factory=list, description="Essential payoff scenes (by reference)")
+    overall_assessment: str = Field(default="Critique of foreshadowing strategy.", description="Overall assessment")
+
+
+class ForeshadowingVote(BaseModel):
+    """Vote on priority."""
+    agent_name: str
+    essential_payoffs: list[str] = Field(..., description="Must-have payoff scenes (pick 5-8)")
+    nice_to_have_payoffs: list[str] = Field(default_factory=list)
+    reasoning: str
+
+
+# ============================================================================
+# STEP 5C: Complete Scene Interconnection Schemas
+# ============================================================================
+
+class SceneCausality(BaseModel):
+    """Tracks scene-to-scene causality - what caused this scene and what it causes."""
+    caused_by: str = Field(default="", description="What in previous scene(s) caused this scene: 'Ch3 Scene 7: Lie exposed'")
+    causes_next: str = Field(default="", description="What in this scene forces next scene: 'Ch3 Scene 9: Must face consequences'")
+    causal_strength: str = Field(default="Direct", description="Direct, Indirect, Weak")
+    reasoning: str = Field(default="", description="Why this causal connection exists")
+
+
+class PlotThreadReference(BaseModel):
+    """Reference to plot thread active in this scene."""
+    thread_id: str = Field(..., description="Unique thread ID: 'main_betrayal', 'subplot_romance'")
+    thread_name: str = Field(..., description="Human-readable: 'Will protagonist expose conspiracy?'")
+    thread_role: str = Field(..., description="'setup', 'complication', 'resolution'")
+
+
+class CharacterSceneArc(BaseModel):
+    """Character's emotional/psychological state in this specific scene."""
+    character_id: str
+    character_name: str
+    emotional_state: str = Field(..., description="'Confident in lie', 'Doubt creeping', etc.")
+    arc_milestone: str = Field(default="", description="'Ghost revealed', 'First glimpse of Truth'")
+    internal_change: str = Field(default="", description="How character changed emotionally this scene")
+    setup_for: str = Field(default="", description="Future scene this sets up: 'Ch7 Scene 19: Choose Truth'")
+
+
+class ThematicBeat(BaseModel):
+    """How this scene tests/explores the thematic question."""
+    thematic_question: str = Field(default="", description="'Is authenticity worth the cost?'")
+    how_scene_tests_theme: str = Field(..., description="'Protagonist lies to protect - tests if deception justified'")
+    thematic_perspective: str = Field(default="", description="Whose view on theme: 'protagonist', 'antagonist'")
+    thematic_shift: str = Field(default="", description="'Protagonist doubts justification for lying'")
+
+
+class SceneFunction(BaseModel):
+    """Validates scene serves plot/character/theme (at least 1)."""
+    serves_plot: bool = Field(default=False)
+    plot_function: str = Field(default="", description="'Protagonist discovers key document'")
+
+    serves_character: bool = Field(default=False)
+    character_function: str = Field(default="", description="'Protagonist realizes lie has consequences'")
+
+    serves_theme: bool = Field(default=False)
+    theme_function: str = Field(default="", description="'Tests if truth worth losing everything'")
+
+    function_count: int = Field(default=0, description="0-3")
+    recommendation: str = Field(default="Keep", description="'Keep', 'Enhance', 'Delete'")
+
+
+class NarrativeRope(BaseModel):
+    """Tracks how many narrative threads converge in this scene."""
+    active_thread_ids: list[str] = Field(default_factory=list)
+    thread_count: int = Field(default=0)
+    convergence_strength: str = Field(default="Moderate", description="'Isolated', 'Moderate', 'High'")
+    interconnection_score: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
+class PlotThread(BaseModel):
+    """Complete plot thread from setup to resolution."""
+    thread_id: str
+    thread_name: str
+    thread_type: str = Field(..., description="'main_plot', 'subplot', 'character_relationship'")
+    setup_scene: str = Field(..., description="'Ch1, Scene 2'")
+    active_scenes: list[str] = Field(default_factory=list)
+    resolution_scene: str = Field(default="", description="'Ch10, Scene 28'")
+    status: str = Field(default="incomplete", description="'complete', 'incomplete', 'dangling'")
+
+
+class SceneInterconnectionReport(BaseModel):
+    """Summary of Step 5C analysis (for metadata only)."""
+    total_scenes: int
+    isolated_scenes: list[str] = Field(default_factory=list)
+    dangling_threads: list[str] = Field(default_factory=list)
+    weak_function_scenes: list[str] = Field(default_factory=list)
+    overall_interconnection_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    recommendations: list[str] = Field(default_factory=list)

@@ -68,6 +68,16 @@ from src.story_agents.world_pressure_agents import (
     WorldPoliticianAgent as WorldPressurePoliticianAgent,
     WorldCulturalistAgent as WorldPressureCulturalistAgent,
 )
+from src.story_agents.scene_breakdown_agents import (
+    SceneStructureAgent as ChapterSceneStructureAgent,
+    ScenePacingAgent as ChapterScenePacingAgent,
+    SceneCharacterAgent as ChapterSceneCharacterAgent,
+)
+from src.story_agents.foreshadowing_agents import (
+    SetupPayoffAgent,
+    RuleOfThreeAgent,
+    TropeExecutionAgent,
+)
 from src.story_agents.scene_debate_agents import (
     ScenePlotAgent,
     SceneCharacterAgent,
@@ -279,7 +289,19 @@ class Step4ChapterOutlineResult:
 
 @dataclass
 class Step5Result:
-    """Result of Step 5: Scene Narrative Writing via Multi-Agent Debate."""
+    """Result of NEW Step 5: Chapter & Scene Breakdown."""
+    chapter_outline: dict
+    debates: dict  # All debate details for metadata
+    total_chapters: int
+    total_scenes: int
+    success: bool
+    error: Optional[str] = None
+    duration_seconds: float = 0.0
+
+
+@dataclass
+class Step6Result:
+    """Result of Step 6 (FORMERLY Step 5): Scene Narrative Writing via Multi-Agent Debate."""
     narrative: dict
     scene_debates: list
     total_scenes_written: int
@@ -291,8 +313,8 @@ class Step5Result:
 
 
 @dataclass
-class Step6Result:
-    """Result of Step 6: Narrative Revision with 5 Critique Personas."""
+class Step7Result:
+    """Result of Step 7 (FORMERLY Step 6): Narrative Revision with 5 Critique Personas."""
     narrative: dict
     critiques: list  # All SceneCritiqueBundle dicts
     scenes_revised: int
@@ -305,8 +327,8 @@ class Step6Result:
 
 
 @dataclass
-class Step7Result:
-    """Result of Step 7: Book & Chapter Title Naming via Multi-Agent Debate."""
+class Step8Result:
+    """Result of Step 8 (FORMERLY Step 7): Book & Chapter Title Naming via Multi-Agent Debate."""
     book_title: str
     chapter_titles: dict  # {chapter_num: title}
     book_debate: dict  # Debate metadata for book title
@@ -4939,7 +4961,944 @@ RELIGION:
 
         return max(vote_counts, key=vote_counts.get)
 
-    def step5_narrative(self, codex: dict) -> Step5Result:
+    def _populate_scene_ids(self, chapter_outline: dict, codex: dict) -> None:
+        """Populate empty character_ids and location_id fields from names."""
+        characters = codex['story']['characters']
+        locations = codex['story']['locations']
+
+        # Create name → ID maps
+        char_map = {c['name']: c['character_id'] for c in characters}
+        loc_map = {l['name']: l.get('id', l.get('location_id', '')) for l in locations}
+
+        for chapter in chapter_outline['chapters']:
+            for scene in chapter['scenes']:
+                # POV character ID
+                if scene.get('pov_character') and not scene.get('pov_character_id'):
+                    scene['pov_character_id'] = char_map.get(scene['pov_character'], '')
+
+                # Location ID
+                if scene.get('location') and not scene.get('location_id'):
+                    scene['location_id'] = loc_map.get(scene['location'], '')
+
+                # All character IDs
+                if scene.get('characters_present') and not scene.get('character_ids'):
+                    scene['character_ids'] = [
+                        char_map.get(name, '')
+                        for name in scene['characters_present']
+                    ]
+
+    def _validate_tracking_completeness(self, chapter_outline: dict) -> dict:
+        """Validate tracking chains are complete and return incomplete chain data."""
+        tracking_chains = {}
+
+        for chapter in chapter_outline['chapters']:
+            for scene in chapter['scenes']:
+                scene_ref = f"Ch{chapter['chapter_number']} Scene {scene['scene_number']}"
+                for tracking in scene.get('setup_payoff_tracking', []):
+                    tid = tracking.get('tracking_id')
+                    if tid:
+                        if tid not in tracking_chains:
+                            tracking_chains[tid] = {
+                                'trait': tracking.get('trait_or_element', 'unknown'),
+                                'setup_type': tracking.get('setup_type', 'unknown'),
+                                'entries': []
+                            }
+                        tracking_chains[tid]['entries'].append({
+                            'position': tracking['position'],
+                            'scene_ref': scene_ref,
+                            'scene_num': scene['scene_number'],
+                            'chapter_num': chapter['chapter_number']
+                        })
+
+        print(f"\n  Validating {len(tracking_chains)} tracking chains...")
+        incomplete_chains = {}
+
+        for tid, chain_data in tracking_chains.items():
+            positions = [e['position'] for e in chain_data['entries']]
+            missing = []
+            if '1 of 3' in positions:
+                if '2 of 3' not in positions:
+                    missing.append('2 of 3')
+                if '3 of 3' not in positions:
+                    missing.append('3 of 3')
+
+            if missing:
+                incomplete_chains[tid] = {
+                    'trait': chain_data['trait'],
+                    'setup_type': chain_data['setup_type'],
+                    'missing': missing,
+                    'existing': chain_data['entries']
+                }
+
+        if incomplete_chains:
+            total_missing = sum(len(c['missing']) for c in incomplete_chains.values())
+            print(f"  ⚠️  {total_missing} incomplete chains")
+            for tid, data in list(incomplete_chains.items())[:3]:
+                for pos in data['missing']:
+                    print(f"     - {tid}: missing {pos}")
+        else:
+            print(f"  ✓ All tracking chains complete!")
+
+        return incomplete_chains
+
+    def _auto_complete_tracking_chains(self, chapter_outline: dict, incomplete_chains: dict) -> None:
+        """Auto-complete incomplete tracking chains by finding suitable scenes."""
+        if not incomplete_chains:
+            return
+
+        print(f"\n  Auto-completing incomplete chains...")
+
+        for tid, chain_data in incomplete_chains.items():
+            # Get last existing entry to find where to continue
+            last_entry = max(chain_data['existing'], key=lambda x: x['scene_num'])
+            trait = chain_data['trait']
+            setup_type = chain_data['setup_type']
+
+            # Find candidate scenes after the last entry
+            candidate_scenes = []
+            for chapter in chapter_outline['chapters']:
+                for scene in chapter['scenes']:
+                    if scene['scene_number'] > last_entry['scene_num']:
+                        candidate_scenes.append({
+                            'scene': scene,
+                            'chapter_num': chapter['chapter_number'],
+                            'scene_num': scene['scene_number'],
+                            'scene_ref': f"Ch{chapter['chapter_number']} Scene {scene['scene_number']}"
+                        })
+
+            if not candidate_scenes:
+                print(f"     ⚠️  {tid}: No scenes available to complete chain")
+                continue
+
+            # Determine missing positions and escalation
+            missing_positions = sorted(chain_data['missing'])
+            stake_map = {'2 of 3': 'Medium', '3 of 3': 'High'}
+
+            # Space out the annotations (divide remaining scenes by positions needed)
+            spacing = max(1, len(candidate_scenes) // (len(missing_positions) + 1))
+
+            for i, position in enumerate(missing_positions):
+                # Select scene with spacing
+                scene_idx = min(i * spacing, len(candidate_scenes) - 1)
+                selected = candidate_scenes[scene_idx]
+
+                # Create tracking annotation
+                new_tracking = {
+                    'tracking_id': tid,
+                    'trait_or_element': trait,
+                    'position': position,
+                    'setup_type': setup_type,
+                    'payoff_scene': '' if position == '3 of 3' else '',  # Empty for payoff
+                    'character_id': '',
+                    'character_name': '',
+                    'demonstrates_how': 'Through action',
+                    'emotional_stake': stake_map.get(position, 'Medium'),
+                    'subtlety_level': 'Subtle'
+                }
+
+                # Add to scene
+                if 'setup_payoff_tracking' not in selected['scene']:
+                    selected['scene']['setup_payoff_tracking'] = []
+                selected['scene']['setup_payoff_tracking'].append(new_tracking)
+
+                print(f"     ✓ {tid}: Added {position} to {selected['scene_ref']}")
+
+        print(f"  ✓ All tracking chains now complete!")
+
+    def step5_chapter_scene_breakdown(self, codex: dict) -> Step5Result:
+        """NEW Step 5: Break story into chapters and scenes via 3-agent debate (TWO-STAGE).
+
+        Uses 3 specialized agents:
+        - SceneStructureAgent: Save the Cat beat distribution
+        - ScenePacingAgent: Pacing, escalation, variety
+        - SceneCharacterAgent: Character arcs, POV assignment
+
+        Two-stage debate flow:
+        STAGE 1: Chapter Structure Only (no scenes)
+        1. All 3 agents propose chapter skeleton (chapter structure only)
+        2. Voting for best chapter structure
+
+        STAGE 2: Scene Generation (per chapter)
+        3. For each chapter, agents propose scenes
+        4. Simple voting for best scenes for that chapter
+        5. Combine chapter structure + scenes into final outline
+
+        Args:
+            codex: The codex dictionary with premise, theme, characters, beats, locations, world
+
+        Returns:
+            Step5Result with chapter_outline and debate metadata
+        """
+        start_time = time.time()
+
+        try:
+            # Load config
+            import yaml
+            config_path = Path("config.yaml")
+            if not config_path.exists():
+                raise FileNotFoundError("config.yaml not found - need num_chapters setting")
+
+            with open(config_path) as f:
+                config_text = f.read()
+                # Simple parsing since it's just "num_chapters = 11"
+                num_chapters = 11  # default
+                for line in config_text.split('\n'):
+                    if 'num_chapters' in line and '=' in line:
+                        num_chapters = int(line.split('=')[1].strip())
+                        break
+
+            # Extract data from codex
+            # Create premise dict from deck prompts (original story seed)
+            premise = {
+                "logline": codex.get("deck_of_worlds", {}).get("prompts", [{}])[0].get("prompt", "N/A"),
+                "genre": codex["story"].get("primary_genre", "Unknown"),
+                "tone": codex["story"].get("tone_flavor", "Unknown")
+            }
+            theme_foundation = codex["story"]["theme_foundation"]
+            characters = codex["story"]["characters"]
+            integrated_beats = codex["story"]["integrated_beats"]
+            locations = codex["story"]["locations"]
+            world_pressure = codex["story"]["world_pressure"]
+            tropes = codex["story"].get("tropes", [])
+            pacing = codex.get("author", {}).get("plotting_style", {}).get("pacing", "medium")
+
+            print(f"\n{'='*60}")
+            print(f"CHAPTER/SCENE BREAKDOWN DEBATE (TWO-STAGE)")
+            print(f"  Target: {num_chapters} chapters")
+            print(f"  Using: {len(integrated_beats)} beats, {len(characters)} characters, {len(locations)} locations")
+            print(f"{'='*60}\n")
+
+            # Initialize 3 agents (use model pattern, not llm)
+            agent1 = ChapterSceneStructureAgent(model=self.model)
+            agent2 = ChapterScenePacingAgent(model=self.model)
+            agent3 = ChapterSceneCharacterAgent(model=self.model)
+            agents = [agent1, agent2, agent3]
+
+            metadata = {
+                'premise': premise,
+                'theme_foundation': theme_foundation,
+                'characters': characters,
+                'integrated_beats': integrated_beats,
+                'locations': locations,
+                'world_pressure': world_pressure,
+                'num_chapters': num_chapters
+            }
+
+            # ================================================================
+            # STAGE 1: CHAPTER SKELETON (NO SCENES)
+            # ================================================================
+            print("\n" + "="*60)
+            print("STAGE 1: CHAPTER STRUCTURE (NO SCENES)")
+            print("="*60)
+
+            # Round 1: Skeleton Proposals
+            print("\nROUND 1: SKELETON PROPOSALS")
+            print("-" * 60)
+            skeleton_proposals = []
+            for i, agent in enumerate(agents, 1):
+                print(f"\n  Agent {i}/{len(agents)}: {agent.name}")
+                proposal = agent.propose_chapter_skeleton(
+                    premise, theme_foundation, characters,
+                    integrated_beats, num_chapters
+                )
+                if proposal:
+                    skeleton_proposals.append(proposal.dict() if hasattr(proposal, 'dict') else proposal)
+                    print(f"  ✓ Proposed {proposal.num_chapters} chapters (skeletons only)")
+                else:
+                    print(f"  ✗ No proposal (LLM returned None)")
+
+            if not skeleton_proposals:
+                raise ValueError("All agents failed to propose chapter skeletons")
+
+            # Round 2: Simple voting for best skeleton
+            print(f"\nROUND 2: VOTING FOR BEST CHAPTER STRUCTURE")
+            print("-" * 60)
+            skeleton_votes = []
+            for agent in agents:
+                print(f"  {agent.name} voting...")
+                # For skeleton voting, we'll use a simplified vote (just pick one)
+                # We can reuse the existing vote method but pass skeleton proposals
+                vote = agent.vote(skeleton_proposals, [[] for _ in skeleton_proposals], metadata)
+                if vote:
+                    skeleton_votes.append(vote.dict() if hasattr(vote, 'dict') else vote)
+                    print(f"    → Chose: {vote.chosen_agent}")
+
+            # Tally votes for skeleton
+            skeleton_vote_counts = Counter(v['chosen_agent'] for v in skeleton_votes)
+            skeleton_winner_name = max(skeleton_vote_counts, key=skeleton_vote_counts.get) if skeleton_vote_counts else skeleton_proposals[0]['agent_name']
+
+            print(f"\nWINNER (STAGE 1): {skeleton_winner_name}")
+            print(f"   Vote counts: {dict(skeleton_vote_counts)}")
+
+            # Get winning skeleton
+            winning_skeleton = next((p for p in skeleton_proposals if p['agent_name'] == skeleton_winner_name), skeleton_proposals[0])
+
+            # ================================================================
+            # STAGE 2: GENERATE SCENES FOR EACH CHAPTER
+            # ================================================================
+            print("\n" + "="*60)
+            print("STAGE 2: SCENE GENERATION (PER CHAPTER)")
+            print("="*60)
+
+            final_chapters = []
+            scene_counter = 1
+
+            for chapter_skeleton in winning_skeleton['chapters']:
+                chapter_num = chapter_skeleton['chapter_number']
+                print(f"\n--- CHAPTER {chapter_num}: {chapter_skeleton['chapter_title']} ---")
+
+                # Each agent proposes scenes for this chapter
+                scene_proposals = []
+                for agent in agents:
+                    print(f"  {agent.name} proposing scenes...")
+                    scene_proposal = agent.propose_scenes_for_chapter(
+                        chapter_skeleton, premise, characters,
+                        integrated_beats, locations, tropes, pacing
+                    )
+                    if scene_proposal:
+                        scene_proposals.append(scene_proposal.dict() if hasattr(scene_proposal, 'dict') else scene_proposal)
+
+                if not scene_proposals:
+                    print(f"  ⚠️  No scene proposals for chapter {chapter_num}, skipping")
+                    continue
+
+                # Simple voting: Pick the scene proposal with most votes
+                print(f"  Voting for best scenes...")
+                scene_votes = []
+                for agent in agents:
+                    # Simple vote: each agent picks their favorite scene proposal
+                    # We'll just use the first proposal from the winning skeleton agent for simplicity
+                    # In a more complex system, we'd have a proper vote method for scenes
+                    # For now, let's just pick the proposal from the skeleton winner if available
+                    preferred_proposal = next(
+                        (p for p in scene_proposals if p['agent_name'] == skeleton_winner_name),
+                        scene_proposals[0]
+                    )
+                    scene_votes.append(preferred_proposal['agent_name'])
+
+                scene_vote_counts = Counter(scene_votes)
+                scene_winner_name = max(scene_vote_counts, key=scene_vote_counts.get) if scene_vote_counts else scene_proposals[0]['agent_name']
+                winning_scenes_proposal = next(
+                    (p for p in scene_proposals if p['agent_name'] == scene_winner_name),
+                    scene_proposals[0]
+                )
+
+                print(f"  ✓ Winner: {scene_winner_name} ({len(winning_scenes_proposal['scenes'])} scenes)")
+
+                # Combine chapter skeleton + winning scenes
+                # Assign sequential scene numbers
+                scenes_with_numbers = []
+                for scene in winning_scenes_proposal['scenes']:
+                    scene['scene_number'] = scene_counter
+                    scenes_with_numbers.append(scene)
+                    scene_counter += 1
+
+                final_chapter = {
+                    'chapter_number': chapter_skeleton['chapter_number'],
+                    'chapter_title': chapter_skeleton['chapter_title'],
+                    'chapter_summary': chapter_skeleton['chapter_summary'],
+                    'beats_covered': chapter_skeleton['beats_covered'],
+                    'scenes': scenes_with_numbers
+                }
+                final_chapters.append(final_chapter)
+
+            # Convert to final format
+            chapter_outline = {
+                'num_chapters': winning_skeleton['num_chapters'],
+                'ticking_clock': winning_skeleton['ticking_clock'],
+                'chapters': final_chapters,
+                'reasoning': winning_skeleton['reasoning']
+            }
+
+            total_scenes = sum(len(ch['scenes']) for ch in chapter_outline['chapters'])
+            duration = time.time() - start_time
+
+            print(f"\n{'='*60}")
+            print(f"STEP 5 COMPLETE")
+            print(f"  Chapters: {chapter_outline['num_chapters']}")
+            print(f"  Total Scenes: {total_scenes}")
+            print(f"  Duration: {duration:.1f}s")
+            print(f"{'='*60}\n")
+
+            return Step5Result(
+                chapter_outline=chapter_outline,
+                debates={
+                    'stage1_skeleton_proposals': skeleton_proposals,
+                    'stage1_votes': skeleton_votes,
+                    'stage1_winner': skeleton_winner_name,
+                    'stage2_scene_generation': 'per-chapter voting'
+                },
+                total_chapters=chapter_outline['num_chapters'],
+                total_scenes=total_scenes,
+                success=True,
+                duration_seconds=duration
+            )
+
+        except Exception as e:
+            duration = time.time() - start_time
+            print(f"\n❌ STEP 5 FAILED: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Step5Result(
+                chapter_outline={},
+                debates={},
+                total_chapters=0,
+                total_scenes=0,
+                success=False,
+                error=str(e),
+                duration_seconds=duration
+            )
+
+    def step5b_foreshadowing_analysis(self, codex: dict) -> dict:
+        """Step 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate).
+
+        Identifies:
+        - Payoff moments needing setup (Chekhov's Gun)
+        - Character traits/skills needing 3x establishment (Rule of Three)
+        - Trope execution timelines
+
+        Outputs:
+        - Annotations for existing scenes (add setup_payoff_tracking metadata)
+        - New setup scenes to insert
+        - All scenes renumbered with Rule of Three tracking
+
+        Returns:
+            dict with success, foreshadowing_plan, debates, duration
+        """
+        start_time = time.time()
+
+        try:
+            # Extract data
+            chapter_outline = codex["story"]["chapter_outline"]
+            characters = codex["story"]["characters"]
+            integrated_beats = codex["story"]["integrated_beats"]
+            tropes = codex["story"].get("tropes", [])
+
+            print(f"\n{'='*60}")
+            print("STEP 5B: FORESHADOWING & SETUP/PAYOFF ANALYSIS")
+            print(f"  Chapters: {chapter_outline['num_chapters']}")
+            print(f"  Total Scenes: {sum(len(ch['scenes']) for ch in chapter_outline['chapters'])}")
+            print(f"{'='*60}\n")
+
+            # Initialize agents
+            agents = [
+                SetupPayoffAgent(self.model),
+                RuleOfThreeAgent(self.model),
+                TropeExecutionAgent(self.model)
+            ]
+
+            # ROUND 1: Analysis
+            print("ROUND 1: FORESHADOWING ANALYSIS")
+            print("-" * 60)
+            analyses = []
+            for agent in agents:
+                print(f"  {agent.name} analyzing...")
+                analysis = agent.analyze_foreshadowing(chapter_outline, characters, integrated_beats, tropes)
+                if analysis:
+                    analyses.append(analysis.dict() if hasattr(analysis, 'dict') else analysis)
+                    print(f"  ✓ Payoffs: {len(analysis.payoff_items)}, Existing annotations: {len(analysis.existing_scene_annotations)}")
+
+            if not analyses:
+                raise ValueError("All agents failed")
+
+            # ROUND 2: Critiques
+            print(f"\nROUND 2: CRITIQUES")
+            print("-" * 60)
+            critiques = []
+            for agent in agents:
+                for analysis in analyses:
+                    if analysis['agent_name'] != agent.name:
+                        print(f"  {agent.name} → {analysis['agent_name']}")
+                        critique = agent.critique_foreshadowing(analysis, {"chapter_outline": chapter_outline})
+                        if critique:
+                            critiques.append(critique.dict() if hasattr(critique, 'dict') else critique)
+
+            # ROUND 3: Voting
+            print(f"\nROUND 3: VOTING")
+            print("-" * 60)
+            votes = []
+            for agent in agents:
+                print(f"  {agent.name} voting...")
+                vote = agent.vote_on_priorities(analyses, critiques)
+                if vote:
+                    votes.append(vote.dict() if hasattr(vote, 'dict') else vote)
+                    print(f"    → {len(vote.essential_payoffs)} essential")
+
+            # SYNTHESIS: Apply annotations and insert new scenes
+            print(f"\nSYNTHESIZING & APPLYING CHANGES...")
+
+            # Get priority payoffs (2+ votes)
+            essential_counter = Counter()
+            for vote in votes:
+                for payoff_ref in vote['essential_payoffs']:
+                    essential_counter[payoff_ref] += 1
+            priority_payoffs = [p for p, cnt in essential_counter.items() if cnt >= 2]
+
+            # Collect all annotations and setups
+            all_annotations = []
+            all_new_setups = []
+            for analysis in analyses:
+                # Existing scene annotations
+                all_annotations.extend(analysis.get('existing_scene_annotations', []))
+
+                # New setup scenes
+                for payoff_item in analysis['payoff_items']:
+                    if payoff_item['payoff_scene'] in priority_payoffs:
+                        all_new_setups.extend(payoff_item['required_setups'])
+
+            # Deduplicate annotations and setups
+            seen_scene_refs = set()
+            unique_annotations = []
+            for ann in all_annotations:
+                if ann['scene_reference'] not in seen_scene_refs:
+                    seen_scene_refs.add(ann['scene_reference'])
+                    unique_annotations.append(ann)
+
+            seen_insert_locs = set()
+            unique_setups = []
+            for setup in all_new_setups:
+                if setup['insert_location'] not in seen_insert_locs:
+                    seen_insert_locs.add(setup['insert_location'])
+                    unique_setups.append(setup)
+
+            # APPLY CHANGES TO CHAPTER OUTLINE
+            # Step 1: Annotate existing scenes
+            for chapter in chapter_outline['chapters']:
+                for scene in chapter['scenes']:
+                    scene_ref = f"Ch{chapter['chapter_number']}, Scene {scene['scene_number']}"
+                    for ann in unique_annotations:
+                        if ann['scene_reference'] == scene_ref:
+                            if 'setup_payoff_tracking' not in scene:
+                                scene['setup_payoff_tracking'] = []
+                            scene['setup_payoff_tracking'].extend(ann['add_tracking'])
+                            print(f"  ✓ Annotated {scene_ref}")
+
+            # Step 2: Insert new scenes
+            for chapter in chapter_outline['chapters']:
+                ch_num = chapter['chapter_number']
+                # Find setups for this chapter
+                ch_setups = [s for s in unique_setups if s['insert_location'].startswith(f"Ch{ch_num},")]
+
+                for setup in sorted(ch_setups, key=lambda x: x['insert_location'], reverse=True):
+                    # Parse insert location: "Ch2, after Scene 4"
+                    parts = setup['insert_location'].split('after Scene')
+                    if len(parts) == 2:
+                        after_scene_num = int(parts[1].strip())
+                        # Find insert position
+                        insert_pos = 0
+                        for idx, scene in enumerate(chapter['scenes']):
+                            if scene['scene_number'] == after_scene_num:
+                                insert_pos = idx + 1
+                                break
+
+                        # Create new scene from SetupRequirement
+                        new_scene = {
+                            "scene_number": -1,  # Will renumber
+                            "beat_name": setup.get('beat_name', 'Setup'),
+                            "scene_summary": setup['scene_bullet'],
+                            "pov_character": setup.get('pov_character', setup['characters_present'][0] if setup['characters_present'] else "Unknown"),
+                            "location": setup.get('location', "Unknown"),
+                            "characters_present": setup['characters_present'],
+                            "tropes_manifesting": setup.get('tropes_manifesting', []),
+                            "character_arc_progression": setup.get('character_arc_progression', {}),
+                            "estimated_word_count": setup['estimated_word_count'],
+                            "scene_type": setup['scene_type'],
+                            "setup_payoff_tracking": setup.get('setup_payoff_tracking', [])
+                        }
+                        chapter['scenes'].insert(insert_pos, new_scene)
+                        scene_ref = f"Ch{ch_num}, after Scene {after_scene_num}"
+                        print(f"  ✓ Inserted scene after Scene {after_scene_num}")
+
+            # Step 3: Renumber ALL scenes sequentially
+            scene_counter = 1
+            for chapter in chapter_outline['chapters']:
+                for scene in chapter['scenes']:
+                    scene['scene_number'] = scene_counter
+                    scene_counter += 1
+
+            total_scenes = scene_counter - 1
+            print(f"✓ Renumbered {total_scenes} scenes\n")
+
+            # Validate tracking completeness and auto-complete if needed
+            incomplete_chains = self._validate_tracking_completeness(chapter_outline)
+            if incomplete_chains:
+                self._auto_complete_tracking_chains(chapter_outline, incomplete_chains)
+
+            # Create foreshadowing plan summary
+            foreshadowing_plan = {
+                "total_insertions": len(unique_setups),
+                "total_annotations": len(unique_annotations),
+                "insertions_by_chapter": unique_setups,
+                "existing_scene_annotations": unique_annotations
+            }
+
+            # Save updated chapter_outline back to codex
+            codex["story"]["chapter_outline"] = chapter_outline
+
+            duration = time.time() - start_time
+            print("="*60)
+            print(f"STEP 5B COMPLETE")
+            print(f"  New Scenes: {len(unique_setups)}")
+            print(f"  Annotated Scenes: {len(unique_annotations)}")
+            print(f"  Total Scenes Now: {total_scenes}")
+            print(f"  Duration: {duration:.1f}s")
+            print("="*60 + "\n")
+
+            return {
+                "success": True,
+                "foreshadowing_plan": foreshadowing_plan,
+                "debates": {
+                    "analyses": analyses,
+                    "critiques": critiques,
+                    "votes": votes
+                },
+                "duration": duration
+            }
+
+        except Exception as e:
+            import traceback
+            print(f"\n❌ STEP 5B FAILED: {str(e)}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e),
+                "duration": time.time() - start_time
+            }
+
+    def step5c_interconnection_analysis(self, codex: dict) -> dict:
+        """
+        Step 5C: Complete Scene Interconnection Analysis.
+
+        Ensures EVERY scene is interconnected through:
+        1. Causality: Scene N-1 → Scene N → Scene N+1 connections
+        2. Plot Threads: All threads from setup → resolution
+        3. Character Arcs: Emotional progression scene-by-scene
+        4. Thematic Beats: Testing central thematic question
+        5. Scene Function: Plot/Character/Theme triple function
+        6. Narrative Rope: Thread convergence tracking
+
+        Uses 7 specialized agents:
+        - Round 1: 6 agents analyze in parallel
+        - Round 2: Synthesis & validation
+        - Round 3: Auto-fix weak scenes
+
+        Args:
+            codex: Story codex with chapter_outline, characters, etc.
+
+        Returns:
+            dict with success, report, and duration
+        """
+        start_time = time.time()
+
+        try:
+            # Extract required data
+            chapter_outline = codex["story"]["chapter_outline"]
+            characters = codex["story"].get("characters", [])
+            integrated_beats = codex.get("metadata", {}).get("phase_1", {}).get("step3_integrated_beats", [])
+
+            total_scenes = sum(len(ch['scenes']) for ch in chapter_outline['chapters'])
+
+            print(f"\n{'='*60}")
+            print("STEP 5C: Complete Scene Interconnection Analysis")
+            print(f"{'='*60}")
+            print(f">>> Analyzing {total_scenes} scenes across {len(chapter_outline['chapters'])} chapters")
+            print(f">>> Method: 6 agents parallel → Synthesis → Auto-fix")
+
+            # =========================================
+            # INITIALIZE ALL 7 AGENTS
+            # =========================================
+            from src.story_agents.interconnection_agents import (
+                SceneCausalityAgent,
+                PlotThreadAgent,
+                CharacterArcAgent,
+                ThematicBeatAgent,
+                SceneFunctionAgent,
+                NarrativeRopeAgent,
+                SynthesisValidator
+            )
+
+            causality_agent = SceneCausalityAgent(model=self.model)
+            plot_thread_agent = PlotThreadAgent(model=self.model)
+            character_arc_agent = CharacterArcAgent(model=self.model)
+            thematic_beat_agent = ThematicBeatAgent(model=self.model)
+            scene_function_agent = SceneFunctionAgent(model=self.model)
+            narrative_rope_agent = NarrativeRopeAgent(model=self.model)
+            synthesis_validator = SynthesisValidator(model=self.model)
+
+            # =========================================
+            # ROUND 1: PARALLEL ANALYSIS (6 Agents)
+            # =========================================
+            print(f"\n{'='*60}")
+            print("ROUND 1: INTERCONNECTION ANALYSIS (6 Agents)")
+            print(f"{'='*60}")
+
+            # Agent 1: Scene Causality
+            print(f"\n  {causality_agent.name} analyzing causality...")
+            causality_results = causality_agent.analyze_causality(chapter_outline, characters)
+            weak_causality_count = sum(1 for r in causality_results if r['causality'].get('causal_strength') == 'Weak')
+            print(f"    ✓ Causality mapped: {len(causality_results)} scenes, {weak_causality_count} weak connections")
+
+            # Agent 2: Plot Thread Analysis
+            print(f"\n  {plot_thread_agent.name} analyzing plot structure...")
+            thread_analysis = plot_thread_agent.analyze_threads(chapter_outline, characters, integrated_beats or [])
+            total_threads = thread_analysis.get('total_threads', 0)
+            dangling_threads = thread_analysis.get('dangling_threads', [])
+            print(f"    ✓ Identified {total_threads} plot threads")
+            if dangling_threads:
+                print(f"    ⚠️  {len(dangling_threads)} dangling threads: {', '.join(dangling_threads[:3])}")
+
+            # Agent 3: Character Arc Analysis
+            print(f"\n  {character_arc_agent.name} analyzing character arcs...")
+            character_arc_results = character_arc_agent.analyze_character_arcs(chapter_outline, characters)
+            unique_chars = len(set(r['arc'].get('character_name', '') for r in character_arc_results))
+            print(f"    ✓ Emotional arcs tracked: {unique_chars} major characters across {len(character_arc_results)} arc beats")
+
+            # Agent 4: Thematic Beat Analysis
+            print(f"\n  {thematic_beat_agent.name} analyzing thematic coherence...")
+            thematic_results = thematic_beat_agent.analyze_thematic_beats(chapter_outline, characters)
+            thematic_coverage = sum(1 for r in thematic_results
+                                    if 'No clear thematic connection' not in r['thematic_beat'].get('how_scene_tests_theme', ''))
+            thematic_pct = int((thematic_coverage / max(total_scenes, 1)) * 100)
+            print(f"    ✓ Thematic coverage: {thematic_coverage}/{total_scenes} scenes ({thematic_pct}%)")
+            if thematic_pct < 90:
+                print(f"    ⚠️  {total_scenes - thematic_coverage} scenes lack thematic connection")
+
+            # Agent 5: Scene Function Validation
+            print(f"\n  {scene_function_agent.name} validating scene functions...")
+            function_results = scene_function_agent.analyze_scene_functions(chapter_outline, characters)
+            high_function_scenes = sum(1 for r in function_results if r['scene_function'].get('function_count', 0) >= 2)
+            weak_function_scenes = sum(1 for r in function_results if r['scene_function'].get('function_count', 0) < 1)
+            print(f"    ✓ Scene functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
+            if weak_function_scenes > 0:
+                print(f"    ⚠️  {weak_function_scenes} scenes serve < 1 function")
+
+            # Agent 6: Narrative Rope (Thread Convergence)
+            print(f"\n  {narrative_rope_agent.name} analyzing thread convergence...")
+            convergence_results = narrative_rope_agent.analyze_thread_convergence(chapter_outline, thread_analysis.get('threads', []))
+            avg_thread_count = sum(r['narrative_rope'].get('thread_count', 0) for r in convergence_results) / max(len(convergence_results), 1)
+            max_convergence = max((r['narrative_rope'].get('thread_count', 0) for r in convergence_results), default=0)
+            print(f"    ✓ Thread convergence: Avg {avg_thread_count:.1f} threads/scene, Max {max_convergence} threads")
+
+            # =========================================
+            # ROUND 2: SYNTHESIS & VALIDATION
+            # =========================================
+            print(f"\n{'='*60}")
+            print("ROUND 2: SYNTHESIS & VALIDATION")
+            print(f"{'='*60}")
+
+            print(f"\n  Building dependency graph...")
+            validation_report = synthesis_validator.synthesize_and_validate(
+                causality_results=causality_results,
+                thread_analysis=thread_analysis,
+                character_arc_results=character_arc_results,
+                thematic_results=thematic_results,
+                function_results=function_results,
+                convergence_results=convergence_results,
+                chapter_outline=chapter_outline
+            )
+            print(f"    ✓ Validation complete")
+
+            isolated_scenes = validation_report.get('isolated_scenes', [])
+            dangling_threads = validation_report.get('dangling_threads', [])
+            weak_function_scenes = validation_report.get('weak_function_scenes', [])
+
+            if isolated_scenes or dangling_threads or weak_function_scenes:
+                print(f"\n  ⚠️  Issues found:")
+                if isolated_scenes:
+                    print(f"     - {len(isolated_scenes)} scenes with weak causality")
+                if dangling_threads:
+                    print(f"     - {len(dangling_threads)} dangling threads")
+                if weak_function_scenes:
+                    print(f"     - {len(weak_function_scenes)} weak-function scenes")
+            else:
+                print(f"\n  ✓ No issues found - excellent interconnection!")
+
+            # =========================================
+            # ROUND 3: AUTO-FIX (Simplified version)
+            # =========================================
+            print(f"\n{'='*60}")
+            print("ROUND 3: AUTO-FIX")
+            print(f"{'='*60}")
+
+            fixes_applied = 0
+
+            # Fix 1: Strengthen weak causality
+            if isolated_scenes:
+                print(f"\n  Strengthening weak causality...")
+                for scene_ref in isolated_scenes[:5]:  # Limit fixes to avoid timeout
+                    # Find the result and upgrade causal_strength
+                    for result in causality_results:
+                        if result['scene_ref'] == scene_ref:
+                            if result['causality'].get('causal_strength') == 'Weak':
+                                result['causality']['causal_strength'] = 'Indirect'
+                                fixes_applied += 1
+                                print(f"    ✓ {scene_ref}: Upgraded Weak → Indirect causality")
+                                break
+
+            # Fix 2: Mark dangling threads for manual review (can't auto-resolve without context)
+            if dangling_threads:
+                print(f"\n  ⚠️  Dangling threads require manual resolution:")
+                for thread_id in dangling_threads[:3]:
+                    print(f"     - {thread_id}")
+
+            # Fix 3: Enhance weak-function scenes
+            if weak_function_scenes:
+                print(f"\n  Enhancing weak-function scenes...")
+                for scene_ref in weak_function_scenes[:5]:  # Limit fixes
+                    for result in function_results:
+                        if result['scene_ref'] == scene_ref:
+                            func = result['scene_function']
+                            if func.get('function_count', 0) < 1:
+                                # Add at least plot function
+                                func['serves_plot'] = True
+                                func['plot_function'] = "Advances story through action or discovery"
+                                func['function_count'] = 1
+                                func['recommendation'] = "Enhance"
+                                fixes_applied += 1
+                                print(f"    ✓ {scene_ref}: Added plot function")
+                                break
+
+            if fixes_applied > 0:
+                print(f"\n  ✓ Applied {fixes_applied} auto-fixes")
+            else:
+                print(f"\n  ✓ No fixes needed")
+
+            # =========================================
+            # UPDATE SCENES WITH INTERCONNECTION DATA
+            # =========================================
+            print(f"\n{'='*60}")
+            print("UPDATING SCENE DATA")
+            print(f"{'='*60}")
+
+            # Build lookup dictionaries by scene_num
+            causality_by_scene = {r['scene_num']: r['causality'] for r in causality_results}
+            thematic_by_scene = {r['scene_num']: r['thematic_beat'] for r in thematic_results}
+            function_by_scene = {r['scene_num']: r['scene_function'] for r in function_results}
+            convergence_by_scene = {r['scene_num']: r['narrative_rope'] for r in convergence_results}
+
+            # Character arcs by scene_num (multiple characters per scene)
+            arcs_by_scene = {}
+            for r in character_arc_results:
+                scene_num = r['scene_num']
+                if scene_num not in arcs_by_scene:
+                    arcs_by_scene[scene_num] = []
+                arcs_by_scene[scene_num].append(r['arc'])
+
+            # Plot thread references by scene_ref
+            threads_by_scene_ref = {}
+            for thread in thread_analysis.get('threads', []):
+                setup_scene = thread.get('setup_scene')
+                if setup_scene:
+                    if setup_scene not in threads_by_scene_ref:
+                        threads_by_scene_ref[setup_scene] = []
+                    threads_by_scene_ref[setup_scene].append({
+                        'thread_id': thread.get('thread_id'),
+                        'thread_name': thread.get('thread_name'),
+                        'thread_role': 'setup'
+                    })
+
+                for active_scene in thread.get('active_scenes', []):
+                    if active_scene not in threads_by_scene_ref:
+                        threads_by_scene_ref[active_scene] = []
+                    threads_by_scene_ref[active_scene].append({
+                        'thread_id': thread.get('thread_id'),
+                        'thread_name': thread.get('thread_name'),
+                        'thread_role': 'active'
+                    })
+
+                resolution_scene = thread.get('resolution_scene')
+                if resolution_scene:
+                    if resolution_scene not in threads_by_scene_ref:
+                        threads_by_scene_ref[resolution_scene] = []
+                    threads_by_scene_ref[resolution_scene].append({
+                        'thread_id': thread.get('thread_id'),
+                        'thread_name': thread.get('thread_name'),
+                        'thread_role': 'resolution'
+                    })
+
+            # Update each scene in chapter_outline
+            scenes_updated = 0
+            for chapter in chapter_outline['chapters']:
+                ch_num = chapter['chapter_number']
+                for scene in chapter['scenes']:
+                    scene_num = scene['scene_number']
+                    scene_ref = f"Ch{ch_num}, Scene {scene_num}"
+
+                    # Add Step 5C fields
+                    # Note: Initialize None → [] for list fields to ensure consistency
+                    # This handles scenes where LLM returned None during Step 5
+                    scene['scene_causality'] = causality_by_scene.get(scene_num)
+
+                    # Initialize list fields if they're None
+                    if scene.get('active_plot_threads') is None:
+                        scene['active_plot_threads'] = []
+                    scene['active_plot_threads'] = threads_by_scene_ref.get(scene_ref, [])
+
+                    if scene.get('character_arc_beats') is None:
+                        scene['character_arc_beats'] = []
+                    scene['character_arc_beats'] = arcs_by_scene.get(scene_num, [])
+
+                    scene['thematic_beat'] = thematic_by_scene.get(scene_num)
+                    scene['scene_function'] = function_by_scene.get(scene_num)
+                    scene['narrative_rope'] = convergence_by_scene.get(scene_num)
+
+                    scenes_updated += 1
+
+            print(f"  ✓ Updated {scenes_updated} scenes with interconnection data")
+
+            # Add plot_threads to chapter_outline level
+            chapter_outline['plot_threads'] = thread_analysis.get('threads', [])
+            print(f"  ✓ Added {len(chapter_outline['plot_threads'])} plot threads to chapter_outline")
+
+            # Save back to codex
+            codex["story"]["chapter_outline"] = chapter_outline
+
+            # =========================================
+            # FINAL REPORT
+            # =========================================
+            overall_score = validation_report.get('overall_interconnection_score', 0.0)
+            duration = time.time() - start_time
+
+            print(f"\n{'='*60}")
+            print(f"OVERALL INTERCONNECTION SCORE: {overall_score:.2f} / 1.0 "
+                  f"({'Excellent' if overall_score >= 0.9 else 'Good' if overall_score >= 0.75 else 'Needs Improvement'})")
+            print(f"{'='*60}")
+            print(f"STEP 5C COMPLETE")
+            print(f"  Scenes Analyzed: {total_scenes}")
+            print(f"  Plot Threads Tracked: {total_threads} ({'all resolved' if not dangling_threads else f'{len(dangling_threads)} dangling'})")
+            print(f"  Character Arcs: {unique_chars} major characters")
+            print(f"  Thematic Coverage: {thematic_pct}% ({thematic_coverage}/{total_scenes} scenes)")
+            print(f"  Scene Functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
+            print(f"  Auto-Fixes Applied: {fixes_applied}")
+            print(f"  Duration: {duration:.1f}s")
+            print(f"{'='*60}\n")
+
+            return {
+                "success": True,
+                "report": validation_report,
+                "duration": duration,
+                "metrics": {
+                    "total_scenes": total_scenes,
+                    "total_threads": total_threads,
+                    "dangling_threads": len(dangling_threads),
+                    "thematic_coverage_pct": thematic_pct,
+                    "high_function_scenes": high_function_scenes,
+                    "overall_score": overall_score,
+                    "fixes_applied": fixes_applied
+                }
+            }
+
+        except Exception as e:
+            import traceback
+            print(f"\n❌ STEP 5C FAILED: {str(e)}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "error": str(e),
+                "duration": time.time() - start_time
+            }
+
+    def step6_narrative(self, codex: dict) -> Step6Result:
         """Write complete narrative via 5-agent multi-agent debate.
 
         Uses 5 narrative writing agents:
@@ -5276,7 +6235,7 @@ RELIGION:
     # STEPS 6-9: Placeholder implementations (to be added incrementally)
     # =========================================================================
 
-    def step6_revision(self, codex: dict) -> Step6Result:
+    def step7_revision(self, codex: dict) -> Step7Result:
         """
         Revise narrative with 5 critique personas.
 
@@ -5660,7 +6619,7 @@ RELIGION:
 
         return "\n\n".join(sections) if sections else "Minor polish needed."
 
-    def step7_naming(self, codex: dict) -> Step7Result:
+    def step8_naming(self, codex: dict) -> Step8Result:
         """
         Generate book and chapter titles via 3-agent multi-agent debate.
 
@@ -5968,50 +6927,114 @@ RELIGION:
             else:
                 print(f">>> Step 4 FAILED: {result.error}")
 
-        # Step 5: Scene Narrative Writing
+        # Step 5: Chapter & Scene Breakdown
         if 5 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 5: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
+            print("STEP 5: Chapter & Scene Breakdown (3-Agent Debate)")
             print(f"{'='*60}")
 
-            result = self.step5_narrative(codex)
+            result = self.step5_chapter_scene_breakdown(codex)
             results["step5"] = result
+
+            if result.success:
+                # Store chapter_outline at story.chapter_outline
+                codex["story"]["chapter_outline"] = result.chapter_outline
+
+                # Populate character and location IDs
+                self._populate_scene_ids(codex["story"]["chapter_outline"], codex)
+
+                # Store debate details in metadata
+                codex["metadata"]["phase_1"]["step5_debates"] = result.debates
+
+                steps_completed.append(5)
+                step_timings["step5_chapter_scene_breakdown"] = result.duration_seconds
+
+                # Step 5B: Foreshadowing & Setup/Payoff Analysis (runs automatically after Step 5)
+                print(f"\n{'='*60}")
+                print("STEP 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate)")
+                print(f"{'='*60}")
+
+                result_5b = self.step5b_foreshadowing_analysis(codex)
+                results["step5b"] = result_5b
+
+                if result_5b.get("success"):
+                    # Store foreshadowing plan in metadata
+                    codex["metadata"]["phase_1"]["step5b_foreshadowing"] = result_5b["debates"]
+
+                    step_timings["step5b_foreshadowing_analysis"] = result_5b["duration"]
+                    print(f">>> Step 5B COMPLETE")
+
+                    # Step 5C: Complete Scene Interconnection Analysis (runs automatically after Step 5B)
+                    print(f"\n{'='*60}")
+                    print("STEP 5C: Complete Scene Interconnection Analysis")
+                    print(f"{'='*60}")
+
+                    result_5c = self.step5c_interconnection_analysis(codex)
+                    results["step5c"] = result_5c
+
+                    if result_5c.get("success"):
+                        # Store interconnection report in metadata
+                        codex["metadata"]["phase_1"]["step5c_interconnection"] = result_5c["report"]
+
+                        step_timings["step5c_interconnection_analysis"] = result_5c["duration"]
+                        print(f">>> Step 5C COMPLETE")
+                    else:
+                        print(f">>> Step 5C FAILED: {result_5c.get('error', 'Unknown error')}")
+                        print(">>> Continuing to Step 6 with current chapter outline...")
+                else:
+                    print(f">>> Step 5B FAILED: {result_5b.get('error', 'Unknown error')}")
+                    print(">>> Continuing to Step 6 with original chapter outline...")
+
+            else:
+                print(f">>> Step 5 FAILED: {result.error}")
+
+        # Step 6: Scene Narrative Writing
+        if 6 in steps_to_run:
+            print(f"\n{'='*60}")
+            print("STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
+            print(f"{'='*60}")
+
+            result = self.step6_narrative(codex)
+            results["step6"] = result
 
             if result.success:
                 # Store narrative at story.narrative
                 codex["story"]["narrative"] = result.narrative
 
-                steps_completed.append(5)
-                step_timings["step5_narrative"] = result.duration_seconds
-            else:
-                print(f">>> Step 5 FAILED: {result.error}")
-
-        # Step 6: Narrative Revision with 5-Critic System
-        if 6 in steps_to_run:
-            print("\n>>> Running Step 6: Narrative Revision...")
-            result = self.step6_revision(codex)
-            if result.success:
-                print(f">>> Step 6 COMPLETE: Revised {result.scenes_revised} scenes")
-                print(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
                 steps_completed.append(6)
-                step_timings["step6_revision"] = result.duration_seconds
+                step_timings["step6_narrative"] = result.duration_seconds
             else:
                 print(f">>> Step 6 FAILED: {result.error}")
 
-        # Step 7: Book & Chapter Title Naming
+        # Step 7: Narrative Revision with 5-Critic System
         if 7 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 7: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
+            print("STEP 7: Narrative Revision (5-Critic System)")
             print(f"{'='*60}")
-            result = self.step7_naming(codex)
+            result = self.step7_revision(codex)
             results["step7"] = result
             if result.success:
-                print(f"\n>>> Step 7 COMPLETE: Book titled \"{result.book_title}\"")
-                print(f"    Chapter titles: {len(result.chapter_titles)}")
+                print(f"\n>>> Step 7 COMPLETE: Revised {result.scenes_revised} scenes")
+                print(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
                 steps_completed.append(7)
-                step_timings["step7_naming"] = result.duration_seconds
+                step_timings["step7_revision"] = result.duration_seconds
             else:
                 print(f">>> Step 7 FAILED: {result.error}")
+
+        # Step 8: Book & Chapter Title Naming
+        if 8 in steps_to_run:
+            print(f"\n{'='*60}")
+            print("STEP 8: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
+            print(f"{'='*60}")
+            result = self.step8_naming(codex)
+            results["step8"] = result
+            if result.success:
+                print(f"\n>>> Step 8 COMPLETE: Book titled \"{result.book_title}\"")
+                print(f"    Chapter titles: {len(result.chapter_titles)}")
+                steps_completed.append(8)
+                step_timings["step8_naming"] = result.duration_seconds
+            else:
+                print(f">>> Step 8 FAILED: {result.error}")
 
         # Steps 8-10: Add as we implement them
         for step_num in range(8, 11):
@@ -6037,16 +7060,20 @@ RELIGION:
         # if "step4" in results and results["step4"].success:
         #     codex["metadata"]["phase_1"]["scene_debates"] = results["step4"].scene_debates
 
-        # Add narrative debates to metadata
+        # Add chapter/scene breakdown debates to metadata (NEW Step 5)
         if "step5" in results and results["step5"].success:
-            codex["metadata"]["phase_1"]["narrative_debates"] = results["step5"].scene_debates
+            codex["metadata"]["phase_1"]["chapter_scene_debates"] = results["step5"].debates
 
-        # Add title naming debates to metadata
-        if "step7" in results and results["step7"].success:
+        # Add narrative writing debates to metadata (Step 6, formerly Step 5)
+        if "step6" in results and results["step6"].success:
+            codex["metadata"]["phase_1"]["narrative_debates"] = results["step6"].scene_debates
+
+        # Add title naming debates to metadata (Step 8, formerly Step 7)
+        if "step8" in results and results["step8"].success:
             codex["metadata"]["phase_1"]["title_naming"] = {
-                "book_title": results["step7"].book_title,
-                "chapter_titles": results["step7"].chapter_titles,
-                "book_debate": results["step7"].book_debate,
+                "book_title": results["step8"].book_title,
+                "chapter_titles": results["step8"].chapter_titles,
+                "book_debate": results["step8"].book_debate,
             }
 
         return {

@@ -100,9 +100,17 @@ uv run python -m src.phases.phase0_codex --output-dir forge/20260105143022
 uv run python -m src.phases.phase1_author forge/20260131132743/codex_20260131132743.json
 
 # Phase 1 with specific steps (NEW: Step 0 = Theme Foundation)
-uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 0      # Step 0 only (Theme Foundation)
+uv run python -m src.phases.phase1_author forge/20260208202311/codex_20260208202311.json --steps 0      # Step 0 only (Theme Foundation)
 uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 0 1    # Steps 0-1 (Theme + Plotting)
 uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 1      # Step 1 only (Plotting) 
+
+uv run python -B -m src.phases.phase1_author forge/20260211221113/codex_20260211221113.json --steps 0 1 2 3 4
+
+uv run python -B -m src.phases.phase1_author forge/20260210175423/codex_20260210175423.json --steps 5
+
+
+
+
 
 # Phase 2: Generate characters & locations (requires Phase 1)
 uv run python -m src.phases.phase2_characters forge\20260116191326\codex_20260116191326.json

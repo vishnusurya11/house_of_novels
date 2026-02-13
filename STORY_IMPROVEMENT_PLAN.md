@@ -694,6 +694,60 @@ Example:
 
 **Goal:** Break the beat sheet into chapter/scene outline where every scene advances plot AND tests the thematic question.
 
+#### ✅ RECENTLY COMPLETED: Enhanced Setup/Payoff Tracking System (Step 5B)
+
+**Implemented:** Feb 12, 2026
+
+**What Was Added:**
+- **tracking_id System**: Unique IDs link setup chains (1 of 3 → 2 of 3 → 3 of 3) using same tracking_id
+- **Forward-Pointing Tracking**: Setup scenes (1 of 3, 2 of 3) point to ONE payoff scene (3 of 3)
+- **Rule of Three Enforcement**: Cognitive salience through repetition (1=accident, 2=coincidence, 3=pattern)
+- **Chekhov's Gun Compliance**: Everything introduced must pay off later
+- **Emotional Stake Escalation**: Low → Medium → High across tracking chain
+- **Subtlety Enforcement**: Show through action/consequence, never through dialogue
+- **Comprehensive Tracking**: Skills, traits, world rules, relationships, objects, secrets - EVERYTHING readers need to notice
+- **Scene ID Population**: Automatically populates character_ids, location_id, pov_character_id fields
+- **Tracking Chain Validation**: Validates every "1 of 3" has corresponding "2 of 3" and "3 of 3"
+
+**Files Modified:**
+1. [story_schemas.py](src/story_schemas.py) (lines 3044-3061): SetupPayoffTracking model with tracking_id
+2. [foreshadowing_agents.py](src/story_agents/foreshadowing_agents.py): All 3 agent prompts updated with tracking_id system
+3. [base_phase1.py](src/authors/base_phase1.py): Added helper functions + Step 5B enabled
+
+**Schema Changes:**
+```python
+class SetupPayoffTracking(BaseModel):
+    tracking_id: str  # NEW: Links all scenes in chain
+    position: str  # "1 of 3", "2 of 3", "3 of 3"
+    payoff_scene: str  # Filled in setups, empty in payoff
+    emotional_stake: str  # "Low", "Medium", "High" - escalates
+    demonstrates_how: str  # "Through action", never dialogue
+    # ... other fields
+```
+
+**How It Works:**
+1. **SetupPayoffAgent** scans chapters 7+ for payoff moments, works backward to create setups
+2. **RuleOfThreeAgent** ensures every important element appears 3 times minimum
+3. **TropeExecutionAgent** maps trope beats to tracking chains
+4. All agents generate tracking with same tracking_id for related scenes
+5. Helper function `_populate_scene_ids()` fills character/location IDs from names
+6. Helper function `_validate_tracking_completeness()` checks chain integrity
+
+**Expected Output:**
+```
+STEP 5B COMPLETE
+  Validating 12 tracking chains...
+  ✓ All tracking chains complete!
+  New Scenes: 0
+  Annotated Scenes: 15
+  Total Scenes Now: 31
+```
+
+**Philosophy:**
+> "Everything introduced must pay off. No wasted scenes. Like a fucking original author. Repetition is how audience will know how to pay attention."
+
+
+
 #### Input
 - `codex["story"]["structure_beats"]` (from Step 3)
 - `codex["story"]["characters"]` (from Step 1)
