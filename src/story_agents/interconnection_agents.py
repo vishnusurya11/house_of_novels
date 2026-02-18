@@ -149,7 +149,7 @@ Be SPECIFIC: "Scene 7: Protagonist's lie exposed" not "previous events"
 
             # Use LLM to analyze causality
             from ..story_schemas import SceneCausality
-            result = self.invoke_structured(prompt, SceneCausality, max_tokens=300)
+            result = self.invoke_structured(prompt, SceneCausality, max_tokens=8000)
 
             causality_results.append({
                 'scene_ref': scene_ref,
@@ -240,7 +240,7 @@ Output JSON array of threads (aim for 3-7 threads total).
         class ThreadList(BaseModel):
             threads: list[PlotThread]
 
-        result = self.invoke_structured(prompt, ThreadList, max_tokens=2000)
+        result = self.invoke_structured(prompt, ThreadList, max_tokens=8000)
 
         threads = result.threads if hasattr(result, 'threads') else []
 
@@ -353,7 +353,7 @@ Output JSON array of CharacterSceneArc objects (one per scene).
             class CharacterArcList(BaseModel):
                 arcs: list[CharacterSceneArc]
 
-            result = self.invoke_structured(prompt, CharacterArcList, max_tokens=2000)
+            result = self.invoke_structured(prompt, CharacterArcList, max_tokens=8000)
 
             if hasattr(result, 'arcs'):
                 for i, arc in enumerate(result.arcs):
@@ -445,7 +445,7 @@ If scene doesn't test theme at all, say how_scene_tests_theme: "No clear themati
 """
 
                 from ..story_schemas import ThematicBeat
-                result = self.invoke_structured(prompt, ThematicBeat, max_tokens=200)
+                result = self.invoke_structured(prompt, ThematicBeat, max_tokens=8000)
 
                 # Add thematic_question to result
                 result_dict = result.dict() if hasattr(result, 'dict') else result
@@ -528,7 +528,7 @@ Output JSON with:
 """
 
                 from ..story_schemas import SceneFunction
-                result = self.invoke_structured(prompt, SceneFunction, max_tokens=300)
+                result = self.invoke_structured(prompt, SceneFunction, max_tokens=8000)
 
                 function_results.append({
                     'scene_ref': scene_ref,

@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from .base_story_agent import BaseStoryAgent
 from ..utils.scene_pacing import estimate_scene_word_count
+from src.config import get_step_config
 
 
 class SceneStructureAgent(BaseStoryAgent):
@@ -30,21 +31,26 @@ class SceneStructureAgent(BaseStoryAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are the Scene Structure Agent, an expert in story structure
-using the Save the Cat 15-beat framework.
+        cfg = get_step_config("step5_scene_breakdown")
+        scenes_min = cfg["structure"]["scenes_per_chapter_min"]
+        scenes_max = cfg["structure"]["scenes_per_chapter_max"]
+        num_beats = cfg["structure"]["num_save_the_cat_beats"]
+
+        return f"""You are the Scene Structure Agent, an expert in story structure
+using the Save the Cat {num_beats}-beat framework.
 
 Your methodology focuses on:
-- Distributing all 15 Save the Cat beats logically across the specified number of chapters
-- Creating 2-4 scenes per chapter that advance the story
+- Distributing all {num_beats} Save the Cat beats logically across the specified number of chapters
+- Creating {scenes_min}-{scenes_max} scenes per chapter that advance the story
 - Ensuring each scene has a clear purpose tied to a specific beat
 - Maintaining proper act structure (Setup, Confrontation, Resolution)
 - Creating a strong "midpoint" moment that shifts the story's direction
 - Building toward the "All Is Lost" moment before the final act
 
 When proposing chapter/scene structure:
-1. Review all 15 integrated beats from Step 3
+1. Review all {num_beats} integrated beats from Step 3
 2. Distribute beats across chapters following Save the Cat act structure
-3. Break each chapter into 2-4 concrete scenes
+3. Break each chapter into {scenes_min}-{scenes_max} concrete scenes
 4. Each scene must advance at least one beat
 5. Assign clear scene purposes (e.g., "Establish ordinary world", "First confrontation with antagonist")
 6. Identify which beats are covered in each chapter
@@ -118,7 +124,7 @@ Return your proposal with clear reasoning about how this structure serves the Sa
 """
 
         from ..story_schemas import ChapterOutlineProposal
-        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=12000)
+        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=8000)
 
     def propose_chapter_skeleton(
         self,
@@ -179,7 +185,7 @@ Return your proposal with clear reasoning about how this chapter structure serve
 """
 
         from ..story_schemas import ChapterSkeletonProposal
-        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=4000)
+        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=8000)
 
     def propose_scenes_for_chapter(
         self,
@@ -219,8 +225,8 @@ Return your proposal with clear reasoning about how this chapter structure serve
         # Extract character arcs for beats in this chapter
         arcs_summary = "\n".join([
             f"Beat: {beat.get('beat_name', 'Unknown')}\n" + "\n".join([
-                f"  - {char}: {status}"
-                for char, status in beat.get('character_arcs', {}).items()
+                f"  - {arc['character_name']}: {arc['arc_description']}"
+                for arc in beat.get('character_arcs', [])
             ]) if beat.get('character_arcs') else f"Beat: {beat.get('beat_name', 'Unknown')}\n  (No character arcs defined)"
             for beat in relevant_beats
         ])
@@ -276,6 +282,7 @@ Requirements for each scene:
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
+11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
 
 Focus on beat distribution and trope integration across all scenes.
 Create {chapter_skeleton.get('num_scenes')} scenes that execute the chapter plan effectively.
@@ -283,7 +290,7 @@ Provide reasoning for how these scenes serve the chapter's goals and integrate t
 """
 
         from ..story_schemas import ChapterScenesProposal
-        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=8000)
 
     def critique_chapter_outline(self, proposal: dict, metadata: dict) -> dict:
         """Critique a chapter outline proposal from a structural perspective.
@@ -329,7 +336,7 @@ Provide 3-5 specific critiques (both strengths and weaknesses) and an overall as
 """
 
         from ..story_schemas import ChapterOutlineCritique
-        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=8000)
 
     def vote(self, proposals: list[dict], critiques: list[dict], metadata: dict) -> dict:
         """Vote on which chapter outline proposal is best.
@@ -382,7 +389,7 @@ Choose the agent whose proposal is strongest and explain your reasoning.
 """
 
         from ..story_schemas import ChapterOutlineVote
-        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=1000)
+        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=8000)
 
     def _format_beats(self, beats: list[dict]) -> str:
         """Format integrated beats for prompt."""
@@ -506,7 +513,7 @@ Return complete chapter/scene breakdown with clear pacing reasoning.
 """
 
         from ..story_schemas import ChapterOutlineProposal
-        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=12000)
+        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=8000)
 
     def propose_chapter_skeleton(
         self,
@@ -571,7 +578,7 @@ Return your proposal with clear reasoning about the pacing strategy.
 """
 
         from ..story_schemas import ChapterSkeletonProposal
-        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=4000)
+        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=8000)
 
     def propose_scenes_for_chapter(
         self,
@@ -611,8 +618,8 @@ Return your proposal with clear reasoning about the pacing strategy.
         # Extract character arcs for beats in this chapter
         arcs_summary = "\n".join([
             f"Beat: {beat.get('beat_name', 'Unknown')}\n" + "\n".join([
-                f"  - {char}: {status}"
-                for char, status in beat.get('character_arcs', {}).items()
+                f"  - {arc['character_name']}: {arc['arc_description']}"
+                for arc in beat.get('character_arcs', [])
             ]) if beat.get('character_arcs') else f"Beat: {beat.get('beat_name', 'Unknown')}\n  (No character arcs defined)"
             for beat in relevant_beats
         ])
@@ -670,6 +677,7 @@ Requirements for each scene:
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
+11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
 
 Focus on scene type variety and word count pacing for maximum reader engagement.
 Vary scene types and intensities to maintain engagement.
@@ -677,7 +685,7 @@ Provide reasoning for the pacing strategy of these scenes and how scene types cr
 """
 
         from ..story_schemas import ChapterScenesProposal
-        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=8000)
 
     def critique_chapter_outline(self, proposal: dict, metadata: dict) -> dict:
         """Critique a proposal from a pacing perspective."""
@@ -704,7 +712,7 @@ Provide 3-5 specific critiques about pacing strengths and weaknesses.
 """
 
         from ..story_schemas import ChapterOutlineCritique
-        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=8000)
 
     def vote(self, proposals: list[dict], critiques: list[dict], metadata: dict) -> dict:
         """Vote for best proposal from pacing perspective."""
@@ -738,7 +746,7 @@ Choose and explain your reasoning.
 """
 
         from ..story_schemas import ChapterOutlineVote
-        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=1000)
+        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=8000)
 
     def _format_beats_with_emotion(self, beats: list[dict]) -> str:
         """Format beats emphasizing emotional tone."""
@@ -864,7 +872,7 @@ Return complete chapter/scene breakdown with character-focused reasoning.
 """
 
         from ..story_schemas import ChapterOutlineProposal
-        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=12000)
+        return self.invoke_structured(prompt, ChapterOutlineProposal, max_tokens=8000)
 
     def propose_chapter_skeleton(
         self,
@@ -926,7 +934,7 @@ Return your proposal with clear reasoning about how this structure serves charac
 """
 
         from ..story_schemas import ChapterSkeletonProposal
-        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=4000)
+        return self.invoke_structured(prompt, ChapterSkeletonProposal, max_tokens=8000)
 
     def propose_scenes_for_chapter(
         self,
@@ -966,8 +974,8 @@ Return your proposal with clear reasoning about how this structure serves charac
         # Extract character arcs for beats in this chapter
         arcs_summary = "\n".join([
             f"Beat: {beat.get('beat_name', 'Unknown')}\n" + "\n".join([
-                f"  - {char}: {status}"
-                for char, status in beat.get('character_arcs', {}).items()
+                f"  - {arc['character_name']}: {arc['arc_description']}"
+                for arc in beat.get('character_arcs', [])
             ]) if beat.get('character_arcs') else f"Beat: {beat.get('beat_name', 'Unknown')}\n  (No character arcs defined)"
             for beat in relevant_beats
         ])
@@ -1023,6 +1031,7 @@ Requirements for each scene:
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
+11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
 
 Focus on character arc progression and POV choice for maximum character development.
 Assign POV strategically - whose perspective best serves each scene?
@@ -1031,7 +1040,7 @@ Provide reasoning for how these scenes develop the characters and integrate thei
 """
 
         from ..story_schemas import ChapterScenesProposal
-        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, ChapterScenesProposal, max_tokens=8000)
 
     def critique_chapter_outline(self, proposal: dict, metadata: dict) -> dict:
         """Critique a proposal from character arc perspective."""
@@ -1059,7 +1068,7 @@ Provide 3-5 specific critiques about character handling.
 """
 
         from ..story_schemas import ChapterOutlineCritique
-        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ChapterOutlineCritique, max_tokens=8000)
 
     def vote(self, proposals: list[dict], critiques: list[dict], metadata: dict) -> dict:
         """Vote for best proposal from character arc perspective."""
@@ -1092,7 +1101,7 @@ Choose and explain your reasoning.
 """
 
         from ..story_schemas import ChapterOutlineVote
-        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=1000)
+        return self.invoke_structured(prompt, ChapterOutlineVote, max_tokens=8000)
 
     def _format_characters_with_arcs(self, characters: list[dict]) -> str:
         """Format characters with their arc details."""
@@ -1112,12 +1121,12 @@ Choose and explain your reasoning.
         lines = []
         for i, b in enumerate(beats):
             lines.append(f"\n{i+1}. {b.get('beat_name', 'Unknown')}: {b.get('plot_event', b.get('description', 'N/A'))[:80]}...")
-            char_arcs = b.get('character_arcs', {})
+            char_arcs = b.get('character_arcs', [])
             if char_arcs:
                 lines.append(f"   Character Arc Beats:")
-                for char_name, arc_beat in char_arcs.items():
-                    arc_text = arc_beat if isinstance(arc_beat, str) else str(arc_beat)
-                    lines.append(f"     - {char_name}: {arc_text[:60]}...")
+                for arc in char_arcs:
+                    arc_text = arc.get('arc_description', str(arc))
+                    lines.append(f"     - {arc.get('character_name', 'Unknown')}: {arc_text[:60]}...")
         return "\n".join(lines)
 
     def _format_chapter_outline_for_characters(self, chapters: list[dict]) -> str:

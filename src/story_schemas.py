@@ -114,6 +114,50 @@ class PhysicalDescriptionSchema(BaseModel):
     )
 
 
+class CostumeDescription(BaseModel):
+    """Detailed costume description for world-accurate character design."""
+    primary_color: str = Field(
+        ...,
+        description="Main color (e.g., 'deep burgundy', 'weathered gray', 'midnight blue')"
+    )
+    secondary_colors: list[str] = Field(
+        default_factory=list,
+        description="Additional accent colors (e.g., ['silver trim', 'rust-colored patches'])"
+    )
+    garment_type: str = Field(
+        ...,
+        description="Type of clothing (e.g., 'tunic and breeches', 'tailored suit', 'flowing robes', 'jumpsuit')"
+    )
+    fabric_materials: str = Field(
+        ...,
+        description="Fabric types and materials (e.g., 'rough-spun linen', 'silk brocade', 'synth-fiber', 'leather')"
+    )
+    style_period: str = Field(
+        ...,
+        description="Time period/style aesthetic (e.g., 'medieval peasant', '1920s gangster', 'neo-feudal corporate', 'post-apocalyptic')"
+    )
+    class_markers: str = Field(
+        ...,
+        description="What clothing signals about social status, wealth, or occupation"
+    )
+    condition: str = Field(
+        ...,
+        description="Wear state and maintenance (e.g., 'pristine', 'travel-worn', 'patched and mended', 'fraying at edges')"
+    )
+    accessories: list[str] = Field(
+        default_factory=list,
+        description="Accessories, jewelry, tools, weapons worn (e.g., 'leather belt with brass buckle', 'silver pocket watch', 'ceremonial dagger')"
+    )
+    cultural_significance: str = Field(
+        ...,
+        description="Cultural, religious, or symbolic meaning of costume choices in this world"
+    )
+    world_accuracy_notes: str = Field(
+        ...,
+        description="How costume fits world rules: available materials, economy, technology level, cultural norms"
+    )
+
+
 class CharacterSchema(BaseModel):
     """Detailed character profile (legacy schema for backwards compatibility)."""
     id: Optional[str] = Field(None, description="Unique ID like 'char_001' (assigned in Phase 2)")
@@ -142,8 +186,12 @@ class CharacterSheetSchema(BaseModel):
     age: str = Field(..., description="Age or age range")
     physical: PhysicalDescriptionSchema = Field(..., description="Physical appearance")
     costume: str = Field(
-        ...,
-        description="DETAILED costume/dress description: clothing, accessories, items carried. This is the most important visual element."
+        default="",
+        description="DETAILED costume/dress description summary (2-3 sentences). Designed in Step 4 (World Building)."
+    )
+    costume_details: Optional[CostumeDescription] = Field(
+        default=None,
+        description="Detailed costume breakdown with colors, fabrics, time period, world accuracy. Designed in Step 4."
     )
     personality_traits: list[str] = Field(
         ...,
@@ -1249,6 +1297,49 @@ class CharacterDebateResult(BaseModel):
         ...,
         description="Final assembled character sheet"
     )
+
+
+# =============================================================================
+# Phase 1 Step 4: Costume Debate Schemas (World-Accurate Design)
+# =============================================================================
+
+class CostumeProposal(BaseModel):
+    """A proposal for character costume from a world-aware debate agent."""
+    agent_name: str = Field(..., description="Name of the proposing agent")
+    methodology_focus: str = Field(
+        ...,
+        description="Agent's focus (e.g., 'historical accuracy', 'world accuracy', 'visual storytelling')"
+    )
+    costume: CostumeDescription = Field(..., description="Proposed costume details")
+    summary: str = Field(
+        ...,
+        description="2-3 sentence summary of the complete costume for prose use"
+    )
+    reasoning: str = Field(
+        ...,
+        description="Why this costume fits the character, world, and time period"
+    )
+
+
+class CostumeCritique(BaseModel):
+    """Critique of a costume proposal."""
+    critic_agent: str = Field(..., description="Name of the agent giving the critique")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+    strengths: str = Field(..., description="What works well about this costume design")
+    weaknesses: str = Field(..., description="What could be improved")
+    world_accuracy_issues: str = Field(
+        default="",
+        description="Any issues with world rules, economy, or cultural norms"
+    )
+    suggestion: str = Field(..., description="Specific suggestion for improvement")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class CostumeVote(BaseModel):
+    """An agent's vote for the best costume design."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent whose proposal they voted for")
+    vote_reasoning: str = Field(..., description="Why this is the best costume design")
 
 
 # =============================================================================
@@ -2680,14 +2771,20 @@ class ArcBeatVote(BaseModel):
 # Beat Integration Schemas (Arc + STC merged)
 # -------------------------------------------------------------------------
 
+class IntegrationCharacterArcBeat(BaseModel):
+    """A character's arc beat at a specific story moment (for beat integration)."""
+    character_name: str = Field(..., description="Name of the character")
+    arc_description: str = Field(..., description="What this character experiences/learns at this beat")
+
+
 class IntegratedBeat(BaseModel):
     """A single beat with plot and all character arcs integrated."""
     beat_name: str = Field(..., description="Name of the beat")
     timing_percentage: str = Field(..., description="When this occurs (e.g., '10%', '50%')")
     plot_event: str = Field(..., description="What happens (plot-level)")
-    character_arcs: dict[str, str] = Field(
+    character_arcs: list[IntegrationCharacterArcBeat] = Field(
         ...,
-        description="Dict mapping character names to their arc beat at this moment. Include ALL major characters."
+        description="List of character arc beats at this moment. Include ALL major characters."
     )
     thematic_test: str = Field(..., description="How this beat tests the theme")
     location_type: Optional[str] = Field(
@@ -2922,6 +3019,18 @@ class LocationThematicVote(BaseModel):
 # STEP 5: Chapter & Scene Breakdown Schemas
 # ============================================================================
 
+class CharacterArcProgression(BaseModel):
+    """Character arc state at a specific scene."""
+    character_name: str = Field(..., description="Name of the character")
+    arc_state: str = Field(..., description="Brief arc state/emotion (~10 words)")
+
+
+class ExecutionStage(BaseModel):
+    """A stage in executing a trope over time."""
+    chapter_range: str = Field(..., description="e.g., 'Ch1-3', 'Ch5', 'Ch10-11'")
+    action: str = Field(..., description="What happens in this stage, e.g., 'Establish expectation', 'Subvert'")
+
+
 class Scene(BaseModel):
     """Individual scene within a chapter."""
     scene_number: int = Field(..., description="Overall scene number across all chapters")
@@ -2940,9 +3049,9 @@ class Scene(BaseModel):
         ...,
         description="Which story tropes are actively shown/used in this scene (from Step 2 tropes)"
     )
-    character_arc_progression: dict[str, str] = Field(
-        default_factory=dict,
-        description="Character arc status for EACH character present: {character_name: brief arc state/emotion, ~10 words}"
+    character_arc_progression: list[CharacterArcProgression] = Field(
+        default_factory=list,
+        description="Character arc status for EACH character present (list of character names + arc states)"
     )
     estimated_word_count: int = Field(
         ...,
@@ -2952,12 +3061,15 @@ class Scene(BaseModel):
         ...,
         description="Scene category: action, dialogue, introspection, confrontation, revelation, transition"
     )
+    time_of_day: str = Field(
+        ...,
+        description="Time of day: 'dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'"
+    )
 
     # Enhanced Chekhov's Gun / Rule of Three tracking
-    # Can accept either dict (for backward compat) or SetupPayoffTracking objects
-    setup_payoff_tracking: list[dict] = Field(
+    setup_payoff_tracking: list['SetupPayoffTracking'] = Field(
         default_factory=list,
-        description="Rich tracking for EVERY element readers need to notice (skills, traits, world rules, relationships, etc.) - uses Rule of Three for cognitive salience. Accepts SetupPayoffTracking model dicts."
+        description="Rich tracking for EVERY element readers need to notice (skills, traits, world rules, relationships, etc.) - uses Rule of Three for cognitive salience."
     )
 
     # STEP 5C: Complete Interconnection Fields (NEW)
@@ -3087,8 +3199,8 @@ class SetupRequirement(BaseModel):
     beat_name: str = Field(default="Setup", description="Beat this scene advances")
     location: str = Field(default="", description="Where scene takes place")
     pov_character: str = Field(default="", description="POV character")
-    character_arc_progression: dict[str, str] = Field(default_factory=dict)
-    setup_payoff_tracking: list[dict] = Field(
+    character_arc_progression: list[CharacterArcProgression] = Field(default_factory=list)
+    setup_payoff_tracking: list[SetupPayoffTracking] = Field(
         default_factory=list,
         description="Full tracking metadata for this scene"
     )
@@ -3115,7 +3227,7 @@ class TropeExecutionTimeline(BaseModel):
     """Timeline for executing a trope (especially subvert/invert)."""
     trope_name: str
     trope_usage: str = Field(..., description="straight, subvert, or invert")
-    execution_stages: list[dict] = Field(..., description="[{chapter_range: 'Ch1-3', action: 'Establish expectation'}, ...]")
+    execution_stages: list[ExecutionStage] = Field(..., description="List of execution stages showing chapter ranges and actions")
     required_setups: list[SetupRequirement] = Field(default_factory=list)
 
 
@@ -3227,3 +3339,234 @@ class SceneInterconnectionReport(BaseModel):
     weak_function_scenes: list[str] = Field(default_factory=list)
     overall_interconnection_score: float = Field(default=0.0, ge=0.0, le=1.0)
     recommendations: list[str] = Field(default_factory=list)
+
+
+# ============================================================================
+# STEP 6: Scene Narrative Expansion Schemas (Enhanced Prose Generation)
+# ============================================================================
+
+class SensorySelectionMetadata(BaseModel):
+    """Tracks which senses used in scene to avoid repetition and ensure variety."""
+    primary_senses: list[str] = Field(
+        ...,
+        description="1-2 senses emphasized in this scene: ['sight', 'sound', 'smell', 'taste', 'touch']"
+    )
+    character_perception_filter: str = Field(
+        ...,
+        description="What this character notices based on profession/trauma/personality"
+    )
+    previous_scenes_senses: list[list[str]] = Field(
+        default_factory=list,
+        description="Last 3 scenes' primary senses to avoid repetition"
+    )
+    selection_reasoning: str = Field(
+        ...,
+        description="Why these senses chosen for this scene (2-3 sentences)"
+    )
+
+
+class VoiceRatioReport(BaseModel):
+    """Tracks active vs passive voice ratio in prose."""
+    total_sentences: int = Field(..., description="Total sentences in prose")
+    active_voice_count: int = Field(..., description="Sentences using active voice")
+    passive_voice_count: int = Field(..., description="Sentences using passive voice")
+    active_percentage: float = Field(..., description="Percentage active (target: 80%+)")
+    passive_examples: list[str] = Field(
+        default_factory=list,
+        description="Sample passive voice sentences (max 3)"
+    )
+    assessment: str = Field(
+        ...,
+        description="'Excellent (80%+)', 'Good (70-80%)', 'Needs Improvement (<70%)'"
+    )
+
+
+class DialogueLineAnalysis(BaseModel):
+    """Analysis of single dialogue line for character authenticity."""
+    character_id: str
+    character_name: str
+    line_text: str = Field(..., description="The actual dialogue line")
+
+    # Character filter application
+    education_level_match: bool = Field(..., description="Vocabulary matches education level")
+    profession_frame_match: bool = Field(..., description="References/metaphors match profession")
+    personality_match: bool = Field(..., description="Speech patterns match personality")
+
+    # Dialogue quality
+    has_subtext: bool = Field(..., description="Line has implied meaning beyond literal words")
+    is_alley_oop: bool = Field(
+        default=False,
+        description="Line exists only to set up next line (BAD)"
+    )
+    verbal_tic_present: bool = Field(
+        default=False,
+        description="Character's established verbal tic appears"
+    )
+
+    # Assessment
+    voice_strength: str = Field(..., description="'Strong', 'Adequate', 'Weak'")
+    improvement_note: str = Field(default="", description="How to improve if weak")
+
+
+class DialogueAnalysis(BaseModel):
+    """Complete dialogue analysis from DialogueMasterAgent."""
+    agent_name: str = Field(default="DIALOGUE_MASTER", description="DialogueMasterAgent")
+    proposal_analyzed: str = Field(..., description="Which agent's proposal was analyzed")
+
+    # Overall dialogue quality
+    total_dialogue_lines: int
+    lines_analyzed: list[DialogueLineAnalysis]
+
+    # No-tag test
+    no_tag_test_passed: bool = Field(
+        ...,
+        description="Can you tell who's speaking without dialogue tags?"
+    )
+    voice_distinctiveness_score: float = Field(
+        ...,
+        ge=0.0,
+        le=10.0,
+        description="How distinct each character's voice is (0-10)"
+    )
+
+    # Dialogue issues
+    alley_oop_lines_found: list[str] = Field(
+        default_factory=list,
+        description="Lines that are just setup for next line"
+    )
+    on_the_nose_lines: list[str] = Field(
+        default_factory=list,
+        description="Dialogue that states subtext explicitly (BAD)"
+    )
+
+    # Best practices
+    uses_yes_and: bool = Field(..., description="Dialogue builds on previous lines")
+    has_conflict: bool = Field(..., description="Characters disagree/have different goals")
+    subtext_present: bool = Field(..., description="Implied meanings beyond literal words")
+
+    overall_dialogue_score: float = Field(..., ge=0.0, le=10.0)
+    best_dialogue_excerpts: list[str] = Field(
+        default_factory=list,
+        description="3-5 best dialogue exchanges from this proposal"
+    )
+    dialogue_recommendations: list[str] = Field(
+        default_factory=list,
+        description="3-5 specific improvements needed"
+    )
+
+
+class ProposalElementScore(BaseModel):
+    """Score for specific element (dialogue, sensory, etc) in one proposal."""
+    agent_name: str
+    element_type: str = Field(
+        ...,
+        description="'dialogue', 'sensory_detail', 'character_interiority', 'world_building', 'pacing'"
+    )
+    score: float = Field(..., ge=0.0, le=10.0)
+    best_excerpts: list[str] = Field(
+        default_factory=list,
+        description="2-3 best examples of this element"
+    )
+    reasoning: str = Field(..., description="Why this score was given")
+
+
+class NarrativeProseSynthesis(BaseModel):
+    """Synthesized prose from SynthesisAgent - blends best elements from all proposals."""
+    agent_name: str = Field(default="SYNTHESIS", description="SynthesisAgent")
+
+    # Source material
+    proposals_analyzed: list[str] = Field(
+        ...,
+        description="Names of all 5 agents whose proposals were analyzed"
+    )
+    dialogue_analysis: DialogueAnalysis = Field(
+        ...,
+        description="DialogueMasterAgent's analysis"
+    )
+
+    # Element scores (which proposal had best X?)
+    element_scores: list[ProposalElementScore] = Field(
+        ...,
+        description="Scores for dialogue, sensory, character, world, pacing from each proposal"
+    )
+
+    # Synthesis strategy
+    structural_base_agent: str = Field(
+        ...,
+        description="Which proposal's structure was used as foundation"
+    )
+    dialogue_source_agent: str = Field(..., description="Best dialogue came from this agent")
+    sensory_source_agent: str = Field(..., description="Best sensory details from this agent")
+    character_source_agent: str = Field(..., description="Best character work from this agent")
+    world_source_agent: str = Field(..., description="Best world integration from this agent")
+    pacing_source_agent: str = Field(..., description="Best pacing from this agent")
+
+    # Metadata
+    sensory_selection: SensorySelectionMetadata
+    voice_ratio: VoiceRatioReport
+
+    # The actual prose
+    opening_paragraph: str = Field(..., min_length=100, description="First paragraph (100-200 words)")
+    middle_paragraphs: list[str] = Field(
+        ...,
+        min_length=3,
+        description="Middle development paragraphs (3-10 paragraphs)"
+    )
+    closing_paragraph: str = Field(..., min_length=100, description="Final paragraph (100-200 words)")
+
+    # Prose quality
+    word_count: int = Field(..., ge=1500, le=2500, description="Target: 1500-2000 words")
+    techniques_integrated: list[str] = Field(
+        default_factory=list,
+        description="Writing techniques successfully integrated"
+    )
+    synthesis_score: float = Field(
+        ...,
+        ge=0.0,
+        le=10.0,
+        description="Self-assessed quality of synthesis (0-10)"
+    )
+    synthesis_reasoning: str = Field(
+        ...,
+        description="Why this synthesis works (3-5 sentences)"
+    )
+
+    def to_prose(self) -> str:
+        """Convert structured prose back to full text."""
+        all_paragraphs = [self.opening_paragraph] + self.middle_paragraphs + [self.closing_paragraph]
+        return "\n\n".join(all_paragraphs)
+
+
+class DialogueMasterVote(BaseModel):
+    """DialogueMasterAgent's vote on which proposal has best dialogue."""
+    agent_name: str = Field(default="DIALOGUE_MASTER")
+    best_dialogue_agent: str = Field(..., description="Agent with strongest dialogue")
+    dialogue_score: float = Field(..., ge=0.0, le=10.0)
+    reasoning: str = Field(..., description="Why this agent's dialogue is best")
+
+
+# =============================================================================
+# Step 7: Revision & Critique Schemas
+# =============================================================================
+
+class SceneStructureResult(BaseModel):
+    """SUBSTEP 7A: Scene structure validation result (Goal → Conflict → Disaster)."""
+
+    has_clear_goal: bool = Field(..., description="Scene has character goal")
+    goal_stated_location: str = Field(..., description="Where goal appears: 'paragraph 1', 'paragraph 3', or 'missing'")
+
+    has_conflict: bool = Field(..., description="Scene has conflict opposing goal")
+    conflict_type: str = Field(..., description="Type: 'face-to-face' | 'internal' | 'situational' | 'missing'")
+
+    has_disaster_or_outcome: bool = Field(..., description="Scene has disaster/decision outcome")
+    disaster_location: str = Field(..., description="Where disaster appears: 'final paragraph', 'missing'")
+
+    scene_type: str = Field(..., description="Structure type: 'action_scene' (Goal→Conflict→Disaster) | 'sequel_scene' (Reaction→Dilemma→Decision) | 'unclear'")
+
+    structure_score: float = Field(..., ge=0.0, le=10.0, description="Overall structure quality (0-10)")
+
+    missing_elements: list[str] = Field(default_factory=list, description="List of missing structural elements")
+    strengths: list[str] = Field(default_factory=list, description="Structural strengths found")
+
+    revision_needed: bool = Field(..., description="True if score < 7.5 or critical elements missing")
+    revision_suggestions: list[str] = Field(default_factory=list, description="Specific suggestions for improvement")

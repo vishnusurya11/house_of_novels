@@ -114,7 +114,7 @@ The ADJECTIVE is the key to the whole story:
 
 Output structured JSON."""
 
-        return self.invoke_structured(prompt, StorySeedParsed, max_tokens=1000)
+        return self.invoke_structured(prompt, StorySeedParsed, max_tokens=8000)
 
 
 # =============================================================================
@@ -246,7 +246,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="resolution"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -296,7 +296,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="hook"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -351,7 +351,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="midpoint"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -406,7 +406,7 @@ Output structured JSON with:
 - methodology_basis: The Dan Wells principle this critique is based on
 - severity: "minor", "moderate", or "major\""""
 
-        return self.invoke_structured(prompt, AgentCritique, max_tokens=800)
+        return self.invoke_structured(prompt, AgentCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -443,7 +443,7 @@ Output structured JSON with:
 - voted_for_agent: (name of agent whose proposal you vote for)
 - vote_reasoning: Why this is best according to Dan Wells methodology"""
 
-        return self.invoke_structured(prompt, AgentVote, max_tokens=500)
+        return self.invoke_structured(prompt, AgentVote, max_tokens=8000)
 
 
 class BlakeSnyderAgent(BaseStoryAgent):
@@ -572,7 +572,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="resolution"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -624,7 +624,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="hook"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -678,7 +678,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="midpoint"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -729,7 +729,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="pinch_point_2"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -775,7 +775,7 @@ Output structured JSON with:
 - methodology_basis: The Save the Cat principle this is based on
 - severity: "minor", "moderate", or "major\""""
 
-        return self.invoke_structured(prompt, AgentCritique, max_tokens=800)
+        return self.invoke_structured(prompt, AgentCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -807,7 +807,7 @@ Output structured JSON with:
 - voted_for_agent: (name of agent you vote for)
 - vote_reasoning: Why this creates the best emotional impact"""
 
-        return self.invoke_structured(prompt, AgentVote, max_tokens=500)
+        return self.invoke_structured(prompt, AgentVote, max_tokens=8000)
 
 
 class PinchMasterAgent(BaseStoryAgent):
@@ -931,7 +931,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="pinch_point_1"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -986,7 +986,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="pinch_point_2"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1036,7 +1036,7 @@ Output structured JSON with:
 - methodology_basis: The pinch point principle this is based on
 - severity: "minor", "moderate", or "major\""""
 
-        return self.invoke_structured(prompt, AgentCritique, max_tokens=800)
+        return self.invoke_structured(prompt, AgentCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -1068,7 +1068,7 @@ Output structured JSON with:
 - voted_for_agent: (name of agent you vote for)
 - vote_reasoning: Why this creates best tension escalation"""
 
-        return self.invoke_structured(prompt, AgentVote, max_tokens=500)
+        return self.invoke_structured(prompt, AgentVote, max_tokens=8000)
 
 
 class TruthSeekerAgent(BaseStoryAgent):
@@ -1200,7 +1200,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="hook"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1256,7 +1256,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="midpoint"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1300,7 +1300,7 @@ Output structured JSON with:
 - methodology_basis: The narrative theory principle this is based on
 - severity: "minor", "moderate", or "major\""""
 
-        return self.invoke_structured(prompt, AgentCritique, max_tokens=800)
+        return self.invoke_structured(prompt, AgentCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -1332,7 +1332,7 @@ Output structured JSON with:
 - voted_for_agent: (name of agent you vote for)
 - vote_reasoning: Why this best serves truth and transformation"""
 
-        return self.invoke_structured(prompt, AgentVote, max_tokens=500)
+        return self.invoke_structured(prompt, AgentVote, max_tokens=8000)
 
 
 class AudienceAdvocateAgent(BaseStoryAgent):
@@ -1463,7 +1463,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="resolution"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1519,7 +1519,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="hook"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1606,7 +1606,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="{beat_name}"."""
 
-        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=1000)
+        beat = self.invoke_structured(prompt, StructureBeatSchema, max_tokens=8000)
 
         return AgentProposal(
             agent_name=self.name,
@@ -1654,7 +1654,7 @@ Output structured JSON with:
 - methodology_basis: The audience principle this is based on
 - severity: "minor", "moderate", or "major\""""
 
-        return self.invoke_structured(prompt, AgentCritique, max_tokens=800)
+        return self.invoke_structured(prompt, AgentCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -1686,7 +1686,7 @@ Output structured JSON with:
 - voted_for_agent: (name of agent you vote for)
 - vote_reasoning: Why this creates the best reader experience"""
 
-        return self.invoke_structured(prompt, AgentVote, max_tokens=500)
+        return self.invoke_structured(prompt, AgentVote, max_tokens=8000)
 
 
 # =============================================================================
@@ -1787,7 +1787,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="plot_turn_1"."""
 
-        plot_turn_1 = self.invoke_structured(pt1_prompt, StructureBeatSchema, max_tokens=1000)
+        plot_turn_1 = self.invoke_structured(pt1_prompt, StructureBeatSchema, max_tokens=8000)
 
         # Plot Turn 2
         pt2_prompt = f"""Design PLOT TURN 2 (the final piece).
@@ -1806,7 +1806,7 @@ CRITICAL FORMAT: Description must be 1-2 sentences MAX (under 40 words). Focus o
 
 Output structured JSON for StructureBeatSchema with beat_name="plot_turn_2"."""
 
-        plot_turn_2 = self.invoke_structured(pt2_prompt, StructureBeatSchema, max_tokens=1000)
+        plot_turn_2 = self.invoke_structured(pt2_prompt, StructureBeatSchema, max_tokens=8000)
 
         return plot_turn_1, plot_turn_2
 
@@ -1952,4 +1952,4 @@ UNIVERSAL:
 
 Output structured JSON with comprehensive validation."""
 
-        return self.invoke_structured(prompt, StructureDebateCritique, max_tokens=1500)
+        return self.invoke_structured(prompt, StructureDebateCritique, max_tokens=8000)

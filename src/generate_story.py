@@ -113,11 +113,11 @@ def main():
         print(f">>> Characters: {len(story.get('characters', []))}")
         print(f">>> Locations: {len(story.get('locations', []))}")
 
-        narrative = story.get("narrative", {})
-        if isinstance(narrative, dict) and "acts" in narrative:
+        chapters_data = story.get("chapters", {})
+        if isinstance(chapters_data, dict) and chapters_data.get("chapters"):
             total_scenes = sum(
-                len(act.get("scenes", []))
-                for act in narrative.get("acts", [])
+                len(ch.get("scenes", []))
+                for ch in chapters_data.get("chapters", [])
             )
             print(f">>> Scenes written: {total_scenes}")
 

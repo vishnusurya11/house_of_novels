@@ -196,7 +196,7 @@ Create a title that:
 
 Provide your proposed title with reasoning."""
 
-        proposal = agent.invoke_structured(prompt, BookTitleProposal, max_tokens=600)
+        proposal = agent.invoke_structured(prompt, BookTitleProposal, max_tokens=8000)
         proposals[agent.name] = proposal
 
     # ==========================================================================
@@ -220,7 +220,7 @@ Literary devices: {', '.join(target_proposal.literary_devices_used) if target_pr
 Evaluate this title's effectiveness. Be constructive but honest about strengths and weaknesses.
 Consider: memorability, appropriateness, clarity, intrigue, and marketability."""
 
-                critique = critic_agent.invoke_structured(prompt, TitleCritique, max_tokens=500)
+                critique = critic_agent.invoke_structured(prompt, TitleCritique, max_tokens=8000)
                 critiques.append(critique)
 
     # ==========================================================================
@@ -248,10 +248,23 @@ PROPOSALS TO CHOOSE FROM (you cannot vote for your own):
 Select the title that best serves this story. Consider all factors:
 memorability, thematic fit, commercial appeal, and literary quality."""
 
-        vote = voter_agent.invoke_structured(prompt, TitleVote, max_tokens=400)
+        vote = voter_agent.invoke_structured(prompt, TitleVote, max_tokens=8000)
 
-        # Ensure agent doesn't vote for self
-        if vote.voted_for_agent == voter_agent.name:
+        # Validate voted_for_agent is a real agent name (LLM sometimes returns a title string)
+        valid_agents = {a.name for a in agents}
+        if vote.voted_for_agent not in valid_agents:
+            # Try to match the vote string against proposal titles
+            matched = None
+            for agent_name, prop in proposals.items():
+                if agent_name != voter_agent.name and prop.title == vote.voted_for_agent:
+                    matched = agent_name
+                    break
+            if matched:
+                vote.voted_for_agent = matched
+            else:
+                other_agents = [a.name for a in agents if a.name != voter_agent.name]
+                vote.voted_for_agent = other_agents[0]
+        elif vote.voted_for_agent == voter_agent.name:
             # Pick another agent if they voted for themselves
             other_agents = [a.name for a in agents if a.name != voter_agent.name]
             vote.voted_for_agent = other_agents[0]
@@ -358,7 +371,7 @@ Create a chapter title that:
 The title should be SHORT (1-5 words typically).
 Format: Just the title, no "Chapter X:" prefix."""
 
-        proposal = agent.invoke_structured(prompt, ChapterTitleProposal, max_tokens=400)
+        proposal = agent.invoke_structured(prompt, ChapterTitleProposal, max_tokens=8000)
         proposals[agent.name] = proposal
 
     # ==========================================================================
@@ -380,9 +393,22 @@ PROPOSALS (you cannot vote for your own):
 
 Select the title that best serves this chapter."""
 
-        vote = voter_agent.invoke_structured(prompt, TitleVote, max_tokens=300)
+        vote = voter_agent.invoke_structured(prompt, TitleVote, max_tokens=8000)
 
-        if vote.voted_for_agent == voter_agent.name:
+        # Validate voted_for_agent is a real agent name (LLM sometimes returns a title string)
+        valid_agents = {a.name for a in agents}
+        if vote.voted_for_agent not in valid_agents:
+            matched = None
+            for agent_name, prop in proposals.items():
+                if agent_name != voter_agent.name and prop.title == vote.voted_for_agent:
+                    matched = agent_name
+                    break
+            if matched:
+                vote.voted_for_agent = matched
+            else:
+                other_agents = [a.name for a in agents if a.name != voter_agent.name]
+                vote.voted_for_agent = other_agents[0]
+        elif vote.voted_for_agent == voter_agent.name:
             other_agents = [a.name for a in agents if a.name != voter_agent.name]
             vote.voted_for_agent = other_agents[0]
 
@@ -401,6 +427,7 @@ Select the title that best serves this chapter."""
     winning_title = proposals[winner_agent].title
 
     return {
+        "chapter_number": chapter_number,
         "winning_title": winning_title,
         "winner_agent": winner_agent,
         "proposals": {k: v.model_dump() for k, v in proposals.items()},

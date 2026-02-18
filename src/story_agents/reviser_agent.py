@@ -74,7 +74,7 @@ Address the most severe issues first. Make targeted improvements while preservin
 
 Maintain the same structure with title, logline, protagonist, antagonist, central_conflict, and acts."""
 
-        return self.invoke_structured(prompt, OutlineSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, OutlineSchema, max_tokens=8000)
 
     def revise_characters(self, characters: str, critiques: list[str],
                           locked_names: list[str] = None) -> CharacterListSchema:
@@ -140,7 +140,7 @@ CRITIQUES:
 
 Address consistency issues and add missing locations if noted."""
 
-        return self.invoke_structured(prompt, LocationListSchema, max_tokens=6000)
+        return self.invoke_structured(prompt, LocationListSchema, max_tokens=8000)
 
     def revise_narrative(self, narrative: str, critiques: list[str]) -> NarrativeSchema:
         """
@@ -166,7 +166,7 @@ CRITIQUES:
 Improve style and continuity while preserving the story. Make targeted prose improvements.
 Preserve the exact same structure: title, acts with act_number/act_name, scenes with scene_number/location/characters/time/text."""
 
-        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=16000)
+        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=8000)
 
     def revise_narrative_structured(
         self,
@@ -204,7 +204,7 @@ Preserve the exact same structure: title, acts with act_number/act_name, scenes 
 Return the complete revised narrative."""
 
         # Use 16000 tokens for full narrative revision
-        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=16000)
+        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=8000)
 
     def revise_scene(
         self,
@@ -256,4 +256,4 @@ REVISION GUIDELINES:
 
 Return the revised scene with improved prose."""
 
-        return self.invoke_structured(prompt, SceneProseSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, SceneProseSchema, max_tokens=8000)

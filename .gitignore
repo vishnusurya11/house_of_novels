@@ -26,6 +26,7 @@ output/
 forge/
 nul
 generated_*.txt
+.llm_cache/
 
 # IDE
 .idea/

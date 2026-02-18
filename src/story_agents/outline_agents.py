@@ -130,7 +130,7 @@ Rules:
 - Keep character count under {max_characters} total
 - Focus on depth over breadth"""
 
-        return self.invoke_structured(prompt, OutlineSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, OutlineSchema, max_tokens=8000)
 
     def revise_outline(self, current_outline: str, critiques: list[str]) -> OutlineSchema:
         """
@@ -161,7 +161,7 @@ Keep the same JSON structure but improve:
 - Character motivations if unclear
 - Story beats if missing Hero's Journey elements"""
 
-        return self.invoke_structured(prompt, OutlineSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, OutlineSchema, max_tokens=8000)
 
 
 class StructureCriticAgent(BaseStoryAgent):
@@ -229,7 +229,7 @@ Focus on:
 - Character agency issues
 - Structural imbalances"""
 
-        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=8000)
 
 
 class PacingCriticAgent(BaseStoryAgent):
@@ -296,4 +296,4 @@ Calculate and mention:
 - Any pacing dead zones or rushed sections
 - Tension curve assessment"""
 
-        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=8000)

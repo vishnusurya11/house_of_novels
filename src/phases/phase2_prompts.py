@@ -457,8 +457,8 @@ def run_phase2_prompts(
     # Step 4: Scene Image Prompts (One image per scene)
     # =========================================================================
     scene_image_prompt_count = 0
-    narrative = story.get("narrative", {})
-    chapters = narrative.get("chapters", [])
+    chapter_outline = story.get("chapters", {})
+    chapters = chapter_outline.get("chapters", [])
 
     # Count total scenes for progress reporting
     total_scenes = sum(len(ch.get("scenes", [])) for ch in chapters)
@@ -530,8 +530,8 @@ def run_phase2_prompts(
                         "error": str(e),
                     })
 
-        # Update narrative with modified chapters and save after Step 4
-        codex["story"]["narrative"] = narrative
+        # Scene prompts are already updated directly in codex.story.chapters
+        # No need to save separate narrative structure
         step_timings["step4_scene_images"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
 

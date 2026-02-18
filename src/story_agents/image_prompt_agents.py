@@ -235,7 +235,7 @@ Generate output with:
 - style_applied: "{style}"
 - key_elements: List of 5-8 key visual elements included in the prompt (e.g., "emerald green eyes", "weathered leather jacket", "confident stance")"""
 
-        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=1500)
+        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, style)
         return result
 
@@ -305,7 +305,7 @@ Generate output with:
 - style_applied: "{style}"
 - key_elements: List of 5-8 key visual elements included in the prompt (e.g., "golden hour lighting", "ancient stone walls", "misty atmosphere")"""
 
-        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=1500)
+        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, style)
         return result
 
@@ -421,7 +421,7 @@ Generate output with:
 - style_applied: "{style}"
 - key_elements: List of 6-10 key visual elements included in the prompt (e.g., "dramatic confrontation pose", "sunset lighting through windows", "character's red cloak flowing")"""
 
-        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=2000)
+        result = self.invoke_structured(prompt, ImagePromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, style)
         return result
 
@@ -458,7 +458,7 @@ Generate output with:
 - style_applied: The art style used in the revised prompt
 - key_elements: List of 6-10 key visual elements included in the revised prompt"""
 
-        return self.invoke_structured(revision_prompt, ImagePromptSchema, max_tokens=2000)
+        return self.invoke_structured(revision_prompt, ImagePromptSchema, max_tokens=8000)
 
 
 class SceneImagePromptCriticAgent(BaseStoryAgent):
@@ -544,7 +544,7 @@ Provide:
 - suggestions: List of how to fix each issue
 - severity: "minor", "moderate", or "major" """
 
-        return self.invoke_structured(critique_prompt, ShotPromptCritiqueSchema, max_tokens=1000)
+        return self.invoke_structured(critique_prompt, ShotPromptCritiqueSchema, max_tokens=8000)
 
 
 class StoryPosterPromptAgent(BaseStoryAgent):
@@ -665,7 +665,7 @@ Generate output with:
 - title_placement: Where the title appears (e.g., "top center", "bottom third")
 - style_applied: "{style}" """
 
-        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=2000)
+        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, style)
         return result
 
@@ -704,7 +704,7 @@ Generate output with:
 - title_placement: Where the title appears (e.g., "top center", "bottom third")
 - style_applied: The art style used in the revised prompt"""
 
-        return self.invoke_structured(revision_prompt, PosterPromptSchema, max_tokens=2000)
+        return self.invoke_structured(revision_prompt, PosterPromptSchema, max_tokens=8000)
 
 
 class StoryPosterCriticAgent(BaseStoryAgent):
@@ -769,7 +769,7 @@ Provide:
 - suggestions: List of how to make it more epic
 - severity: "minor", "moderate", or "major" """
 
-        return self.invoke_structured(critique_prompt, ShotPromptCritiqueSchema, max_tokens=1000)
+        return self.invoke_structured(critique_prompt, ShotPromptCritiqueSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -1006,7 +1006,7 @@ NOW generate output with:
 - title_placement: Where the title appears (e.g., "top center", "bottom third")
 - style_applied: "cinematic {base_style}" """
 
-        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=2000)
+        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, base_style)
         # CRITICAL: Validate title is in prompt - AI image generators need actual title text
         title = outline.get('title', 'Untitled')
@@ -1177,7 +1177,7 @@ NOW generate output with:
 - title_placement: Where the title appears (e.g., "top center", "bottom", "integrated into clouds")
 - style_applied: "illustrated {base_style}" """
 
-        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=2000)
+        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, base_style)
         # CRITICAL: Validate title is in prompt - AI image generators need actual title text
         title = outline.get('title', 'Untitled')
@@ -1346,7 +1346,7 @@ NOW generate output with:
 - title_placement: Where the title appears (e.g., "dominating center", "bottom", "integrated into design")
 - style_applied: "graphic {base_style}" """
 
-        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=2000)
+        result = self.invoke_structured(prompt, PosterPromptSchema, max_tokens=8000)
         result.prompt = ensure_style_in_prompt(result.prompt, base_style)
         # CRITICAL: Validate title is in prompt - AI image generators need actual title text
         title = outline.get('title', 'Untitled')
@@ -1457,7 +1457,7 @@ As the VISUAL IMPACT juror, rank your TOP 3 choices based on:
 Provide your first_choice, second_choice, and third_choice as the indices (0-{len(prompts)-1}).
 Include brief reasoning for your ranking."""
 
-        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=500)
+        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=8000)
 
 
 class PosterJuryStoryAgent(BaseStoryAgent):
@@ -1523,7 +1523,7 @@ As the STORY CLARITY juror, rank your TOP 3 choices based on:
 Provide your first_choice, second_choice, and third_choice as the indices (0-{len(prompts)-1}).
 Include brief reasoning for your ranking."""
 
-        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=500)
+        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=8000)
 
 
 class PosterJuryAestheticAgent(BaseStoryAgent):
@@ -1587,7 +1587,7 @@ As the AESTHETIC QUALITY juror, rank your TOP 3 choices based on:
 Provide your first_choice, second_choice, and third_choice as the indices (0-{len(prompts)-1}).
 Include brief reasoning for your ranking."""
 
-        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=500)
+        return self.invoke_structured(voting_prompt, JuryVoteSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -1795,7 +1795,7 @@ REQUIREMENTS:
 
 The FIRST and LAST frame should show PROGRESSION - the camera moves, characters shift position, expressions change."""
 
-        return self.invoke_structured(prompt, ShotFramePromptSchema, max_tokens=3000)
+        return self.invoke_structured(prompt, ShotFramePromptSchema, max_tokens=8000)
 
     def revise_prompts(
         self,
@@ -1835,7 +1835,7 @@ SHOT CONTEXT:
 
 Fix ALL issues, especially any scores below 8. Maintain 300-500 words per prompt."""
 
-        return self.invoke_structured(prompt, ShotFramePromptSchema, max_tokens=3000)
+        return self.invoke_structured(prompt, ShotFramePromptSchema, max_tokens=8000)
 
 
 class ShotFrameCriticAgent(BaseStoryAgent):
@@ -1940,7 +1940,7 @@ LOCATION PROFILE:
 Score each category 1-10 and provide specific suggestions for any score below 8.
 Check that character NAMES do not appear - only physical descriptions."""
 
-        return self.invoke_structured(prompt, ShotFrameCritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, ShotFrameCritiqueSchema, max_tokens=8000)
 
 
 # =============================================================================

@@ -60,18 +60,18 @@ def extract_story_data(codex: dict) -> dict:
     """Extract relevant story data from codex for metadata generation."""
     story = codex.get("story", {})
     outline = story.get("outline", {})
-    narrative = story.get("narrative", {})
+    chapters_data = story.get("chapters", {})
     characters = story.get("characters", [])
 
-    # Get title and logline - prioritize narrative.title (from Step 7 title naming)
-    title = narrative.get("title", outline.get("title", "Untitled Story"))
+    # Get title and logline - prioritize chapters_data.title (from Step 7 title naming)
+    title = chapters_data.get("title", outline.get("title", "Untitled Story"))
     logline = outline.get("logline", "A captivating story.")
 
-    # Extract scene summaries from narrative (chapters structure)
+    # Extract scene summaries from chapters structure
     scene_summaries = []
-    for chapter in narrative.get("chapters", []):
+    for chapter in chapters_data.get("chapters", []):
         for scene in chapter.get("scenes", []):
-            summary = scene.get("summary", "")
+            summary = scene.get("scene_summary", "")
             if summary:
                 scene_summaries.append(summary)
 

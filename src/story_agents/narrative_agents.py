@@ -124,7 +124,7 @@ The closing paragraph resolves or hooks to the next scene."""
             # Use structured output with token limit to prevent hitting model limits
             # 4000 tokens allows for ~800-900 words of prose with JSON overhead
             result: SceneProseSchema = self.invoke_structured(
-                prompt, SceneProseSchema, max_tokens=4000
+                prompt, SceneProseSchema, max_tokens=8000
             )
             return result.to_prose()
         except Exception as e:
@@ -233,7 +233,7 @@ Focus on:
 - Prose rhythm and variety
 - Show don't tell violations"""
 
-        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=8000)
 
 
 class ContinuityCriticAgent(BaseStoryAgent):
@@ -313,4 +313,4 @@ Focus on:
 - Character knowledge (no premature revelations)
 - Object and prop tracking"""
 
-        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=8000)

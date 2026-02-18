@@ -70,7 +70,7 @@ Make the other pressures support and reinforce the social structure.
 
 Return a WorldPressureProposal with your design."""
 
-        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=2000)
+        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=8000)
 
     def critique_world_pressures(
         self,
@@ -98,7 +98,7 @@ Evaluate:
 Score 1-10 and explain strengths/weaknesses."""
 
             critique = self.invoke_structured(
-                user_prompt, WorldPressureCritique, max_tokens=1500
+                user_prompt, WorldPressureCritique, max_tokens=8000
             )
             critique.proposal_index = i
             critiques.append(critique)
@@ -126,7 +126,7 @@ Score 1-10 and explain strengths/weaknesses."""
 Which proposal creates the most compelling social pressures that test the theme?
 Return your vote as a WorldPressureVote."""
 
-        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=1000)
+        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=8000)
 
 
 class WorldEconomistAgent(BaseStoryAgent):
@@ -183,7 +183,7 @@ Make the other pressures support and reinforce the economic reality.
 
 Return a WorldPressureProposal with your design."""
 
-        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=2000)
+        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=8000)
 
     def critique_world_pressures(
         self,
@@ -211,7 +211,7 @@ Evaluate:
 Score 1-10 and explain strengths/weaknesses."""
 
             critique = self.invoke_structured(
-                user_prompt, WorldPressureCritique, max_tokens=1500
+                user_prompt, WorldPressureCritique, max_tokens=8000
             )
             critique.proposal_index = i
             critiques.append(critique)
@@ -239,7 +239,7 @@ Score 1-10 and explain strengths/weaknesses."""
 Which proposal creates the most compelling economic pressures that test the theme?
 Return your vote as a WorldPressureVote."""
 
-        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=1000)
+        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=8000)
 
 
 class WorldPoliticianAgent(BaseStoryAgent):
@@ -296,7 +296,7 @@ Make the other pressures support and reinforce the political reality.
 
 Return a WorldPressureProposal with your design."""
 
-        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=2000)
+        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=8000)
 
     def critique_world_pressures(
         self,
@@ -324,7 +324,7 @@ Evaluate:
 Score 1-10 and explain strengths/weaknesses."""
 
             critique = self.invoke_structured(
-                user_prompt, WorldPressureCritique, max_tokens=1500
+                user_prompt, WorldPressureCritique, max_tokens=8000
             )
             critique.proposal_index = i
             critiques.append(critique)
@@ -352,7 +352,7 @@ Score 1-10 and explain strengths/weaknesses."""
 Which proposal creates the most compelling political pressures that test the theme?
 Return your vote as a WorldPressureVote."""
 
-        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=1000)
+        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=8000)
 
 
 class WorldCulturalistAgent(BaseStoryAgent):
@@ -409,7 +409,7 @@ Make the other pressures support and reinforce the cultural reality.
 
 Return a WorldPressureProposal with your design."""
 
-        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=2000)
+        return self.invoke_structured(user_prompt, WorldPressureProposal, max_tokens=8000)
 
     def critique_world_pressures(
         self,
@@ -437,7 +437,7 @@ Evaluate:
 Score 1-10 and explain strengths/weaknesses."""
 
             critique = self.invoke_structured(
-                user_prompt, WorldPressureCritique, max_tokens=1500
+                user_prompt, WorldPressureCritique, max_tokens=8000
             )
             critique.proposal_index = i
             critiques.append(critique)
@@ -465,4 +465,4 @@ Score 1-10 and explain strengths/weaknesses."""
 Which proposal creates the most compelling cultural pressures that test the theme?
 Return your vote as a WorldPressureVote."""
 
-        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=1000)
+        return self.invoke_structured(user_prompt, WorldPressureVote, max_tokens=8000)

@@ -132,7 +132,8 @@ For each issue found, provide specific rewrite suggestions.
 
 Be merciless. Good prose comes from ruthless editing."""
 
-        return self.invoke_structured(prompt, ProsePolishCritique, max_tokens=3000)
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, ProsePolishCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))
 
 
 # =============================================================================
@@ -277,7 +278,8 @@ For each mismatch, provide:
 
 Score each factor 1-10 and provide overall voice score."""
 
-        return self.invoke_structured(prompt, CharacterVoiceCritique, max_tokens=3000)
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, CharacterVoiceCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))
 
 
 # =============================================================================
@@ -427,7 +429,8 @@ Check for:
 For each issue found, cite what the prose says vs what the codex says.
 Score overall continuity 1-10."""
 
-        return self.invoke_structured(prompt, ContinuityCritique, max_tokens=3000)
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, ContinuityCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))
 
 
 # =============================================================================
@@ -568,7 +571,8 @@ Evaluate:
 Provide specific paragraph numbers for slow/rushed spots.
 Score tension arc and overall pacing 1-10."""
 
-        return self.invoke_structured(prompt, PacingTensionCritique, max_tokens=2500)
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, PacingTensionCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))
 
 
 # =============================================================================
@@ -694,4 +698,5 @@ Evaluate:
 For skim risk areas, cite specific paragraph numbers.
 Score micro-tension and overall emotional resonance 1-10."""
 
-        return self.invoke_structured(prompt, EmotionalResonanceCritique, max_tokens=2500)
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, EmotionalResonanceCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))

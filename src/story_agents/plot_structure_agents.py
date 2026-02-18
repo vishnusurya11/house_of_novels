@@ -188,7 +188,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why these arcs work together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=16000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique all arc beat proposals."""
@@ -338,7 +338,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why these arcs are psychologically sound together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=16000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique arc proposals for psychological realism."""
@@ -473,7 +473,7 @@ Return format:
 - supporting_arcs: List of CharacterArcStructure for each supporting character (5-7 beats each)
 - reasoning: Why dramatically powerful together
 """
-        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=8000)
+        return self.invoke_structured(user_prompt, ArcBeatProposal, max_tokens=16000)
 
     def critique_arc_beats(self, proposals: list[ArcBeatProposal], theme_question: str) -> list[ArcBeatCritique]:
         """Critique arc proposals for dramatic impact."""
@@ -912,7 +912,7 @@ Return format:
 - integrated_beats: list of 15 IntegratedBeat objects (each with location_type)
 - reasoning: Why this integration works for all characters
 """
-        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)
+        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=16000)
 
     def critique_integration(self, proposals: list[BeatIntegrationProposal], theme_question: str) -> list[BeatIntegrationCritique]:
         """Critique integration proposals."""
@@ -1036,7 +1036,7 @@ Return format:
 - integrated_beats: 15 IntegratedBeat objects (each with clear thematic_test and location_type)
 - reasoning: How theme is explored through all characters
 """
-        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)
+        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=16000)
 
     def critique_integration(self, proposals: list[BeatIntegrationProposal], theme_question: str) -> list[BeatIntegrationCritique]:
         """Critique for thematic strength."""
@@ -1163,7 +1163,7 @@ Return format:
 - integrated_beats: 15 IntegratedBeat objects (strong conflict focus, with location_type)
 - reasoning: How conflict escalates through all characters
 """
-        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=4000)
+        return self.invoke_structured(user_prompt, BeatIntegrationProposal, max_tokens=16000)
 
     def critique_integration(self, proposals: list[BeatIntegrationProposal], theme_question: str) -> list[BeatIntegrationCritique]:
         """Critique for conflict strength."""

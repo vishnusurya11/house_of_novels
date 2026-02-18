@@ -189,6 +189,79 @@ def run_phase1_author(
     print(f"\n>>> Phase 1 complete!")
     print(f">>> Steps completed: {steps_completed}")
 
+    # Display timing summary
+    if step_timings:
+        print(f"\n{'='*60}")
+        print("TIMING SUMMARY")
+        print(f"{'='*60}")
+        total_duration = 0
+        step_names = {
+            'step0_theme_foundation': 'Step 0 (Theme Foundation)',
+            'step1_character_creation': 'Step 1 (Character Creation)',
+            'step2_story_shape_genre': 'Step 2 (Story Shape & Genre)',
+            'step3_plot_structure': 'Step 3 (Plot Structure)',
+            'step4_world_building': 'Step 4 (World Building)',
+            'step5_chapter_scene_breakdown': 'Step 5 (Chapter & Scene Breakdown)',
+            'step5b_foreshadowing_analysis': 'Step 5B (Foreshadowing)',
+            'step5c_interconnection_analysis': 'Step 5C (Interconnection)',
+            'step6_narrative': 'Step 6 (Scene Narrative Writing)',
+            'step7_revision': 'Step 7 (Narrative Revision)',
+            'step8_naming': 'Step 8 (Title Naming)',
+        }
+
+        for step_key, duration in sorted(step_timings.items()):
+            step_name = step_names.get(step_key, step_key)
+            minutes = int(duration // 60)
+            seconds = duration % 60
+            if minutes > 0:
+                time_str = f"{minutes}m {seconds:.1f}s"
+            else:
+                time_str = f"{seconds:.1f}s"
+            print(f"  {step_name}: {time_str}")
+            total_duration += duration
+
+        total_minutes = int(total_duration // 60)
+        total_seconds = total_duration % 60
+        if total_minutes > 0:
+            total_time_str = f"{total_minutes}m {total_seconds:.1f}s"
+        else:
+            total_time_str = f"{total_seconds:.1f}s"
+        print(f"\n  TOTAL: {total_time_str}")
+        print(f"{'='*60}")
+
+    # Display token usage summary
+    if codex.get("metadata", {}).get("phase_1", {}).get("step_tokens"):
+        print(f"\n{'='*60}")
+        print("TOKEN USAGE SUMMARY")
+        print(f"{'='*60}")
+
+        step_tokens = codex["metadata"]["phase_1"]["step_tokens"]
+        total_tokens = codex["metadata"]["phase_1"].get("total_tokens", 0)
+        total_calls = codex["metadata"]["phase_1"].get("total_calls", 0)
+
+        step_names = {
+            'step0': 'Step 0 (Theme Foundation)',
+            'step1': 'Step 1 (Character Creation)',
+            'step2': 'Step 2 (Story Shape & Genre)',
+            'step3': 'Step 3 (Plot Structure)',
+            'step4': 'Step 4 (World Building)',
+            'step5': 'Step 5 (Chapter & Scene Breakdown)',
+            'step5b': 'Step 5B (Foreshadowing)',
+            'step5c': 'Step 5C (Interconnection)',
+            'step6': 'Step 6 (Scene Narrative Writing)',
+            'step7': 'Step 7 (Narrative Revision)',
+            'step8': 'Step 8 (Title Naming)',
+        }
+
+        for step_key, token_data in sorted(step_tokens.items()):
+            step_name = step_names.get(step_key, step_key)
+            tokens = token_data.get('total_tokens', 0)
+            calls = token_data.get('call_count', 0)
+            print(f"  {step_name}: {tokens:,} tokens ({calls} LLM calls)")
+
+        print(f"\n  TOTAL: {total_tokens:,} tokens ({total_calls} LLM calls)")
+        print(f"{'='*60}")
+
     return Phase1AuthorResult(
         codex_path=codex_path,
         outline=outline,

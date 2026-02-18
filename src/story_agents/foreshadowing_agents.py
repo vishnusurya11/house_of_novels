@@ -163,7 +163,7 @@ Give an overall assessment.
 """
 
         from ..story_schemas import ForeshadowingCritique
-        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=8000)
 
     def vote_on_priorities(self, analyses: list[dict], critiques: list[dict]) -> dict:
         """Vote on which payoffs are essential vs nice-to-have.
@@ -204,7 +204,7 @@ Provide your vote with reasoning.
 """
 
         from ..story_schemas import ForeshadowingVote
-        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=2000)
+        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=8000)
 
     # Helper methods
     def _format_chapters(self, outline: dict) -> str:
@@ -411,7 +411,7 @@ Identify essential payoffs requiring strict 3x enforcement.
 """
 
         from ..story_schemas import ForeshadowingCritique
-        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=8000)
 
     def vote_on_priorities(self, analyses: list[dict], critiques: list[dict]) -> dict:
         """Vote on priorities."""
@@ -434,7 +434,7 @@ Provide vote with reasoning.
 """
 
         from ..story_schemas import ForeshadowingVote
-        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=2000)
+        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=8000)
 
     # Helper methods (reuse from SetupPayoffAgent)
     def _format_chapters(self, outline: dict) -> str:
@@ -609,7 +609,7 @@ Provide 3-5 specific critiques.
 """
 
         from ..story_schemas import ForeshadowingCritique
-        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=3000)
+        return self.invoke_structured(prompt, ForeshadowingCritique, max_tokens=8000)
 
     def vote_on_priorities(self, analyses: list[dict], critiques: list[dict]) -> dict:
         """Vote on priorities."""
@@ -632,7 +632,7 @@ Provide vote with reasoning.
 """
 
         from ..story_schemas import ForeshadowingVote
-        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=2000)
+        return self.invoke_structured(prompt, ForeshadowingVote, max_tokens=8000)
 
     # Helper methods
     def _format_chapters(self, outline: dict) -> str:

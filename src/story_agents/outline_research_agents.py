@@ -95,7 +95,7 @@ Output as a JSON list of research insights."""
         result = self.invoke_structured(
             prompt,
             schema=ResearchInsightsListSchema,
-            max_tokens=2000
+            max_tokens=8000
         )
 
         return result.insights
@@ -150,7 +150,7 @@ Output structured JSON with:
 - theme: Central theme
 - emotional_arc: Emotional journey from beginning to end"""
 
-        return self.invoke_structured(prompt, HighLevelStructureSchema, max_tokens=2000)
+        return self.invoke_structured(prompt, HighLevelStructureSchema, max_tokens=8000)
 
 
 class BeatSheetAgent(BaseStoryAgent):
@@ -258,7 +258,7 @@ ACT 3 BEATS ({act3_scenes} beats - one per scene):
 
 Output structured JSON with act1_beats, act2_beats, act3_beats as lists of strings."""
 
-        return self.invoke_structured(prompt, BeatSheetSchema, max_tokens=3000)
+        return self.invoke_structured(prompt, BeatSheetSchema, max_tokens=8000)
 
 
 class SceneBuilderAgent(BaseStoryAgent):
@@ -353,7 +353,7 @@ Output JSON array of scenes matching SceneSchema."""
         result = self.invoke_structured(
             prompt,
             schema=SceneListSchema,
-            max_tokens=3000
+            max_tokens=8000
         )
 
         return ActSchema(

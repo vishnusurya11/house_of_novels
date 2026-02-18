@@ -112,9 +112,14 @@ class BaseTemplate(ABC):
         with open(codex_path, "r", encoding="utf-8") as f:
             codex = json.load(f)
 
-        # Check for required narrative structure
+        # Check for required chapters structure
         story = codex.get("story", {})
-        if not story.get("narrative", {}).get("acts"):
+        chapters_data = story.get("chapters", {})
+        if not chapters_data.get("chapters"):
+            return False
+        first_ch = chapters_data["chapters"][0] if chapters_data["chapters"] else {}
+        first_sc = first_ch.get("scenes", [{}])[0] if first_ch.get("scenes") else {}
+        if not first_sc.get("prose"):
             return False
         if not story.get("characters"):
             return False

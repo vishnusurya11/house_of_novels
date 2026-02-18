@@ -113,7 +113,7 @@ Design a name that:
 
 Provide a proposal matching LocationNameProposal schema."""
 
-        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=8000)
 
     def critique_name(
         self,
@@ -140,7 +140,7 @@ Evaluate:
 
 Provide a critique matching LocationNameCritique schema."""
 
-        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -169,7 +169,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationNameVote schema."""
 
-        return self.invoke_structured(prompt, LocationNameVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationNameVote, max_tokens=8000)
 
 
 class LocationNameAuthenticAgent(BaseStoryAgent):
@@ -245,7 +245,7 @@ Consider: Who would have named this place? When? Why?
 
 Provide a proposal matching LocationNameProposal schema."""
 
-        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=8000)
 
     def critique_name(
         self,
@@ -272,7 +272,7 @@ Evaluate:
 
 Provide a critique matching LocationNameCritique schema."""
 
-        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -301,7 +301,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationNameVote schema."""
 
-        return self.invoke_structured(prompt, LocationNameVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationNameVote, max_tokens=8000)
 
 
 class LocationNameThematicAgent(BaseStoryAgent):
@@ -369,7 +369,7 @@ Consider: How does this location relate to the thematic question? What transform
 
 Provide a proposal matching LocationNameProposal schema."""
 
-        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameProposal, max_tokens=8000)
 
     def critique_name(
         self,
@@ -396,7 +396,7 @@ Evaluate:
 
 Provide a critique matching LocationNameCritique schema."""
 
-        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationNameCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -425,7 +425,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationNameVote schema."""
 
-        return self.invoke_structured(prompt, LocationNameVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationNameVote, max_tokens=8000)
 
 
 # =============================================================================
@@ -499,7 +499,7 @@ Write 2-4 sentences of immersive sensory description.
 
 Provide a proposal matching LocationPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=8000)
 
     def critique_physical(
         self,
@@ -524,7 +524,7 @@ Evaluate:
 
 Provide a critique matching LocationPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -551,7 +551,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=8000)
 
 
 class LocationPhysicalFunctionalAgent(BaseStoryAgent):
@@ -621,7 +621,7 @@ Write 2-4 sentences focused on functional spatial description.
 
 Provide a proposal matching LocationPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=8000)
 
     def critique_physical(
         self,
@@ -646,7 +646,7 @@ Evaluate:
 
 Provide a critique matching LocationPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -673,7 +673,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=8000)
 
 
 class LocationPhysicalSymbolicAgent(BaseStoryAgent):
@@ -743,7 +743,7 @@ Write 2-4 sentences of symbolically meaningful physical description.
 
 Provide a proposal matching LocationPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationPhysicalProposal, max_tokens=8000)
 
     def critique_physical(
         self,
@@ -770,7 +770,7 @@ Evaluate:
 
 Provide a critique matching LocationPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationPhysicalCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -799,7 +799,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationPhysicalVote, max_tokens=8000)
 
 
 # =============================================================================
@@ -873,7 +873,7 @@ Write 2-3 sentences focused on emotional tone and mood.
 
 Provide a proposal matching LocationAtmosphereProposal schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=8000)
 
     def critique_atmosphere(
         self,
@@ -898,7 +898,7 @@ Evaluate:
 
 Provide a critique matching LocationAtmosphereCritique schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -925,7 +925,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationAtmosphereVote schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=8000)
 
 
 class LocationAtmosphereConflictAgent(BaseStoryAgent):
@@ -995,7 +995,7 @@ Write 2-3 sentences focused on tension and conflict potential.
 
 Provide a proposal matching LocationAtmosphereProposal schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=8000)
 
     def critique_atmosphere(
         self,
@@ -1020,7 +1020,7 @@ Evaluate:
 
 Provide a critique matching LocationAtmosphereCritique schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -1047,7 +1047,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationAtmosphereVote schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=8000)
 
 
 class LocationAtmosphereCharacterAgent(BaseStoryAgent):
@@ -1117,7 +1117,7 @@ Write 2-3 sentences focused on character-space psychological relationship.
 
 Provide a proposal matching LocationAtmosphereProposal schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationAtmosphereProposal, max_tokens=8000)
 
     def critique_atmosphere(
         self,
@@ -1144,7 +1144,7 @@ Evaluate:
 
 Provide a critique matching LocationAtmosphereCritique schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationAtmosphereCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -1171,7 +1171,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationAtmosphereVote schema."""
 
-        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationAtmosphereVote, max_tokens=8000)
 
 
 # =============================================================================
@@ -1247,7 +1247,7 @@ Design thematic significance that:
 
 Provide a proposal matching LocationThematicProposal schema."""
 
-        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=8000)
 
     def critique_thematic(
         self,
@@ -1275,7 +1275,7 @@ Evaluate:
 
 Provide a critique matching LocationThematicCritique schema."""
 
-        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -1305,7 +1305,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationThematicVote schema."""
 
-        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=8000)
 
 
 class LocationThematicContrastAgent(BaseStoryAgent):
@@ -1377,7 +1377,7 @@ Design thematic significance that:
 
 Provide a proposal matching LocationThematicProposal schema."""
 
-        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=8000)
 
     def critique_thematic(
         self,
@@ -1405,7 +1405,7 @@ Evaluate:
 
 Provide a critique matching LocationThematicCritique schema."""
 
-        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -1435,7 +1435,7 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationThematicVote schema."""
 
-        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=8000)
 
 
 class LocationThematicEvolutionAgent(BaseStoryAgent):
@@ -1509,7 +1509,7 @@ If characters visit multiple times, show how meaning changes.
 
 Provide a proposal matching LocationThematicProposal schema."""
 
-        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=2000)
+        return self.invoke_structured(prompt, LocationThematicProposal, max_tokens=8000)
 
     def critique_thematic(
         self,
@@ -1537,7 +1537,7 @@ Evaluate:
 
 Provide a critique matching LocationThematicCritique schema."""
 
-        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=1000)
+        return self.invoke_structured(prompt, LocationThematicCritique, max_tokens=8000)
 
     def vote(
         self,
@@ -1567,4 +1567,4 @@ You CANNOT vote for your own proposal.
 
 Provide a vote matching LocationThematicVote schema."""
 
-        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=500)
+        return self.invoke_structured(prompt, LocationThematicVote, max_tokens=8000)

@@ -97,7 +97,7 @@ Your methodology focus is "architecture" - physical structure and spatial logic.
 
 Provide a proposal matching LocationProposal schema."""
 
-        return self.invoke_structured(prompt, LocationProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -127,7 +127,7 @@ Evaluate:
 
 Provide a critique matching LocationCritique schema."""
 
-        return self.invoke_structured(prompt, LocationCritique, max_tokens=600)
+        return self.invoke_structured(prompt, LocationCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -154,7 +154,7 @@ You CANNOT vote for your own proposal (LOCATION_ARCHITECT).
 
 Provide a vote matching LocationVote schema."""
 
-        return self.invoke_structured(prompt, LocationVote, max_tokens=300)
+        return self.invoke_structured(prompt, LocationVote, max_tokens=8000)
 
 
 class LocationAtmosphereAgent(BaseStoryAgent):
@@ -228,7 +228,7 @@ Your methodology focus is "atmosphere" - sensory details and mood.
 
 Provide a proposal matching LocationProposal schema."""
 
-        return self.invoke_structured(prompt, LocationProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -258,7 +258,7 @@ Evaluate:
 
 Provide a critique matching LocationCritique schema."""
 
-        return self.invoke_structured(prompt, LocationCritique, max_tokens=600)
+        return self.invoke_structured(prompt, LocationCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -284,7 +284,7 @@ You CANNOT vote for your own proposal (LOCATION_ATMOSPHERE).
 
 Provide a vote matching LocationVote schema."""
 
-        return self.invoke_structured(prompt, LocationVote, max_tokens=300)
+        return self.invoke_structured(prompt, LocationVote, max_tokens=8000)
 
 
 class LocationNarrativeAgent(BaseStoryAgent):
@@ -358,7 +358,7 @@ Your methodology focus is "narrative function" - how the location serves the sto
 
 Provide a proposal matching LocationProposal schema."""
 
-        return self.invoke_structured(prompt, LocationProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -388,7 +388,7 @@ Evaluate:
 
 Provide a critique matching LocationCritique schema."""
 
-        return self.invoke_structured(prompt, LocationCritique, max_tokens=600)
+        return self.invoke_structured(prompt, LocationCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -415,7 +415,7 @@ You CANNOT vote for your own proposal (LOCATION_NARRATIVE).
 
 Provide a vote matching LocationVote schema."""
 
-        return self.invoke_structured(prompt, LocationVote, max_tokens=300)
+        return self.invoke_structured(prompt, LocationVote, max_tokens=8000)
 
 
 class LocationAudienceAgent(BaseStoryAgent):
@@ -489,7 +489,7 @@ Your methodology focus is "audience immersion" - reader visualization and memora
 
 Provide a proposal matching LocationProposal schema."""
 
-        return self.invoke_structured(prompt, LocationProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -518,7 +518,7 @@ Evaluate:
 
 Provide a critique matching LocationCritique schema."""
 
-        return self.invoke_structured(prompt, LocationCritique, max_tokens=600)
+        return self.invoke_structured(prompt, LocationCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -544,4 +544,4 @@ You CANNOT vote for your own proposal (LOCATION_AUDIENCE).
 
 Provide a vote matching LocationVote schema."""
 
-        return self.invoke_structured(prompt, LocationVote, max_tokens=300)
+        return self.invoke_structured(prompt, LocationVote, max_tokens=8000)
