@@ -3505,6 +3505,12 @@ class NarrativeProseSynthesis(BaseModel):
     sensory_selection: SensorySelectionMetadata
     voice_ratio: VoiceRatioReport
 
+    # Scene opening type
+    opening_type: str = Field(
+        default="SENSORY_DETAIL",
+        description="Scene opening type used: IN_MEDIAS_RES, DIALOGUE, SENSORY_DETAIL, CHARACTER_ACTION, INTERNAL_THOUGHT, CONTRAST, MYSTERY_HOOK, TEMPORAL_ANCHOR, OBJECT_FOCUS, EMOTIONAL_STATE"
+    )
+
     # The actual prose
     opening_paragraph: str = Field(..., min_length=100, description="First paragraph (100-200 words)")
     middle_paragraphs: list[str] = Field(

@@ -93,6 +93,44 @@ Flag these: nodded his head, shrugged shoulders, blinked eyes, stood up, sat dow
 === SENTENCE VARIETY ===
 Flag if 3+ sentences in a row have similar length/structure.
 
+=== AI-GENERATED PROSE PATTERNS (Flag ALL) ===
+
+These patterns are fingerprints of AI writing. Flag every instance:
+
+THEMATIC SUMMARY ENDINGS:
+- Scene ends with "This was what it meant to..." or "Perhaps this was..."
+- Scene ends with rhetorical question summarizing the theme
+- Last paragraph is an abstract essay about what the scene proved
+- Flag as: "AI_ENDING: Scene ends with thematic summary instead of image/action/dialogue"
+
+REPEATED AI PHRASES (flag if ANY appear):
+- "fragile hope" or any "fragile [abstract noun]"
+- "the weight of [anything]"
+- "a [adjective] reminder that/of"
+- "not just X, but Y" formula
+- "resolve hardened/flickered/wavered"
+- "something shifted/broke inside"
+- "doubt gnawed" / "tension gripped" / "urgency pressed"
+- Flag as: "AI_PHRASE: [exact phrase] — replace with concrete detail"
+
+PARAGRAPH UNIFORMITY:
+- Check if 3+ consecutive paragraphs are 80-110 words each
+- Flag as: "AI_RHYTHM: Paragraphs [N-M] are all similar length. Vary deliberately."
+
+DIALOGUE SPARSITY:
+- Count dialogue lines in the scene
+- If fewer than 1 line per 150 words of prose, flag
+- Flag as: "AI_DIALOGUE: Only [N] dialogue lines in [M] words. Human authors use 2-3x more."
+
+PARTICIPIAL PHRASE ADDICTION:
+- Count sentences starting with "[Verb]-ing, [character]..." pattern
+- If more than 2 per scene, flag
+- Flag as: "AI_STRUCTURE: [N] participial openers. Vary sentence starts."
+
+ON-THE-NOSE DIALOGUE:
+- Characters stating their emotions directly: "I'm scared" / "I feel angry" / "I'm worried about..."
+- Flag as: "AI_DIALOGUE: On-the-nose. Show emotion through behavior/subtext, not statement."
+
 For each issue, provide:
 1. The exact text
 2. The context (surrounding words)
@@ -127,6 +165,10 @@ Find and report:
 6. ALL redundancies (nodded his head, shrugged shoulders)
 7. Sentence variety score (1-10)
 8. Overall prose polish score (1-10)
+9. AI prose pattern count (count all AI-specific patterns found from the AI-GENERATED PROSE PATTERNS checklist)
+10. Scene ending type: classify as "thematic_summary" / "rhetorical_question" / "image" / "action" / "dialogue" / "sensory"
+11. Dialogue density: lines of dialogue per 1000 words of prose
+12. Paragraph length variance: are paragraphs varied in length or uniform?
 
 For each issue found, provide specific rewrite suggestions.
 

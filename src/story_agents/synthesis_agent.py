@@ -165,6 +165,75 @@ Your synthesized prose must be 1500-2000 words, structured as:
    - Sensory + character state
    - Scene goal established
 
+=== ANTI-REPETITION: SCENE OPENINGS ===
+
+BANNED PATTERNS for opening paragraph:
+- "Dusk/Dawn/Night/Morning settled/fell/crept over..."
+- "The [time of day] air was..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any opening that starts with weather or time-of-day atmosphere
+
+Every scene opening MUST be DIFFERENT from the previous scene. Follow the assigned opening type strictly.
+
+=== BANNED VOCABULARY & AI TELLS ===
+
+NEVER USE these AI-overused words/phrases. They are fingerprints of machine writing:
+- "fragile hope" or "fragile [any abstract noun]"
+- "the weight of [anything]" (e.g., "the weight of silence", "the weight of responsibility")
+- "a [adjective] reminder that/of" (e.g., "a stark reminder", "a grim reminder", "a constant reminder")
+- "not just X, but Y" formula (e.g., "not just for her, but for everyone")
+- "the silence stretched between them"
+- "something shifted" or "something broke"
+- "resolve hardened" / "determination flickered" / "resolve wavered"
+- "doubt gnawed" / "tension gripped" / "urgency pressed"
+
+OVERUSED WORDS (use each NO MORE THAN ONCE per scene):
+shadow/shadows, beneath, pressed, fragile, resolve, unspoken, lingered, settled, shifted
+
+INSTEAD OF abstract emotion-settling phrases like "doubt gnawed at her" or "tension gripped him":
+- Show a SPECIFIC PHYSICAL ACTION: "She lined up the salt shakers by height."
+- Show a BEHAVIORAL CHOICE: "He walked past the phone without picking it up."
+- Show through DIALOGUE AVOIDANCE: what the character refuses to say
+
+=== SCENE ENDINGS: CONCRETE, NOT ABSTRACT ===
+
+End every scene with ONE of these (rotate, never repeat same type twice in a row):
+1. AN IMAGE: A concrete visual the reader can see. "The door stayed open. Nobody walked through it."
+2. A LINE OF DIALOGUE: Last word is spoken. Let the reader sit with it.
+3. AN ACTION: Character does something small and specific. "She folded the letter into the shape of a boat."
+4. A SENSORY DETAIL: Ground the ending in the body. "The coffee had gone cold."
+5. A QUESTION (internal, not rhetorical): Must be specific, not thematic. "Where had she put the key?"
+
+NEVER end with: thematic summary, rhetorical question about meaning, abstract emotional resolution,
+"And in that moment, [character] understood that...", "This was what it meant to...", or any
+sentence containing the word "reminder".
+
+=== PARAGRAPH & SENTENCE RHYTHM ===
+
+VARY paragraph length deliberately:
+- Include at least ONE single-sentence paragraph per scene (for impact)
+- Include at least ONE paragraph of 150+ words (for immersion)
+- NEVER let 3+ consecutive paragraphs be similar length (80-110 words)
+
+VARY sentence length aggressively:
+- Include at least TWO sentences under 6 words ("She ran." / "No." / "Gone.")
+- Include at least ONE sentence over 30 words
+- Use fragments deliberately: "Not yet. Not here."
+- Use run-ons for urgency: "She grabbed the bag and the keys and the photo from the mantel and she didn't look back."
+- NEVER write two consecutive sentences with the same grammatical structure
+
+=== DIALOGUE DENSITY ===
+
+MINIMUM 1 line of dialogue per 150 words of prose (aim for 10+ lines per 1500-word scene).
+Dialogue must include:
+- At least ONE interruption (em-dash mid-sentence: "I was going to—")
+- At least ONE trailing off (ellipsis: "I thought we could...")
+- At least ONE non-answer (character responds to a question with something unrelated)
+- At least ONE line where subtext contradicts surface meaning
+- Use "said" for tags. Do NOT use: murmured, whispered, proclaimed, declared, breathed, hissed
+  (unless truly whispering/hissing). Let the CONTENT carry the tone.
+
 2. Middle paragraphs (1200-1600 words, 3-10 paragraphs)
    - Goal → Conflict → Complications
    - Character interiority woven throughout
@@ -194,6 +263,7 @@ Return NarrativeProseSynthesis with:
         characters: list[dict],
         scene_context: dict,
         previous_scenes_senses: list[list[str]] = None,
+        opening_type: dict = None,
     ) -> NarrativeProseSynthesis:
         """
         Synthesize best elements from all proposals into unified scene.
@@ -219,6 +289,21 @@ Return NarrativeProseSynthesis with:
         dialogue_text = self._format_dialogue_analysis(dialogue_analysis, dialogue_vote)
         char_context = self._build_character_context(characters, scene_context)
         sensory_guidance = self._build_sensory_guidance(previous_scenes_senses, characters, scene_context)
+
+        # Build opening type guidance
+        opening_guidance = ""
+        if opening_type:
+            opening_guidance = f"""
+=== MANDATORY SCENE OPENING TYPE: {opening_type['label'].upper()} ===
+{opening_type['instruction']}
+
+EXAMPLE: {opening_type['example']}
+
+{opening_type['avoid']}
+
+Your opening_paragraph MUST follow this type. This is NON-NEGOTIABLE. Do NOT default to atmospheric/weather/time-of-day descriptions.
+
+"""
 
         prompt = f"""SYNTHESIZE the best elements from all 5 proposals into ONE unified scene (1500-2000 words).
 
@@ -246,7 +331,7 @@ Conflict: {scene_context.get('conflict', 'N/A')}
 Disaster/Resolution: {scene_context.get('disaster_or_resolution', 'N/A')}
 Ticking Clock: {scene_context.get('ticking_clock', 'N/A')}
 
-=== YOUR SYNTHESIS TASK ===
+{opening_guidance}=== YOUR SYNTHESIS TASK ===
 
 Step 1: SCORE EACH PROPOSAL on 5 dimensions (0-10):
    - Dialogue quality
@@ -288,6 +373,14 @@ Step 6: SELF-ASSESS:
    - Synthesis score (0-10)
    - Why this synthesis works (3-5 sentences)
    - Techniques integrated
+
+Step 7: DE-AI THE PROSE (Critical - do this BEFORE finalizing):
+   - Search your synthesized prose for EVERY instance of: "weight of", "fragile", "reminder", "resolve", "beneath", "shadow/shadows"
+   - Replace each with a CONCRETE SPECIFIC detail unique to this scene
+   - Check the LAST PARAGRAPH: if it contains a thematic summary or rhetorical question about meaning, REWRITE it to end on image/action/dialogue
+   - Count dialogue lines: if fewer than 10 in 1500 words, ADD more dialogue exchanges with interruptions and subtext
+   - Check paragraph lengths: if 3+ consecutive paragraphs are 80-110 words, BREAK the pattern (split one short, merge two together)
+   - Apply Elmore Leonard's test: "If it sounds like writing, rewrite it."
 
 === REQUIRED OUTPUT STRUCTURE ===
 

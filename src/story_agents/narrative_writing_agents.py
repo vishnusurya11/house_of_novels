@@ -161,7 +161,16 @@ When writing, integrate:
 - active/passive balance: {get_step_config('step6_prose_generation')['targets']['active_voice_percent']}% active for energy
 
 Write prose where the CHARACTER drives the narrative, not plot convenience.
-Your prose should be {get_step_config('step6_prose_generation')['targets']['words_per_scene_min']}-{get_step_config('step6_prose_generation')['targets']['words_per_scene_max']} words, rich with sensory detail and subtext."""
+Your prose should be {get_step_config('step6_prose_generation')['targets']['words_per_scene_min']}-{get_step_config('step6_prose_generation')['targets']['words_per_scene_max']} words, rich with sensory detail and subtext.
+
+=== BANNED OPENING PATTERNS ===
+NEVER start a scene with these clichéd patterns:
+- "[Time of day] settled/fell/crept over [location]"
+- "The air was thick/heavy/damp with..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any atmospheric weather-report opening
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
 
     def propose_prose(
         self,
@@ -498,7 +507,16 @@ LAYERED SENSORY TECHNIQUE:
 Example: "The market square stretched before her (visual), vendors calling prices like competing songbirds (sound), the air thick with woodsmoke and roasting meat (smell), cobblestones slick beneath her worn boots (texture). Her stomach cramped with hunger (internal)."
 
 Make the SETTING a character in the story.
-Your prose should be 1500-2000 words (INCREASED from 750-1000), rich with sensory detail."""
+Your prose should be 1500-2000 words (INCREASED from 750-1000), rich with sensory detail.
+
+=== BANNED OPENING PATTERNS ===
+NEVER start a scene with these clichéd patterns:
+- "[Time of day] settled/fell/crept over [location]"
+- "The air was thick/heavy/damp with..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any atmospheric weather-report opening
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
 
     def propose_prose(
         self,
@@ -509,6 +527,7 @@ Your prose should be 1500-2000 words (INCREASED from 750-1000), rich with sensor
         previous_prose: str,
         ticking_clock: dict,
         previous_scenes_senses: list[list[str]] = None,
+        opening_type: dict = None,
     ) -> NarrativeProseProposal:
         """Propose prose with focus on sensory immersion and atmosphere.
 
@@ -520,6 +539,7 @@ Your prose should be 1500-2000 words (INCREASED from 750-1000), rich with sensor
             previous_prose: Last scene's prose for continuity
             ticking_clock: Urgency context
             previous_scenes_senses: Last 3 scenes' primary senses (for variety)
+            opening_type: Opening type dict with label, instruction, example, avoid
         """
         if previous_scenes_senses is None:
             previous_scenes_senses = []
@@ -567,9 +587,24 @@ Your prose should be 1500-2000 words (INCREASED from 750-1000), rich with sensor
             personality_traits
         )
 
+        # Opening type guidance
+        opening_guidance = ""
+        if opening_type:
+            opening_guidance = f"""
+=== SCENE OPENING TYPE: {opening_type['label'].upper()} ===
+{opening_type['instruction']}
+
+EXAMPLE: {opening_type['example']}
+
+{opening_type['avoid']}
+
+Your opening paragraph MUST follow this opening type. Do NOT default to atmospheric time-of-day descriptions.
+
+"""
+
         prompt = f"""Write this scene focusing on SENSORY IMMERSION and ATMOSPHERE.
 
-SCENE CONTEXT:
+{opening_guidance}SCENE CONTEXT:
 - Time of Day: {scene_data.get('time_of_day', 'day')}
 - Scene Goal: {scene_data.get('goal', 'Continue story')}
 - Conflict: {scene_data.get('conflict', 'Obstacles arise')}
@@ -914,7 +949,16 @@ Example BAD: "In this world, people bow to show respect."
 Example GOOD: "She dipped her head as the merchant passed, as was proper."
 
 The world should feel LIVED-IN, not explained. NEVER stop action to describe world.
-Your prose should be 1500-2000 words (INCREASED from 750-1000)."""
+Your prose should be 1500-2000 words (INCREASED from 750-1000).
+
+=== BANNED OPENING PATTERNS ===
+NEVER start a scene with these clichéd patterns:
+- "[Time of day] settled/fell/crept over [location]"
+- "The air was thick/heavy/damp with..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any atmospheric weather-report opening
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
 
     def propose_prose(
         self,
@@ -1190,7 +1234,16 @@ TENSION TECHNIQUES:
 - Interrupted plans, complications that eat time
 
 The reader should feel the CLOCK TICKING throughout the prose.
-Your prose should be 1500-2000 words (INCREASED from 750-1000)."""
+Your prose should be 1500-2000 words (INCREASED from 750-1000).
+
+=== BANNED OPENING PATTERNS ===
+NEVER start a scene with these clichéd patterns:
+- "[Time of day] settled/fell/crept over [location]"
+- "The air was thick/heavy/damp with..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any atmospheric weather-report opening
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
 
     def propose_prose(
         self,
@@ -1455,6 +1508,43 @@ GROUNDING EXAMPLES:
    - An ache the character can't name
    - A small realization that changes everything
 
+=== ANTI-AI PROSE CRAFT (Critical) ===
+
+Your prose must be INDISTINGUISHABLE from a skilled human novelist. Kill these patterns:
+
+SCENE ENDINGS — NEVER end with:
+- Thematic summary ("This was what courage meant...")
+- Rhetorical questions about meaning ("Was this what it felt like to be free?")
+- Abstract emotional resolution ("And finally, she found peace.")
+- "And in that moment, [character] understood that..."
+- Any sentence containing "reminder"
+INSTEAD end with: a concrete image, a line of dialogue, a small physical action, a sensory detail.
+
+PARAGRAPH RHYTHM — REQUIRE:
+- At least ONE single-sentence paragraph ("She didn't look back.")
+- At least ONE paragraph over 150 words
+- NEVER three consecutive paragraphs of similar length (80-110 words)
+
+SENTENCE RHYTHM — REQUIRE:
+- At least TWO sentences under 6 words in the scene
+- At least ONE sentence over 30 words
+- Use fragments: "Not yet." / "Gone." / "Three days."
+- Use run-ons for urgency when appropriate
+
+DIALOGUE DENSITY — MINIMUM 10 lines of dialogue per 1500 words:
+- Include interruptions: "I was going to—"
+- Include trailing off: "I thought maybe we could..."
+- Include non-answers: Q: "Where were you?" A: "The coffee's cold."
+- Include subtext: say one thing, mean another
+- Use "said" as the default tag. Avoid murmured, whispered, proclaimed unless literally applicable.
+
+BANNED PHRASES (never use):
+"fragile hope", "the weight of", "a [adj] reminder", "resolve hardened",
+"something shifted", "doubt gnawed", "tension gripped", "not just X, but Y"
+
+BANNED WORDS (max 1x per scene each):
+shadow/shadows, beneath, fragile, pressed, resolve, unspoken, lingered, settled
+
 PROSE RHYTHM TECHNIQUES:
 - Tension moment: "He ran. The door. Locked. No time."
 - Reflection moment: "She watched the sun sink below the horizon, painting the sky in shades she had no words for, and wondered if this was the last sunset she would ever see."
@@ -1503,7 +1593,16 @@ QUALITY CHECKLIST:
 - Voice consistent with previous scenes (same sentence rhythm, vocabulary)
 
 Write PROFESSIONAL literary prose that flows naturally.
-Your prose should be 1500-2000 words (INCREASED from 750-1000)."""
+Your prose should be 1500-2000 words (INCREASED from 750-1000).
+
+=== BANNED OPENING PATTERNS ===
+NEVER start a scene with these clichéd patterns:
+- "[Time of day] settled/fell/crept over [location]"
+- "The air was thick/heavy/damp with..."
+- "Shadows lengthened/deepened across..."
+- "The [noun] hung heavy in the air"
+- Any atmospheric weather-report opening
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
 
     def propose_prose(
         self,
@@ -1573,6 +1672,15 @@ THINGS TO NEVER WRITE:
 - "He suddenly realized" (cut "suddenly", show the realization)
 - "She felt sad" (show her behavior that reveals sadness)
 - Adverbs after dialogue tags ("she said angrily")
+
+AI PATTERNS TO NEVER WRITE:
+- Scene ending that summarizes what the scene "meant" or asks a rhetorical question about the theme
+- "fragile hope", "the weight of", "a stark/grim/constant reminder"
+- More than 2 participial openers in a scene ("[Verb]-ing, she...")
+- Fewer than 10 dialogue lines in 1500 words
+- Three consecutive paragraphs of similar length (80-110 words each)
+- Abstract emotion-settling: "doubt gnawed", "tension gripped", "urgency pressed"
+- Instead of naming emotions, show CONCRETE BEHAVIOR: what the character DOES with their hands, eyes, voice
 
 STRUCTURE:
 - opening_paragraph: Connect to previous, establish rhythm (100-150 words)

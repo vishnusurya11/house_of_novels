@@ -194,6 +194,89 @@ from src.story_schemas import (
 if TYPE_CHECKING:
     from src.authors.base_author import BaseAuthor
 
+# Scene Opening Types for Step 6 prose variety
+SCENE_OPENING_TYPES = [
+    {
+        "type": "IN_MEDIAS_RES",
+        "label": "Mid-Action",
+        "instruction": "Begin the scene in the MIDDLE of an action already happening. No preamble, no setting description first — the character is already DOING something. The reader catches up.",
+        "example": "The knife slipped from her fingers and clattered against the tile just as the front door swung open.",
+        "avoid": "Do NOT open with setting, weather, or time of day.",
+    },
+    {
+        "type": "DIALOGUE",
+        "label": "Dialogue Opening",
+        "instruction": "Begin with a character speaking — a question, demand, confession, or argument. No attribution tag first, start with the spoken words. Ground the reader in WHO and WHERE within the next 2 sentences.",
+        "example": '"You have exactly thirty seconds to explain why there\'s blood on my floor."',
+        "avoid": "Do NOT open with description or narration before the dialogue.",
+    },
+    {
+        "type": "SENSORY_DETAIL",
+        "label": "Sensory Immersion",
+        "instruction": "Lead with ONE vivid, specific sensory detail (not sight) — a smell, texture, sound, or taste. Let that sensation anchor the reader physically before introducing character or plot.",
+        "example": "The air tasted of iron and wet stone, and somewhere beneath the floor, water was running.",
+        "avoid": "Do NOT default to visual description. Use smell, sound, touch, or taste.",
+    },
+    {
+        "type": "CHARACTER_ACTION",
+        "label": "Character in Action",
+        "instruction": "Show the POV character DOING something specific and character-revealing. Not walking or looking — a deliberate, meaningful physical action that tells us who they are.",
+        "example": "Marcus sorted the bills into three piles: ones he'd pay, ones he'd ignore, and ones he'd burn.",
+        "avoid": "Do NOT open with the character merely observing or arriving. They must be DOING.",
+    },
+    {
+        "type": "INTERNAL_THOUGHT",
+        "label": "Internal Monologue",
+        "instruction": "Begin inside the character's mind — a reaction, regret, realization, or decision. Use deep POV (no 'she thought' filter words). The reader should feel they ARE the character.",
+        "example": "She should have said no. She'd known it even as the word 'yes' left her mouth.",
+        "avoid": "Do NOT use filter words (thought, felt, noticed, realized). Show the thought directly.",
+    },
+    {
+        "type": "CONTRAST",
+        "label": "Contrast/Juxtaposition",
+        "instruction": "Open by placing two elements in TENSION — what was expected vs. what is, appearance vs. reality, calm vs. danger. The gap between them creates intrigue.",
+        "example": "The invitation said 'celebration.' The locked doors and drawn curtains said something else entirely.",
+        "avoid": "Do NOT just describe a setting. Create a contradiction or ironic gap.",
+    },
+    {
+        "type": "MYSTERY_HOOK",
+        "label": "Mystery/Question Hook",
+        "instruction": "Open with something UNEXPLAINED — a strange detail, an impossible situation, an unanswered question. The reader must keep reading to understand.",
+        "example": "The letter had been slipped under his door sometime during the night, written in handwriting he recognized as his own.",
+        "avoid": "Do NOT explain the mystery immediately. Let it hang.",
+    },
+    {
+        "type": "TEMPORAL_ANCHOR",
+        "label": "Time/Deadline Anchor",
+        "instruction": "Ground the scene with a specific time reference — a countdown, a deadline, a duration, a 'before/after' marker. Time itself creates urgency.",
+        "example": "Three days before the wedding, the groom's mother called to say she wouldn't be coming.",
+        "avoid": "Do NOT just state the time of day ('It was evening'). Use time as PRESSURE.",
+    },
+    {
+        "type": "OBJECT_FOCUS",
+        "label": "Object Close-Up",
+        "instruction": "Begin with a close-up on ONE specific physical object that carries emotional or narrative weight. Let the scene radiate outward from this focal point.",
+        "example": "The suitcase stood by the door, already packed, as it had been every morning that week.",
+        "avoid": "Do NOT describe the whole room. Focus on ONE object and what it implies.",
+    },
+    {
+        "type": "EMOTIONAL_STATE",
+        "label": "Raw Emotional State",
+        "instruction": "Lead with the character's raw emotional condition — not what they think, but what they FEEL as a physical, embodied state. The emotion should be shown through body sensation.",
+        "example": "The anger hadn't faded by morning. It had only changed shape, settling into something cold and patient.",
+        "avoid": "Do NOT name the emotion abstractly ('She felt sad'). Show it through physical sensation.",
+    },
+]
+
+
+def _select_opening_type(previous_types: list[str]) -> dict:
+    """Select an opening type, avoiding the last 3 used types."""
+    recent = set(previous_types[-3:])
+    available = [t for t in SCENE_OPENING_TYPES if t["type"] not in recent]
+    if not available:
+        available = SCENE_OPENING_TYPES  # All used recently — reset
+    return random.choice(available)
+
 
 @dataclass
 class Step0Result:
@@ -7621,6 +7704,7 @@ RELIGION:
         # Per-thread state for intra-chapter continuity
         previous_scene_prose = ""
         previous_scenes_senses = []
+        previous_opening_types = []  # Track opening types for variety
 
         chapter_scenes_narrative = []
         chapter_scene_debates = []
@@ -7636,6 +7720,10 @@ RELIGION:
             scene_id = f"ch{chapter_num}_scene{scene_num}"
 
             print(f"\n[Worker-{worker_id}]     --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
+
+            # Select opening type for variety
+            selected_opening = _select_opening_type(previous_opening_types)
+            print(f"[Worker-{worker_id}]     Opening type: {selected_opening['label']}")
 
             # Build scene context
             scene_context = {
@@ -7659,13 +7747,15 @@ RELIGION:
                                 _locations=locations, _world=world,
                                 _previous_prose=previous_scene_prose,
                                 _ticking_clock=ticking_clock,
-                                _previous_senses=previous_scenes_senses):
+                                _previous_senses=previous_scenes_senses,
+                                _opening=selected_opening):
                 if agent.name == "LOCATION_ATMOSPHERE":
                     return agent, agent.propose_prose(
                         scene_data=_scene_data, characters=_characters,
                         locations=_locations, world=_world,
                         previous_prose=_previous_prose, ticking_clock=_ticking_clock,
                         previous_scenes_senses=_previous_senses,
+                        opening_type=_opening,
                     )
                 else:
                     return agent, agent.propose_prose(
@@ -7787,6 +7877,7 @@ RELIGION:
                     dialogue_analysis=dialogue_analysis, dialogue_vote=dialogue_vote,
                     characters=characters, scene_context=scene_context,
                     previous_scenes_senses=previous_scenes_senses,
+                    opening_type=selected_opening,
                 )
                 final_prose = synthesis.to_prose()
                 scene_word_count = len(final_prose.split())
@@ -7862,6 +7953,7 @@ RELIGION:
                 "dialogue_score": dialogue_analysis.overall_dialogue_score if dialogue_analysis else 0,
                 "no_tag_test_passed": dialogue_analysis.no_tag_test_passed if dialogue_analysis else False,
                 "sensory_selection": synthesis.sensory_selection.primary_senses if synthesis else [],
+                "opening_type": synthesis.opening_type if synthesis else selected_opening["type"],
                 "active_voice_percentage": synthesis.voice_ratio.active_percentage if synthesis else 0,
                 "techniques_integrated": synthesis.techniques_integrated if synthesis else [],
             }
@@ -7894,6 +7986,7 @@ RELIGION:
 
             # Update previous prose for next scene continuity
             previous_scene_prose = final_prose
+            previous_opening_types.append(selected_opening["type"])
 
         # Assemble chapter result
         print(f"\n[Worker-{worker_id}]     >>> Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words")
