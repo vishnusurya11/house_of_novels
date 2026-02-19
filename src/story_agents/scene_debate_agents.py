@@ -105,13 +105,13 @@ You design scenes that MOVE THE PLOT FORWARD."""
 
         # Build characters summary (include ID so LLM can populate character_ids)
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown role')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown role')}"
             for c in characters[:5]
         ])
 
         # Build locations summary
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown type')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown type')}"
             for loc in locations[:5]
         ])
 
@@ -296,12 +296,12 @@ You design scenes that REVEAL and DEVELOP character."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
             for loc in locations[:5]
         ])
 
@@ -486,12 +486,12 @@ You design scenes that CREATE RHYTHM and MANAGE TENSION."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
             for loc in locations[:5]
         ])
 
@@ -680,12 +680,12 @@ You design scenes that SERVE THE STORY STRUCTURE."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown')}"
             for loc in locations[:5]
         ])
 

@@ -6038,7 +6038,7 @@ Provide a CultureCustoms schema with all required fields."""
                             "location_id": locations[0]["id"] if locations else "",
                             "pov_character": characters[0]["name"] if characters else "Protagonist",
                             "characters": [characters[0]["name"]] if characters else ["Protagonist"],
-                            "character_ids": [characters[0]["id"]] if characters else [],
+                            "character_ids": [characters[0].get("character_id", characters[0].get("id", ""))] if characters else [],
                             "goal": "Continue the journey",
                             "conflict": "Obstacles arise",
                             "outcome": "NO_AND",
@@ -6217,66 +6217,248 @@ RELIGION:
         return max(vote_counts, key=vote_counts.get)
 
     def _populate_scene_ids(self, chapter_outline: dict, codex: dict) -> None:
-        """Populate empty character_ids and location_id fields from names."""
-        characters = codex['story']['characters']
-        locations = codex['story']['locations']
+        """Populate scene IDs by resolving character/location names to canonical IDs."""
+        characters = codex.get('story', {}).get('characters', [])
+        locations = codex.get('story', {}).get('locations', [])
 
-        # Create name → ID maps
-        char_map = {c['name']: c['character_id'] for c in characters}
-        loc_map = {l['name']: l.get('id', l.get('location_id', '')) for l in locations}
+        # Build character name -> ID map (multiple lookup keys per character)
+        char_map = {}
+        for c in characters:
+            char_id = c.get('character_id', c.get('id', ''))
+            name = c.get('name', '')
+            if name and char_id:
+                char_map[name] = char_id
+                char_map[name.lower()] = char_id
+                # Add first name and last name entries
+                parts = name.split()
+                if len(parts) >= 1:
+                    char_map[parts[0]] = char_id
+                    char_map[parts[0].lower()] = char_id
+                if len(parts) >= 2:
+                    char_map[parts[-1]] = char_id
+                    char_map[parts[-1].lower()] = char_id
 
-        missing_warnings = []
+        # Build location name -> ID map
+        loc_map = {}
+        for loc in locations:
+            loc_id = loc.get('id', loc.get('location_id', ''))
+            name = loc.get('name', '')
+            if name and loc_id:
+                loc_map[name] = loc_id
+                loc_map[name.lower()] = loc_id
+                # Strip common prefixes
+                for prefix in ['The ', 'the ']:
+                    if name.startswith(prefix):
+                        stripped = name[len(prefix):]
+                        loc_map[stripped] = loc_id
+                        loc_map[stripped.lower()] = loc_id
+                # Also add type as lookup key
+                loc_type = loc.get('type', loc.get('location_type', ''))
+                if loc_type and loc_id:
+                    loc_map[loc_type] = loc_id
+                    loc_map[loc_type.lower()] = loc_id
 
-        for chapter in chapter_outline['chapters']:
-            for scene in chapter['scenes']:
-                scene_ref = f"Ch{chapter['chapter_number']} Scene {scene.get('scene_number', '?')}"
+        resolved_count = 0
+        total_scenes = 0
 
-                # POV character ID
-                if scene.get('pov_character') and not scene.get('pov_character_id'):
-                    pov_name = scene['pov_character']
-                    pov_id = char_map.get(pov_name, '')
-                    scene['pov_character_id'] = pov_id
-                    if not pov_id:
-                        missing_warnings.append(f"{scene_ref}: POV character '{pov_name}' not found in character map")
+        for chapter in chapter_outline.get('chapters', []):
+            for scene in chapter.get('scenes', []):
+                total_scenes += 1
 
-                # Location ID - always normalize to loc_XXX format
-                if scene.get('location'):
-                    loc_name = scene['location']
-                    loc_id = loc_map.get(loc_name, '')
-                    if not loc_id:
-                        # Fuzzy match: try without "The " prefix, try containment
-                        stripped = loc_name.lower().replace("the ", "").strip()
-                        for name, lid in loc_map.items():
-                            if name.lower().replace("the ", "").strip() == stripped:
-                                loc_id = lid
-                                break
-                        if not loc_id:
-                            for name, lid in loc_map.items():
-                                if stripped in name.lower() or name.lower() in stripped:
-                                    loc_id = lid
-                                    break
-                    scene['location_id'] = loc_id
-                    if not loc_id:
-                        missing_warnings.append(f"{scene_ref}: Location '{loc_name}' not found in location map")
+                # Always resolve pov_character_id
+                pov_name = scene.get('pov_character', '')
+                if pov_name:
+                    scene['pov_character_id'] = self._resolve_character_id(pov_name, char_map, characters)
 
-                # All character IDs
-                if scene.get('characters_present') and not scene.get('character_ids'):
-                    char_ids = []
-                    for name in scene['characters_present']:
-                        char_id = char_map.get(name, '')
-                        char_ids.append(char_id)
-                        if not char_id:
-                            missing_warnings.append(f"{scene_ref}: Character '{name}' not found in character map")
-                    scene['character_ids'] = char_ids
+                # Always resolve location_id
+                loc_name = scene.get('location', '')
+                if loc_name:
+                    scene['location_id'] = self._resolve_location_id(loc_name, loc_map, locations)
 
-        # Log warnings if any IDs are missing
-        if missing_warnings:
-            print(f"\n⚠️  WARNING: {len(missing_warnings)} scene ID mapping issues found:")
-            for warning in missing_warnings[:10]:  # Show first 10
-                print(f"    - {warning}")
-            if len(missing_warnings) > 10:
-                print(f"    ... and {len(missing_warnings) - 10} more")
-            print()
+                # Always resolve character_ids from name list
+                char_names = scene.get('characters_present', scene.get('characters', []))
+                if char_names:
+                    scene['character_ids'] = [
+                        self._resolve_character_id(name, char_map, characters)
+                        for name in char_names
+                    ]
+                    # Filter out empty strings
+                    scene['character_ids'] = [cid for cid in scene['character_ids'] if cid]
+
+                # Check if fully resolved
+                has_loc = bool(scene.get('location_id'))
+                has_chars = bool(scene.get('character_ids'))
+                has_pov = bool(scene.get('pov_character_id'))
+                if has_loc and has_chars and has_pov:
+                    resolved_count += 1
+
+        print(f"  Scene ID population: {resolved_count}/{total_scenes} scenes fully resolved")
+
+    def _resolve_character_id(self, name: str, char_map: dict, characters: list) -> str:
+        """Resolve a character name to its canonical char_XXX ID."""
+        if not name:
+            return ''
+
+        # 1. Exact match
+        if name in char_map:
+            return char_map[name]
+
+        # 2. Case-insensitive match
+        name_lower = name.lower()
+        if name_lower in char_map:
+            return char_map[name_lower]
+
+        # 3. Substring match (name contains or is contained in a known name)
+        for char_name, char_id in char_map.items():
+            if len(char_name) > 2:  # Avoid matching single letters
+                if char_name.lower() in name_lower or name_lower in char_name.lower():
+                    return char_id
+
+        # 4. Word overlap (any word in the input matches a character name word)
+        name_words = set(name.lower().replace('_', ' ').split())
+        best_id = ''
+        best_overlap = 0
+        for c in characters:
+            c_name = c.get('name', '')
+            c_id = c.get('character_id', c.get('id', ''))
+            if not c_name or not c_id:
+                continue
+            c_words = set(c_name.lower().split())
+            overlap = len(name_words & c_words)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_id = c_id
+
+        if best_id:
+            return best_id
+
+        print(f"    WARNING: Could not resolve character '{name}' to any known character ID")
+        return ''
+
+    def _resolve_location_id(self, name: str, loc_map: dict, locations: list) -> str:
+        """Resolve a location name to its canonical loc_XXX ID."""
+        if not name:
+            return ''
+
+        # 1. Exact match
+        if name in loc_map:
+            return loc_map[name]
+
+        # 2. Case-insensitive match
+        name_lower = name.lower()
+        if name_lower in loc_map:
+            return loc_map[name_lower]
+
+        # 3. Strip "The " prefix from input
+        stripped = name
+        for prefix in ['The ', 'the ']:
+            if name.startswith(prefix):
+                stripped = name[len(prefix):]
+                break
+        if stripped != name and stripped.lower() in loc_map:
+            return loc_map[stripped.lower()]
+
+        # 4. Substring containment (either direction)
+        for loc_name, loc_id in loc_map.items():
+            if len(loc_name) > 3:
+                if loc_name.lower() in name_lower or name_lower in loc_name.lower():
+                    return loc_id
+
+        # 5. Word overlap scoring
+        name_words = set(name.lower().replace('_', ' ').split()) - {'the', 'a', 'an', 'of', 'in', 'at', 'on'}
+        best_id = ''
+        best_overlap = 0
+        for loc in locations:
+            loc_name = loc.get('name', '')
+            loc_id = loc.get('id', loc.get('location_id', ''))
+            if not loc_name or not loc_id:
+                continue
+            loc_words = set(loc_name.lower().split()) - {'the', 'a', 'an', 'of', 'in', 'at', 'on'}
+            overlap = len(name_words & loc_words)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_id = loc_id
+
+        if best_id:
+            return best_id
+
+        # 6. Match against location type/location_type field
+        for loc in locations:
+            loc_type = loc.get('type', loc.get('location_type', ''))
+            loc_id = loc.get('id', loc.get('location_id', ''))
+            if not loc_type or not loc_id:
+                continue
+            if name_lower == loc_type.lower() or stripped.lower() == loc_type.lower():
+                return loc_id
+            if len(loc_type) > 3:
+                if loc_type.lower() in name_lower or name_lower in loc_type.lower():
+                    return loc_id
+
+        print(f"    WARNING: Could not resolve location '{name}' to any known location ID")
+        return ''
+
+    def _validate_scene_ids(self, chapter_outline: dict, codex: dict) -> None:
+        """Validate that all scenes have properly resolved IDs."""
+        characters = codex.get('story', {}).get('characters', [])
+        locations = codex.get('story', {}).get('locations', [])
+
+        valid_char_ids = set()
+        for c in characters:
+            cid = c.get('character_id', c.get('id', ''))
+            if cid:
+                valid_char_ids.add(cid)
+
+        valid_loc_ids = set()
+        for loc in locations:
+            lid = loc.get('id', loc.get('location_id', ''))
+            if lid:
+                valid_loc_ids.add(lid)
+
+        total = 0
+        valid = 0
+        issues = []
+
+        for chapter in chapter_outline.get('chapters', []):
+            for scene in chapter.get('scenes', []):
+                total += 1
+                scene_id = scene.get('scene_id', scene.get('scene_number', '?'))
+                scene_valid = True
+
+                loc_id = scene.get('location_id', '')
+                if not loc_id:
+                    issues.append(f"  Scene {scene_id}: missing location_id (location='{scene.get('location', '')}')")
+                    scene_valid = False
+                elif loc_id not in valid_loc_ids:
+                    issues.append(f"  Scene {scene_id}: invalid location_id '{loc_id}'")
+                    scene_valid = False
+
+                char_ids = scene.get('character_ids', [])
+                if not char_ids:
+                    issues.append(f"  Scene {scene_id}: missing character_ids")
+                    scene_valid = False
+                else:
+                    invalid = [cid for cid in char_ids if cid not in valid_char_ids]
+                    if invalid:
+                        issues.append(f"  Scene {scene_id}: invalid character_ids {invalid}")
+                        scene_valid = False
+
+                pov_id = scene.get('pov_character_id', '')
+                if not pov_id:
+                    issues.append(f"  Scene {scene_id}: missing pov_character_id")
+                    scene_valid = False
+                elif pov_id not in valid_char_ids:
+                    issues.append(f"  Scene {scene_id}: invalid pov_character_id '{pov_id}'")
+                    scene_valid = False
+
+                if scene_valid:
+                    valid += 1
+
+        print(f"  Scene ID Validation: {valid}/{total} scenes valid ({100*valid//total if total else 0}%)")
+        if issues:
+            for issue in issues[:10]:  # Show first 10 issues
+                print(issue)
+            if len(issues) > 10:
+                print(f"  ... and {len(issues) - 10} more issues")
 
     def _validate_tracking_completeness(self, chapter_outline: dict) -> dict:
         """Validate tracking chains are complete and return incomplete chain data."""
@@ -7073,6 +7255,7 @@ RELIGION:
 
             # Repopulate scene IDs for newly inserted scenes
             self._populate_scene_ids(chapter_outline, codex)
+            self._validate_scene_ids(chapter_outline, codex)
 
             duration = time.time() - start_time
             print("="*60)
@@ -9066,6 +9249,7 @@ RELIGION:
 
                 # Populate character and location IDs
                 self._populate_scene_ids(codex["story"]["chapters"], codex)
+                self._validate_scene_ids(codex["story"]["chapters"], codex)
 
                 # Store debate details in metadata
                 codex["metadata"]["phase_1"]["step5_debates"] = result.debates

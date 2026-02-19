@@ -518,7 +518,7 @@ def get_character_context(character_names: list[str], all_characters: list[dict]
     relevant = []
     for char in all_characters:
         if char.get("name") in character_names:
-            char_id = char.get("id", "unknown")
+            char_id = char.get("character_id", char.get("id", "unknown"))
             relevant.append(
                 f"**{char.get('name')}** (ID: {char_id}): {char.get('gender', 'unknown')}, "
                 f"{char.get('age', 'unknown')}. "
@@ -534,7 +534,7 @@ def build_character_id_map(all_characters: list[dict]) -> dict[str, str]:
     id_map = {}
     for char in all_characters:
         name = char.get("name", "")
-        char_id = char.get("id", "")
+        char_id = char.get("character_id", char.get("id", ""))
         if name and char_id:
             # Map both uppercase first name and full name
             first_name = name.split()[0].upper() if name else ""

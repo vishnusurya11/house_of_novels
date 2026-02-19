@@ -14,8 +14,6 @@ wheels/
 client_secrets.json
 .youtube_token.json
 
-# Claude Code local settings
-.claude/
 
 # Python version file (uv/pyenv)
 .python-version

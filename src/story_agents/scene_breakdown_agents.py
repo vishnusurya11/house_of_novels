@@ -402,14 +402,14 @@ Choose the agent whose proposal is strongest and explain your reasoning.
     def _format_characters(self, characters: list[dict]) -> str:
         """Format characters for prompt."""
         return "\n".join([
-            f"- {c.get('name', 'Unknown')} ({c.get('role', 'Unknown')}): {c.get('one_sentence_summary', c.get('summary', 'N/A'))[:100]}..."
+            f"- [{c.get('character_id', c.get('id', ''))}] {c.get('name', 'Unknown')} ({c.get('role', 'Unknown')}): {c.get('one_sentence_summary', c.get('summary', 'N/A'))[:100]}..."
             for c in characters
         ])
 
     def _format_locations(self, locations: list[dict]) -> str:
         """Format locations for prompt."""
         return "\n".join([
-            f"- {loc.get('name', 'Unknown')} ({loc.get('location_type', 'Unknown')}): {loc.get('physical_description', 'N/A')[:80]}..."
+            f"- [{loc.get('id', '')}] {loc.get('name', 'Unknown')} ({loc.get('location_type', 'Unknown')}): {loc.get('physical_description', 'N/A')[:80]}..."
             for loc in locations
         ])
 
@@ -758,7 +758,7 @@ Choose and explain your reasoning.
     def _format_characters(self, characters: list[dict]) -> str:
         """Format characters for prompt."""
         return "\n".join([
-            f"- {c.get('name', 'Unknown')} ({c.get('role', 'Unknown')})"
+            f"- [{c.get('character_id', c.get('id', ''))}] {c.get('name', 'Unknown')} ({c.get('role', 'Unknown')})"
             for c in characters
         ])
 
@@ -1107,7 +1107,7 @@ Choose and explain your reasoning.
         """Format characters with their arc details."""
         lines = []
         for c in characters:
-            lines.append(f"\n{c.get('name', 'Unknown')} ({c.get('role', 'Unknown')}):")
+            lines.append(f"\n[{c.get('character_id', c.get('id', ''))}] {c.get('name', 'Unknown')} ({c.get('role', 'Unknown')}):")
             lines.append(f"  Summary: {c.get('one_sentence_summary', c.get('summary', 'N/A'))}")
             arc = c.get('character_arc', c.get('arc', {}))
             if arc:
