@@ -162,8 +162,12 @@ def run_phase1_author(
             codex=codex,
             steps=steps,
             revision_passes=revision_passes,
+            codex_path=codex_path,
         )
     except Exception as e:
+        # Save whatever progress was made before the crash
+        save_codex(codex, codex_path)
+        print(f"\n>>> Crash-save: codex saved with partial progress to {codex_path}")
         return Phase1AuthorResult(
             codex_path=codex_path,
             outline={},

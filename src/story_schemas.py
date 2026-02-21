@@ -1602,6 +1602,19 @@ class NarrativeProseProposal(BaseModel):
         ),
         min_length=1,
     )
+
+    @field_validator('middle_paragraphs', mode='before')
+    @classmethod
+    def coerce_paragraphs_to_strings(cls, v: list) -> list[str]:
+        """Coerce dict items to strings if LLM returns structured objects."""
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("paragraph") or item.get("content") or str(item)
+                result.append(text)
+            else:
+                result.append(str(item))
+        return result
     closing_paragraph: str = Field(
         ...,
         description=(
@@ -3519,6 +3532,19 @@ class NarrativeProseSynthesis(BaseModel):
         description="Middle development paragraphs (3-10 paragraphs)"
     )
     closing_paragraph: str = Field(..., min_length=100, description="Final paragraph (100-200 words)")
+
+    @field_validator('middle_paragraphs', mode='before')
+    @classmethod
+    def coerce_paragraphs_to_strings(cls, v: list) -> list[str]:
+        """Coerce dict items to strings if LLM returns structured objects."""
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("paragraph") or item.get("content") or str(item)
+                result.append(text)
+            else:
+                result.append(str(item))
+        return result
 
     # Prose quality
     word_count: int = Field(..., ge=1500, le=2500, description="Target: 1500-2000 words")

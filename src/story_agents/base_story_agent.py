@@ -30,6 +30,11 @@ _SHARED_HTTP_CLIENT = httpx.Client(
     timeout=httpx.Timeout(connect=10.0, read=180.0, write=10.0, pool=30.0),
 )
 
+# --- Thread-local storage for step context ---
+# Allows threaded callers (e.g. Step 6 chapter workers) to set step_context
+# so invoke_structured() can scope model bans correctly instead of "unknown"
+_thread_local = threading.local()
+
 # --- Disk-based LLM response cache (Change 6) ---
 try:
     import diskcache
@@ -50,6 +55,7 @@ class BaseStoryAgent(ABC):
     # Class-level dict of models banned per-step (not globally)
     # Format: {step_name: {banned_model1, banned_model2, ...}}
     _step_banned_models: dict = {}
+    _ban_lock = threading.Lock()  # Thread-safe access to _step_banned_models
 
     def __init__(self, model: str = DEFAULT_MODEL, temperature: float = 0.7):
         self.model_name = model
@@ -160,25 +166,30 @@ class BaseStoryAgent(ABC):
                     return result, usage_dict
                 return result
 
-        # Auto-detect which step we're in by inspecting call stack
-        step_context = "unknown"
-        for frame_info in inspect.stack():
-            func_name = frame_info.function
-            if func_name.startswith("step"):  # e.g., "step5_chapter_scene_breakdown"
-                step_context = func_name
-                break
+        # Detect which step we're in: prefer thread-local (set by threaded callers),
+        # then fall back to call stack inspection
+        step_context = getattr(_thread_local, 'step_context', None)
+        if not step_context:
+            step_context = "unknown"
+            for frame_info in inspect.stack():
+                func_name = frame_info.function
+                if func_name.startswith("step"):  # e.g., "step5_chapter_scene_breakdown"
+                    step_context = func_name
+                    break
 
         # Build list of models to try: primary + fallbacks (EXCLUDING banned for THIS step)
         all_models = [self.model_name] + FALLBACK_MODELS
 
-        # Get banned models for this specific step only
-        step_banned = BaseStoryAgent._step_banned_models.get(step_context, set())
+        # Get banned models for this specific step only (thread-safe)
+        with BaseStoryAgent._ban_lock:
+            step_banned = BaseStoryAgent._step_banned_models.get(step_context, set()).copy()
         models_to_try = [m for m in all_models if m not in step_banned]
 
         # If all models banned for this step, reset step-specific ban list
         if not models_to_try:
             print(f"⚠️  All models banned for step '{step_context}' - resetting step ban list")
-            BaseStoryAgent._step_banned_models[step_context] = set()
+            with BaseStoryAgent._ban_lock:
+                BaseStoryAgent._step_banned_models[step_context] = set()
             models_to_try = all_models
 
         for model_index, current_model in enumerate(models_to_try):
@@ -286,10 +297,11 @@ Try again with complete data for every field."""))
                     # Check if this is a reasoning token error - skip to next model immediately
                     if "length limit was reached" in error_msg and "reasoning_tokens" in error_msg:
                         print(f"⚠️  Reasoning token error detected with {current_model}")
-                        # Ban this model for THIS STEP ONLY (not globally)
-                        if step_context not in BaseStoryAgent._step_banned_models:
-                            BaseStoryAgent._step_banned_models[step_context] = set()
-                        BaseStoryAgent._step_banned_models[step_context].add(current_model)
+                        # Ban this model for THIS STEP ONLY (not globally, thread-safe)
+                        with BaseStoryAgent._ban_lock:
+                            if step_context not in BaseStoryAgent._step_banned_models:
+                                BaseStoryAgent._step_banned_models[step_context] = set()
+                            BaseStoryAgent._step_banned_models[step_context].add(current_model)
                         print(f"🚫 Banning {current_model} for step '{step_context}' only (reasoning token issues)")
                         print(f"   Banned for this step: {BaseStoryAgent._step_banned_models[step_context]}")
                         break  # Skip remaining retries with this model

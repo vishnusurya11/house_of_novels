@@ -6,6 +6,7 @@ Authors can override individual steps for custom behavior.
 """
 
 import inspect
+import json
 import time
 import threading
 import random
@@ -771,6 +772,14 @@ Return your response with COMPLETE data."""))
         """
         thread_name = threading.current_thread().name
         return thread_name.split('-')[-1] if '-' in thread_name else 'Main'
+
+    @staticmethod
+    def _elapsed(start: float) -> str:
+        """Format elapsed time since start as [MM:SS]."""
+        elapsed = time.time() - start
+        minutes = int(elapsed // 60)
+        seconds = int(elapsed % 60)
+        return f"[{minutes:02d}:{seconds:02d}]"
 
     def _parallel_agent_calls(self, agents, method_name: str, *args, **kwargs) -> list:
         """Run the same method on multiple agents in parallel, preserving order.
@@ -7864,6 +7873,12 @@ RELIGION:
             ProsePolishCritic, CharacterVoiceCritic, ContinuityCritic,
             PacingTensionCritic, EmotionalResonanceCritic,
         )
+        from src.story_agents.base_story_agent import _thread_local
+
+        # Set thread-local step context so invoke_structured() scopes model bans
+        # correctly to "step6_narrative" instead of "unknown" (threaded calls
+        # can't detect step via call stack inspection)
+        _thread_local.step_context = "step6_narrative"
 
         worker_id = self._get_worker_id()
         chapter_num = chapter["chapter_number"]
@@ -7894,15 +7909,18 @@ RELIGION:
         chapter_word_count = 0
         codex_updates = []  # Collect codex updates to apply after all chapters complete
 
+        chapter_start = time.time()
+
         print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] CHAPTER {chapter_num}: Writing {len(chapter['scenes'])} scenes")
+        print(f"[Worker-{worker_id}] {self._elapsed(chapter_start)} CHAPTER {chapter_num}: Writing {len(chapter['scenes'])} scenes")
         print(f"[Worker-{worker_id}] {'='*50}")
 
         for scene_data in chapter["scenes"]:
             scene_num = scene_data["scene_number"]
             scene_id = f"ch{chapter_num}_scene{scene_num}"
+            scene_start = time.time()
 
-            print(f"\n[Worker-{worker_id}]     --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
+            print(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
 
             # Select opening type for variety
             selected_opening = _select_opening_type(previous_opening_types)
@@ -7924,7 +7942,7 @@ RELIGION:
             # ROUND 1: ALL 5 AGENTS PROPOSE PROSE (PARALLEL)
             # =========================================
             proposals = []
-            print(f"[Worker-{worker_id}]     Generating 5 prose proposals (parallel)...")
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Generating 5 prose proposals (parallel)...")
 
             def _propose_worker(agent, _scene_data=scene_data, _characters=characters,
                                 _locations=locations, _world=world,
@@ -7982,11 +8000,14 @@ RELIGION:
                 chapter_word_count += len(fallback_prose.split())
                 continue
 
+            round1_elapsed = int(time.time() - scene_start)
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(proposals)} proposals done ({round1_elapsed}s)")
+
             # =========================================
             # ROUND 2: CROSS-AGENT CRITIQUES (5 critiques)
             # =========================================
             critiques = []
-            print(f"[Worker-{worker_id}]     Gathering 5 critiques...")
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Gathering 5 critiques...")
 
             def _critique_worker(agent, target_proposal, _scene_context=scene_context):
                 critique = agent.critique_prose(
@@ -8013,10 +8034,13 @@ RELIGION:
                     except Exception as e:
                         print(f"[Worker-{worker_id}]       [{agent.name}] critique failed: {str(e)[:30]}")
 
+            round2_elapsed = int(time.time() - scene_start)
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(critiques)} critiques done ({round2_elapsed}s)")
+
             # =========================================
             # ROUND 3: DIALOGUE MASTER ANALYZES ALL PROPOSALS
             # =========================================
-            print(f"[Worker-{worker_id}]     Dialogue analysis...")
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue analysis...")
             best_dialogue_proposal = proposals[0]
             dialogue_analysis = None
             dialogue_vote = None
@@ -8046,10 +8070,13 @@ RELIGION:
                     dialogue_score=5.0, reasoning="Default fallback",
                 )
 
+            round3_elapsed = int(time.time() - scene_start)
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue done ({round3_elapsed}s)")
+
             # =========================================
             # ROUND 4: SYNTHESIS AGENT BLENDS BEST ELEMENTS
             # =========================================
-            print(f"[Worker-{worker_id}]     Synthesizing best elements from all 5 proposals...")
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesizing best elements from all 5 proposals...")
             synthesis = None
             final_prose = ""
             scene_word_count = 0
@@ -8079,10 +8106,13 @@ RELIGION:
 
             chapter_word_count += scene_word_count
 
+            round4_elapsed = int(time.time() - scene_start)
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesis done ({round4_elapsed}s)")
+
             # =========================================
             # ROUND 5: REAL-TIME CRITIQUE (5 critics parallel)
             # =========================================
-            print(f"[Worker-{worker_id}]     Real-time critique (5 critics)...")
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Real-time critique (5 critics)...")
             critique_scores = []
             avg_critique_score = 7.0
 
@@ -8118,6 +8148,9 @@ RELIGION:
                 print(f"[Worker-{worker_id}]       Critique avg: {avg_critique_score:.1f}/10")
             except Exception as e:
                 print(f"[Worker-{worker_id}]       Critique failed: {str(e)[:50]}")
+
+            scene_elapsed = int(time.time() - scene_start)
+            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Scene {scene_num} done ({scene_elapsed}s total)")
 
             scene_narrative = {
                 "scene_id": scene_id, "chapter_number": chapter_num,
@@ -8172,7 +8205,10 @@ RELIGION:
             previous_opening_types.append(selected_opening["type"])
 
         # Assemble chapter result
-        print(f"\n[Worker-{worker_id}]     >>> Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words")
+        chapter_elapsed = int(time.time() - chapter_start)
+        chapter_mins = chapter_elapsed // 60
+        chapter_secs = chapter_elapsed % 60
+        print(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words (total {chapter_mins}m{chapter_secs}s)")
 
         return {
             "chapter_num": chapter_num,
@@ -8274,6 +8310,8 @@ RELIGION:
             print(f"\n>>> Model: {step6_model}")
             print(f">>> Agents: 5 proposal + DialogueMaster + Synthesis + 5 critics (created per-thread)")
 
+            step6_start = time.time()
+
             # =========================================
             # PROCESS CHAPTERS IN PARALLEL
             # =========================================
@@ -8313,9 +8351,9 @@ RELIGION:
                         try:
                             result = future.result()
                             chapter_results.append(result)
-                            print(f"\n>>> Chapter {ch_num} completed: {result['word_count']:,} words")
+                            print(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} completed: {result['word_count']:,} words")
                         except Exception as e:
-                            print(f"\n>>> Chapter {ch_num} FAILED: {str(e)[:100]}")
+                            print(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} FAILED: {str(e)[:100]}")
 
                 # Sort results by chapter number and assemble
                 chapter_results.sort(key=lambda r: r["chapter_num"])
@@ -8506,6 +8544,8 @@ RELIGION:
 
                 def _process_scene(scene, chapter_num):
                     """Worker: run 5 parallel critics + optional revision for one scene."""
+                    from src.story_agents.base_story_agent import _thread_local
+                    _thread_local.step_context = "step7_revision"
                     scene_id = scene.get("scene_id", f"ch{chapter_num}_scene?")
                     prose = scene.get("prose", "")
 
@@ -9084,11 +9124,20 @@ RELIGION:
     # MAIN RUN METHOD
     # =========================================================================
 
+    def _save_checkpoint(self, codex: dict, codex_path: Optional[Path], step_label: str) -> None:
+        """Save codex to disk after a step completes, so progress is not lost."""
+        if codex_path is None:
+            return
+        with open(codex_path, "w", encoding="utf-8") as f:
+            json.dump(codex, f, indent=2, ensure_ascii=False)
+        print(f">>> Checkpoint saved ({step_label})")
+
     def run(
         self,
         codex: dict,
         steps: list[int] = None,
         revision_passes: int = None,
+        codex_path: Path = None,
     ) -> dict:
         """Execute Phase 1 steps.
 
@@ -9104,6 +9153,7 @@ RELIGION:
         results = {}
         steps_completed = []
         step_timings = {}
+        pipeline_start = time.time()
 
         print(f"\n>>> Phase 1: Author-Driven Story Creation")
         print(f">>> Author: {self.author.name}")
@@ -9125,7 +9175,7 @@ RELIGION:
         # Step 0: Theme Foundation
         if 0 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 0: Theme Foundation (Multi-Agent Debate)")
+            print(f"{self._elapsed(pipeline_start)} STEP 0: Theme Foundation (Multi-Agent Debate)")
             print(f"{'='*60}")
 
             result = self.step0_theme_foundation(codex)
@@ -9140,13 +9190,15 @@ RELIGION:
 
                 steps_completed.append(0)
                 step_timings["step0_theme_foundation"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 0")
+                print(f"{self._elapsed(pipeline_start)} Step 0 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 0 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 0 FAILED: {result.error}")
 
         # Step 1: Character Creation (Theme → Characters)
         if 1 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 1: Character Creation (Theme → Characters)")
+            print(f"{self._elapsed(pipeline_start)} STEP 1: Character Creation (Theme → Characters)")
             print(f"{'='*60}")
 
             result = self.step1_character_creation(codex)
@@ -9157,13 +9209,15 @@ RELIGION:
                 # (updated after each character is created)
                 steps_completed.append(1)
                 step_timings["step1_character_creation"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 1")
+                print(f"{self._elapsed(pipeline_start)} Step 1 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 1 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 1 FAILED: {result.error}")
 
         # Step 2: Story Shape & Genre Selection
         if 2 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 2: Story Shape & Genre Selection (Multi-Agent Debate)")
+            print(f"{self._elapsed(pipeline_start)} STEP 2: Story Shape & Genre Selection (Multi-Agent Debate)")
             print(f"{'='*60}")
 
             result = self.step2_story_shape_genre(codex)
@@ -9185,13 +9239,15 @@ RELIGION:
 
                 steps_completed.append(2)
                 step_timings["step2_story_shape_genre"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 2")
+                print(f"{self._elapsed(pipeline_start)} Step 2 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 2 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 2 FAILED: {result.error}")
 
         # Step 3: Plot Structure (Character Arc + Story Beats)
         if 3 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 3: Plot Structure (Character Arc + Story Beats)")
+            print(f"{self._elapsed(pipeline_start)} STEP 3: Plot Structure (Character Arc + Story Beats)")
             print(f"{'='*60}")
 
             result = self.step3_plot_structure(codex)
@@ -9209,13 +9265,15 @@ RELIGION:
 
                 steps_completed.append(3)
                 step_timings["step3_plot_structure"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 3")
+                print(f"{self._elapsed(pipeline_start)} Step 3 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 3 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 3 FAILED: {result.error}")
 
         # Step 4: World Building (World Pressure + Dynamic Major Locations)
         if 4 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 4: World Building (World Pressure + Major Locations)")
+            print(f"{self._elapsed(pipeline_start)} STEP 4: World Building (World Pressure + Major Locations)")
             print(f"{'='*60}")
 
             result = self.step4_world_building(codex)
@@ -9231,13 +9289,15 @@ RELIGION:
 
                 steps_completed.append(4)
                 step_timings["step4_world_building"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 4")
+                print(f"{self._elapsed(pipeline_start)} Step 4 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 4 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 4 FAILED: {result.error}")
 
         # Step 5: Chapter & Scene Breakdown
         if 5 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 5: Chapter & Scene Breakdown (3-Agent Debate)")
+            print(f"{self._elapsed(pipeline_start)} STEP 5: Chapter & Scene Breakdown (3-Agent Debate)")
             print(f"{'='*60}")
 
             result = self.step5_chapter_scene_breakdown(codex)
@@ -9256,10 +9316,12 @@ RELIGION:
 
                 steps_completed.append(5)
                 step_timings["step5_chapter_scene_breakdown"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 5")
+                print(f"{self._elapsed(pipeline_start)} Step 5 COMPLETE ({result.duration_seconds:.0f}s)")
 
                 # Step 5B: Foreshadowing & Setup/Payoff Analysis (runs automatically after Step 5)
                 print(f"\n{'='*60}")
-                print("STEP 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate)")
+                print(f"{self._elapsed(pipeline_start)} STEP 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate)")
                 print(f"{'='*60}")
 
                 result_5b = self.step5b_foreshadowing_analysis(codex)
@@ -9270,11 +9332,12 @@ RELIGION:
                     codex["metadata"]["phase_1"]["step5b_foreshadowing"] = result_5b["debates"]
 
                     step_timings["step5b_foreshadowing_analysis"] = result_5b["duration"]
-                    print(f">>> Step 5B COMPLETE")
+                    print(f"{self._elapsed(pipeline_start)} Step 5B COMPLETE ({result_5b['duration']:.0f}s)")
+                    self._save_checkpoint(codex, codex_path, "step 5B")
 
                     # Step 5C: Complete Scene Interconnection Analysis (runs automatically after Step 5B)
                     print(f"\n{'='*60}")
-                    print("STEP 5C: Complete Scene Interconnection Analysis")
+                    print(f"{self._elapsed(pipeline_start)} STEP 5C: Complete Scene Interconnection Analysis")
                     print(f"{'='*60}")
 
                     result_5c = self.step5c_interconnection_analysis(codex)
@@ -9285,21 +9348,22 @@ RELIGION:
                         codex["metadata"]["phase_1"]["step5c_interconnection"] = result_5c["report"]
 
                         step_timings["step5c_interconnection_analysis"] = result_5c["duration"]
-                        print(f">>> Step 5C COMPLETE")
+                        print(f"{self._elapsed(pipeline_start)} Step 5C COMPLETE ({result_5c['duration']:.0f}s)")
+                        self._save_checkpoint(codex, codex_path, "step 5C")
                     else:
-                        print(f">>> Step 5C FAILED: {result_5c.get('error', 'Unknown error')}")
+                        print(f"{self._elapsed(pipeline_start)} Step 5C FAILED: {result_5c.get('error', 'Unknown error')}")
                         print(">>> Continuing to Step 6 with current chapter outline...")
                 else:
-                    print(f">>> Step 5B FAILED: {result_5b.get('error', 'Unknown error')}")
+                    print(f"{self._elapsed(pipeline_start)} Step 5B FAILED: {result_5b.get('error', 'Unknown error')}")
                     print(">>> Continuing to Step 6 with original chapter outline...")
 
             else:
-                print(f">>> Step 5 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 5 FAILED: {result.error}")
 
         # Step 6: Scene Narrative Writing
         if 6 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
+            print(f"{self._elapsed(pipeline_start)} STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
             print(f"{'='*60}")
 
             result = self.step6_narrative(codex)
@@ -9351,38 +9415,42 @@ RELIGION:
 
                 steps_completed.append(6)
                 step_timings["step6_narrative"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 6")
+                print(f"{self._elapsed(pipeline_start)} Step 6 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f">>> Step 6 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 6 FAILED: {result.error}")
 
         # Step 7: Narrative Revision with 5-Critic System
         if 7 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 7: Narrative Revision (5-Critic System)")
+            print(f"{self._elapsed(pipeline_start)} STEP 7: Narrative Revision (5-Critic System)")
             print(f"{'='*60}")
             result = self.step7_revision(codex)
             results["step7"] = result
             if result.success:
-                print(f"\n>>> Step 7 COMPLETE: Revised {result.scenes_revised} scenes")
+                print(f"\n{self._elapsed(pipeline_start)} Step 7 COMPLETE: Revised {result.scenes_revised} scenes ({result.duration_seconds:.0f}s)")
                 print(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
                 steps_completed.append(7)
                 step_timings["step7_revision"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 7")
             else:
-                print(f">>> Step 7 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 7 FAILED: {result.error}")
 
         # Step 8: Book & Chapter Title Naming
         if 8 in steps_to_run:
             print(f"\n{'='*60}")
-            print("STEP 8: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
+            print(f"{self._elapsed(pipeline_start)} STEP 8: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
             print(f"{'='*60}")
             result = self.step8_naming(codex)
             results["step8"] = result
             if result.success:
-                print(f"\n>>> Step 8 COMPLETE: Book titled \"{result.book_title}\"")
+                print(f"\n{self._elapsed(pipeline_start)} Step 8 COMPLETE: Book titled \"{result.book_title}\" ({result.duration_seconds:.0f}s)")
                 print(f"    Chapter titles: {len(result.chapter_titles)}")
                 steps_completed.append(8)
                 step_timings["step8_naming"] = result.duration_seconds
+                self._save_checkpoint(codex, codex_path, "step 8")
             else:
-                print(f">>> Step 8 FAILED: {result.error}")
+                print(f"{self._elapsed(pipeline_start)} Step 8 FAILED: {result.error}")
 
         # Steps 8-10: Add as we implement them
         for step_num in range(9, 11):
