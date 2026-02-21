@@ -242,7 +242,7 @@ Propose a character name that:
     for agent in agents:
         try:
             proposal: NameProposal = agent.invoke_structured(
-                proposal_prompt, NameProposal, max_tokens=500
+                proposal_prompt, NameProposal, max_tokens=8000
             )
             proposals.append({
                 "agent": agent.name,
@@ -287,7 +287,7 @@ Score each from 1-10."""
     for agent in agents:
         try:
             agent_critiques: NameCritiques = agent.invoke_structured(
-                critique_prompt, NameCritiques, max_tokens=1000
+                critique_prompt, NameCritiques, max_tokens=8000
             )
             critiques.append({
                 "agent": agent.name,
@@ -330,7 +330,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
     print(f"    Collecting votes...")
     for i, agent in enumerate(agents):
         try:
-            vote: NameVote = agent.invoke_structured(vote_prompt, NameVote, max_tokens=300)
+            vote: NameVote = agent.invoke_structured(vote_prompt, NameVote, max_tokens=8000)
             # Ensure agent doesn't vote for own proposal
             voted_for = vote.voted_for
             if voted_for == i:

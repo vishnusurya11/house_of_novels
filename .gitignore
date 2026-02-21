@@ -14,8 +14,6 @@ wheels/
 client_secrets.json
 .youtube_token.json
 
-# Claude Code local settings
-.claude/
 
 # Python version file (uv/pyenv)
 .python-version
@@ -26,6 +24,7 @@ output/
 forge/
 nul
 generated_*.txt
+.llm_cache/
 
 # IDE
 .idea/

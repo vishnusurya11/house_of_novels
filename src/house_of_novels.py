@@ -195,11 +195,11 @@ def generate_novel(
         # Load codex to get title and counts
         with open(codex_path, "r", encoding="utf-8") as f:
             codex_data = json.load(f)
-        narrative = codex_data.get("story", {}).get("narrative", {})
-        title = narrative.get("title", "Untitled")
+        chapters_data = codex_data.get("story", {}).get("chapters", {})
+        title = chapters_data.get("title", "Untitled")
         total_characters = len(codex_data.get("story", {}).get("characters", []))
         total_locations = len(codex_data.get("story", {}).get("locations", []))
-        total_scenes = sum(len(ch.get("scenes", [])) for ch in narrative.get("chapters", []))
+        total_scenes = sum(len(ch.get("scenes", [])) for ch in chapters_data.get("chapters", []))
         print(f"\n>>> Title: {title}")
         print(f">>> Characters: {total_characters}")
         print(f">>> Locations: {total_locations}")

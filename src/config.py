@@ -6,6 +6,7 @@ Environment variables:
 """
 
 import os
+import yaml
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -15,6 +16,36 @@ PROJECT_ROOT = Path(__file__).parent.parent
 # Load .env file from project root
 env_path = PROJECT_ROOT / ".env"
 load_dotenv(env_path)
+
+# Load YAML configuration
+CONFIG_YAML_PATH = PROJECT_ROOT / "config.yaml"
+try:
+    with open(CONFIG_YAML_PATH) as f:
+        YAML_CONFIG = yaml.safe_load(f)
+except FileNotFoundError:
+    print(f"Warning: config.yaml not found at {CONFIG_YAML_PATH}, using defaults")
+    YAML_CONFIG = {"global": {}, "steps": {}}
+
+# Export config sections
+GLOBAL_CONFIG = YAML_CONFIG.get("global", {})
+STEPS_CONFIG = YAML_CONFIG.get("steps", {})
+
+
+# Helper functions for accessing step-level config
+def get_step_config(step_name: str) -> dict:
+    """Get config for a specific step."""
+    return STEPS_CONFIG.get(step_name, {})
+
+
+def get_token_limit(step_name: str, limit_type: str = "general") -> int:
+    """Get token limit for step and type."""
+    step = get_step_config(step_name)
+    return step.get("token_limits", {}).get(limit_type, GLOBAL_CONFIG.get("default_token_limit", 2000))
+
+
+def get_step_model(step_name: str) -> str:
+    """Get model for a specific step."""
+    return get_step_config(step_name).get("model", GLOBAL_CONFIG.get("default_model", "openai/gpt-5-nano"))
 
 
 # === ENVIRONMENT DETECTION ===
@@ -65,11 +96,23 @@ _env_config = ENV_CONFIG[ENVIRONMENT]
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPR_ROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Default model for all agents (supports tool calling)
-DEFAULT_MODEL = "openai/gpt-4o-mini"
+# Default model for all agents (loaded from config.yaml)
+DEFAULT_MODEL = GLOBAL_CONFIG.get("default_model", "openai/gpt-5-nano")
+
+# Fallback models for automatic recovery (loaded from config.yaml)
+FALLBACK_MODELS = GLOBAL_CONFIG.get("fallback_models", [
+    "qwen/qwen-turbo",
+    "mistralai/mistral-7b-instruct",
+    "deepseek/deepseek-chat-v3"
+])
+
+# Step 6 narrative prose generation model (loaded from config.yaml)
+# Can be changed in config.yaml: steps.step6_prose_generation.model
+STEP6_PROSE_MODEL = get_step_model("step6_prose_generation")
 
 # Alternative models with tool calling support
 SUPPORTED_MODELS = [
+    "openai/gpt-5-nano",     # Ultra-cheap, 128K output, 400K context
     "openai/gpt-4o-mini",    # Reliable, fast
     "openai/gpt-5-mini",     # Latest OpenAI
     "x-ai/grok-4.1-fast",    # 1.8M context, excels at tools

@@ -259,7 +259,7 @@ Create locations that:
 
 Remember: Maximum {max_locations} location profiles. Focus on key story locations."""
 
-        return self.invoke_structured(prompt, LocationListSchema, max_tokens=6000)
+        return self.invoke_structured(prompt, LocationListSchema, max_tokens=8000)
 
     def revise_locations(self, locations: str, critiques: list[str]) -> LocationListSchema:
         """Revise location profiles based on critiques."""
@@ -275,7 +275,7 @@ CRITIQUES:
 
 Address each issue while maintaining location essence. Output the complete revised location list."""
 
-        return self.invoke_structured(prompt, LocationListSchema, max_tokens=6000)
+        return self.invoke_structured(prompt, LocationListSchema, max_tokens=8000)
 
 
 class ConsistencyCriticAgent(BaseStoryAgent):
@@ -352,4 +352,4 @@ Check for:
 - Setting mismatches
 - Timeline inconsistencies"""
 
-        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, CritiqueSchema, max_tokens=8000)

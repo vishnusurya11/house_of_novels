@@ -161,9 +161,10 @@ def generate_image_prompts(codex_path: str, model: str = None, style: str = None
     else:
         art_style = detect_genre(codex)
 
-    # Count scenes
-    narrative = story.get("narrative", {})
-    scene_count = sum(len(act.get("scenes", [])) for act in narrative.get("acts", []))
+    # Count scenes from chapters (not narrative.acts)
+    chapter_outline = story.get("chapters", {})
+    chapters = chapter_outline.get("chapters", [])
+    scene_count = sum(len(ch.get("scenes", [])) for ch in chapters)
 
     print("\n" + "#" * 60)
     print("# GENERATE IMAGE PROMPTS")
@@ -215,11 +216,10 @@ def generate_image_prompts(codex_path: str, model: str = None, style: str = None
                 print(f"    ERROR: {e}")
                 loc["image_prompt"] = f"Error generating prompt: {e}"
 
-    # Generate scene image prompts
-    narrative = story.get("narrative", {})
+    # Generate scene image prompts from chapters
     scenes = []
-    for act in narrative.get("acts", []):
-        scenes.extend(act.get("scenes", []))
+    for chapter in chapters:
+        scenes.extend(chapter.get("scenes", []))
 
     if scenes:
         print("\n" + "=" * 50)
@@ -266,8 +266,8 @@ def generate_image_prompts(codex_path: str, model: str = None, style: str = None
                 print(f"    ERROR: {e}")
                 scene["image_prompt"] = f"Error generating prompt: {e}"
 
-        # Update narrative with scene prompts
-        codex["story"]["narrative"] = narrative
+        # Scene prompts are already updated directly in codex.story.chapters
+        # No need to save separate narrative structure
 
     # Generate story poster prompts (9 candidates, 3 winners via jury voting)
     outline = story.get("outline", {})

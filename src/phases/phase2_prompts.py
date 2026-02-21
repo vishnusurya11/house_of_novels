@@ -96,6 +96,65 @@ def get_visual_style_from_codex(codex: dict) -> dict:
     return visual_style
 
 
+def normalize_codex_for_phase2(codex: dict) -> dict:
+    """
+    Normalize new codex structure for Phase 2 agent compatibility.
+
+    Handles field name differences between the new Phase 1 output and what
+    Phase 2 agents expect:
+    - Populates story.outline from story.chapters (title, subtitle)
+    - Maps character_id → id, role → role_in_story, flat fields → physical dict
+    - Maps scene characters_present → characters
+    """
+    story = codex.get("story", {})
+    chapters_data = story.get("chapters", {})
+
+    # 1. Populate outline from chapters title if outline is empty
+    outline = story.get("outline", {})
+    if not outline.get("title") and chapters_data.get("title"):
+        outline["title"] = chapters_data["title"]
+        outline["subtitle"] = chapters_data.get("subtitle", "")
+        # Derive logline from theme foundation
+        theme = story.get("theme_foundation", {})
+        outline["logline"] = theme.get("central_question", "")
+        # Derive protagonist/antagonist from characters
+        for char in story.get("characters", []):
+            role = char.get("role") or char.get("role_in_story", "")
+            if role == "protagonist":
+                outline["protagonist"] = char.get("name", "")
+            elif role == "antagonist":
+                outline["antagonist"] = char.get("name", "")
+        story["outline"] = outline
+
+    # 2. Normalize character fields (flat → nested physical + field renames)
+    for char in story.get("characters", []):
+        if not char.get("id") and char.get("character_id"):
+            char["id"] = char["character_id"]
+        if not char.get("role_in_story") and char.get("role"):
+            char["role_in_story"] = char["role"]
+        if not char.get("physical"):
+            char["physical"] = {
+                "height": char.get("height", ""),
+                "build": char.get("body_build", ""),
+                "hair_color": char.get("hair_color", ""),
+                "hair": char.get("hair_color", ""),
+                "eye_color": char.get("eye_color", ""),
+                "eyes": char.get("eye_color", ""),
+                "skin_tone": char.get("ethnicity", ""),
+                "distinguishing_features": char.get("distinguishing_features", ""),
+            }
+        if not char.get("clothing") and char.get("costume"):
+            char["clothing"] = char["costume"]
+
+    # 3. Normalize scene fields
+    for chapter in chapters_data.get("chapters", []):
+        for scene in chapter.get("scenes", []):
+            if not scene.get("characters") and scene.get("characters_present"):
+                scene["characters"] = scene["characters_present"]
+
+    return codex
+
+
 def detect_genre(codex: dict) -> str:
     """
     Detect story genre from codex prompts for art style selection.
@@ -165,6 +224,7 @@ def run_phase2_prompts(
     """
     codex_path = Path(codex_path)
     codex = load_codex(codex_path)
+    codex = normalize_codex_for_phase2(codex)
 
     # Determine which steps to run (1-5 are active steps)
     steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5]
@@ -457,8 +517,8 @@ def run_phase2_prompts(
     # Step 4: Scene Image Prompts (One image per scene)
     # =========================================================================
     scene_image_prompt_count = 0
-    narrative = story.get("narrative", {})
-    chapters = narrative.get("chapters", [])
+    chapter_outline = story.get("chapters", {})
+    chapters = chapter_outline.get("chapters", [])
 
     # Count total scenes for progress reporting
     total_scenes = sum(len(ch.get("scenes", [])) for ch in chapters)
@@ -530,8 +590,8 @@ def run_phase2_prompts(
                         "error": str(e),
                     })
 
-        # Update narrative with modified chapters and save after Step 4
-        codex["story"]["narrative"] = narrative
+        # Scene prompts are already updated directly in codex.story.chapters
+        # No need to save separate narrative structure
         step_timings["step4_scene_images"] = round(time.time() - step_start, 2)
         save_codex(codex, codex_path)
 

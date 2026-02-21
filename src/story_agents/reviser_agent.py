@@ -28,26 +28,53 @@ class ReviserAgent(BaseStoryAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are an editorial reviser who synthesizes feedback and improves content.
+        return """You are an editorial reviser who makes prose sound like a skilled human novelist wrote it.
 
-Your expertise:
-- Prioritizing critiques by severity
-- Making surgical edits that address issues
-- Preserving the core vision while improving execution
-- Balancing multiple competing suggestions
+Your primary mission: ELIMINATE AI-GENERATED PROSE PATTERNS.
 
-Revision principles:
-1. Address "major" severity issues first
-2. Don't over-revise - fix what's broken, preserve what works
-3. When critiques conflict, choose the one that serves the story better
-4. Maintain consistency with previously established elements
-5. Improve clarity without losing voice
+=== AI PATTERNS TO KILL ON SIGHT ===
+
+1. THEMATIC SUMMARY ENDINGS: If the last paragraph explains what the scene "meant" or asks
+   a rhetorical question about the theme — DELETE IT. End on image, action, or dialogue instead.
+
+2. BANNED PHRASES (search and replace every instance):
+   - "fragile hope" -> use a CONCRETE image instead
+   - "the weight of [X]" -> show the burden through behavior
+   - "a [adj] reminder that/of" -> cut the sentence entirely
+   - "not just X, but Y" -> pick one and commit
+   - "something shifted/broke inside" -> show the SPECIFIC thought or action
+   - "resolve hardened" -> show what they DID differently
+   - "doubt gnawed" / "tension gripped" / "urgency pressed" -> concrete behavior
+
+3. PARAGRAPH UNIFORMITY: If 3+ paragraphs in a row are 80-110 words, break the pattern.
+   Insert a one-sentence paragraph. Merge two short ones. Vary deliberately.
+
+4. SENTENCE UNIFORMITY: If prose lacks sentences under 6 words or over 30 words, add both.
+   Fragments for impact. Long sentences for immersion. VARY.
+
+5. ABSTRACT EMOTION SETTLING: "doubt gnawed", "tension gripped", "urgency pressed" —
+   replace with CONCRETE BEHAVIOR: what do they DO with their hands, their eyes, their voice?
+
+6. SPARSE DIALOGUE: If a scene has fewer than 8 dialogue lines per 1500 words, the scene
+   needs more conversation. Add exchanges. Make them messy — interruptions, non-answers.
+
+7. PARTICIPIAL PHRASE ADDICTION: More than 2 sentences starting with "[Verb]-ing, [character]..."
+   per scene is a red flag. Vary sentence openings.
+
+=== REVISION PRINCIPLES ===
+
+1. Address critique issues by SEVERITY (major first)
+2. Apply the Elmore Leonard test: "If it sounds like writing, rewrite it."
+3. When in doubt, CUT. Shorter and concrete beats longer and abstract.
+4. Preserve character voice — don't homogenize dialogue
+5. Don't introduce new AI patterns while fixing old ones
+6. Every revision should make prose LESS predictable, not more polished
 
 When revising:
 - Make specific, targeted changes
-- Don't introduce new problems while fixing old ones
-- Keep the original structure unless fundamentally flawed
-- Enhance rather than replace when possible"""
+- Replace abstract with concrete (always)
+- Check the last paragraph FIRST — that's where AI patterns concentrate
+- Maintain consistency with previously established elements"""
 
     def revise_outline(self, outline: str, critiques: list[str]) -> OutlineSchema:
         """
@@ -74,7 +101,7 @@ Address the most severe issues first. Make targeted improvements while preservin
 
 Maintain the same structure with title, logline, protagonist, antagonist, central_conflict, and acts."""
 
-        return self.invoke_structured(prompt, OutlineSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, OutlineSchema, max_tokens=8000)
 
     def revise_characters(self, characters: str, critiques: list[str],
                           locked_names: list[str] = None) -> CharacterListSchema:
@@ -140,7 +167,7 @@ CRITIQUES:
 
 Address consistency issues and add missing locations if noted."""
 
-        return self.invoke_structured(prompt, LocationListSchema, max_tokens=6000)
+        return self.invoke_structured(prompt, LocationListSchema, max_tokens=8000)
 
     def revise_narrative(self, narrative: str, critiques: list[str]) -> NarrativeSchema:
         """
@@ -166,7 +193,7 @@ CRITIQUES:
 Improve style and continuity while preserving the story. Make targeted prose improvements.
 Preserve the exact same structure: title, acts with act_number/act_name, scenes with scene_number/location/characters/time/text."""
 
-        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=16000)
+        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=8000)
 
     def revise_narrative_structured(
         self,
@@ -204,7 +231,7 @@ Preserve the exact same structure: title, acts with act_number/act_name, scenes 
 Return the complete revised narrative."""
 
         # Use 16000 tokens for full narrative revision
-        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=16000)
+        return self.invoke_structured(prompt, NarrativeSchema, max_tokens=8000)
 
     def revise_scene(
         self,
@@ -248,12 +275,19 @@ LOCATION CONTEXT:
 {locs_ctx}
 
 REVISION GUIDELINES:
-- Fix any style issues (voice, dialogue, show-don't-tell)
-- Fix any continuity errors with character/location details
-- Maintain the same scene_number, location, characters, and time
-- Improve prose quality while preserving story intent
-- Keep the scene approximately the same length
+1. CHECK THE LAST PARAGRAPH FIRST: If it ends with thematic summary, rhetorical question,
+   or "This was what it meant to..." — rewrite to end on image, action, or dialogue.
+2. SEARCH AND DESTROY: Find every "weight of", "fragile hope", "stark reminder",
+   "resolve hardened" and replace with concrete, scene-specific details.
+3. DIALOGUE CHECK: Count dialogue lines. If fewer than 8, ADD dialogue exchanges
+   with interruptions, non-answers, and subtext.
+4. PARAGRAPH RHYTHM: Ensure at least one single-sentence paragraph and one 150+ word paragraph.
+5. SENTENCE VARIETY: Ensure at least two sentences under 6 words and one over 30 words.
+6. Fix any continuity errors with character/location details.
+7. Maintain the same scene_number, location, characters, and time.
+8. Preserve story intent while making prose sound like a HUMAN NOVELIST wrote it.
+9. Apply Elmore Leonard's rule: "If it sounds like writing, rewrite it."
 
 Return the revised scene with improved prose."""
 
-        return self.invoke_structured(prompt, SceneProseSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, SceneProseSchema, max_tokens=8000)

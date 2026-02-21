@@ -114,7 +114,7 @@ CRITICAL FORMAT:
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -147,7 +147,7 @@ Evaluate:
 
 Provide a critique matching CharacterPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=500)
+        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -177,7 +177,7 @@ You CANNOT vote for your own proposal if you have one.
 
 Provide a vote matching CharacterPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=300)
+        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=8000)
 
 
 class CharacterVisualistAgent(BaseStoryAgent):
@@ -263,7 +263,7 @@ CRITICAL RULES:
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -294,7 +294,7 @@ Evaluate:
 
 Provide a critique matching CharacterPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=500)
+        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -323,7 +323,7 @@ You CANNOT vote for your own proposal if you have one.
 
 Provide a vote matching CharacterPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=300)
+        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=8000)
 
 
 class CharacterNarrativeAgent(BaseStoryAgent):
@@ -407,7 +407,7 @@ For {role_type}:
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -435,7 +435,7 @@ Evaluate:
 
 Provide a critique matching CharacterPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=500)
+        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -463,7 +463,7 @@ You CANNOT vote for your own proposal if you have one.
 
 Provide a vote matching CharacterPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=300)
+        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=8000)
 
 
 class CharacterAudienceAgent(BaseStoryAgent):
@@ -547,7 +547,7 @@ For a {adjective} character:
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=1000)
+        return self.invoke_structured(prompt, CharacterPhysicalProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -577,7 +577,7 @@ Evaluate:
 
 Provide a critique matching CharacterPhysicalCritique schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=500)
+        return self.invoke_structured(prompt, CharacterPhysicalCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -606,7 +606,7 @@ You CANNOT vote for your own proposal if you have one.
 
 Provide a vote matching CharacterPhysicalVote schema."""
 
-        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=300)
+        return self.invoke_structured(prompt, CharacterPhysicalVote, max_tokens=8000)
 
 
 # =============================================================================
@@ -653,6 +653,7 @@ Each character is their own person with their own history."""
         stakes: str,
         structure_beats: dict,
         setting: str,
+        gender: str = "",
     ) -> CharacterBackstoryProposal:
         """Generate backstory bullet points from story outline."""
 
@@ -699,16 +700,22 @@ GENERATE FOR "{role.upper()}" (NOT the protagonist unless this IS the protagonis
    - NOT generic like "determined, complex, evolving"
    - SPECIFIC like "paranoid about locked doors", "laughs when nervous", "fiercely protective"
 
-5. ACCENT: How THIS character speaks:
-   - e.g., "clipped aristocratic", "warm rural drawl", "formal scholarly", "street slang", "whispered and hesitant"
+5. ACCENT/SPEECH PATTERN: How THIS character speaks (choose ONE or combine):
+   - REGIONAL DIALECT: Based on setting (e.g., "thick Scottish brogue", "Southern drawl", "clipped British accent", "Brooklyn street talk")
+   - GRAMMATICAL STYLE: How they construct sentences (e.g., "formal scholarly with perfect grammar", "drops articles and uses sentence fragments", "speaks in passive voice", "always uses rhetorical questions")
+   - VOCABULARY: Their word choice (e.g., "uses archaic words", "peppers speech with technical jargon", "street slang heavy", "flowery and metaphorical")
+   - SPEECH IMPEDIMENT (for ~10% of characters): Physical or psychological (e.g., "slight lisp on 's' sounds", "stutters when nervous", "speaks in whispers", "talks too fast when excited")
+   - TEMPO/RHYTHM: Speed and cadence (e.g., "slow and deliberate", "rapid-fire delivery", "pauses mid-sentence to think", "talks in bursts")
+
+   IMPORTANT: Every character comes from somewhere, so give them a regional/cultural speech pattern that fits the setting.
+   Examples: "warm rural drawl with agricultural metaphors", "clipped aristocratic with formal diction", "hesitant whisper with stuttered 't' sounds", "rapid street slang from the market district"
 
 6. QUALITIES (5-7 specific quirks/behaviors for THIS character):
    - e.g., "obsessively counts things", "speaks in metaphors", "never makes eye contact"
    - "always arrives early", "hums when thinking", "collects odd trinkets"
 
-7. GENDER: This character's gender ('male' or 'female')
-   - Choose based on the character's role and name if already suggested
-   - Consider story balance - don't make all characters the same gender
+7. GENDER: This character's gender is '{gender}'
+   - Use this exact gender assignment
 
 RULES:
 - NEVER mention "the archivist" or the protagonist UNLESS this IS the protagonist
@@ -718,4 +725,4 @@ RULES:
 
 Provide a proposal matching CharacterBackstoryProposal schema."""
 
-        return self.invoke_structured(prompt, CharacterBackstoryProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, CharacterBackstoryProposal, max_tokens=8000)

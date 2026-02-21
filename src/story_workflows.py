@@ -107,32 +107,32 @@ def substitute_names_in_characters(characters: List[dict], mapping: Dict[str, st
     return characters
 
 
-def substitute_names_in_narrative(narrative: dict, mapping: Dict[str, str]) -> dict:
-    """Replace names in narrative text."""
-    if not narrative or not mapping:
-        return narrative
+def substitute_names_in_narrative(chapters_data: dict, mapping: Dict[str, str]) -> dict:
+    """Replace names in narrative prose within chapters structure."""
+    if not chapters_data or not mapping:
+        return chapters_data
 
-    # Handle raw JSON string format (when parse_error occurred)
-    if narrative.get("raw"):
-        narrative["raw"] = substitute_names_in_text(narrative["raw"], mapping)
-
-    # Handle parsed acts format
-    for act in narrative.get("acts", []):
-        for scene in act.get("scenes", []):
+    for chapter in chapters_data.get("chapters", []):
+        for scene in chapter.get("scenes", []):
             # Update character list
-            if scene.get("characters"):
-                scene["characters"] = [
-                    mapping.get(char, char) for char in scene["characters"]
+            if scene.get("characters_present"):
+                scene["characters_present"] = [
+                    mapping.get(char, char) for char in scene["characters_present"]
                 ]
-            # Update narrative text
-            if scene.get("text"):
-                scene["text"] = substitute_names_in_text(scene["text"], mapping)
-            # Update sentences list
-            if scene.get("sentences"):
-                scene["sentences"] = [
-                    substitute_names_in_text(s, mapping) for s in scene["sentences"]
-                ]
-    return narrative
+            # Update POV character name
+            if scene.get("pov_character"):
+                scene["pov_character"] = mapping.get(
+                    scene["pov_character"], scene["pov_character"]
+                )
+            # Update prose text
+            if scene.get("prose"):
+                scene["prose"] = substitute_names_in_text(scene["prose"], mapping)
+            # Update scene_summary text
+            if scene.get("scene_summary"):
+                scene["scene_summary"] = substitute_names_in_text(
+                    scene["scene_summary"], mapping
+                )
+    return chapters_data
 
 
 def apply_name_substitutions(codex: dict, mapping: Dict[str, str] = None) -> dict:
@@ -190,10 +190,10 @@ def apply_name_substitutions(codex: dict, mapping: Dict[str, str] = None) -> dic
             codex["story"]["characters"], mapping
         )
 
-    # Apply to narrative
-    if codex.get("story", {}).get("narrative"):
-        codex["story"]["narrative"] = substitute_names_in_narrative(
-            codex["story"]["narrative"], mapping
+    # Apply to chapters (which now contains narrative prose)
+    if codex.get("story", {}).get("chapters"):
+        codex["story"]["chapters"] = substitute_names_in_narrative(
+            codex["story"]["chapters"], mapping
         )
 
     return codex
@@ -694,7 +694,7 @@ def run_full_story_pipeline(story_prompt: str, setting_prompt: str,
             "outline": phase1["outline"],
             "characters": phase2["characters"],
             "locations": phase2["locations"],
-            "narrative": phase3["narrative"],
+            "chapters": phase3["narrative"],
         },
         "metadata": {
             "phase_1": phase1["metadata"],

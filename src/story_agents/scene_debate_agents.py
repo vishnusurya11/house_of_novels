@@ -105,13 +105,13 @@ You design scenes that MOVE THE PLOT FORWARD."""
 
         # Build characters summary (include ID so LLM can populate character_ids)
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown role')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown role')}"
             for c in characters[:5]
         ])
 
         # Build locations summary
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown type')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown type')}"
             for loc in locations[:5]
         ])
 
@@ -153,7 +153,7 @@ TIME OF DAY: 'dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'
 
 Provide a proposal matching SceneProposal schema with methodology_focus='plot'."""
 
-        return self.invoke_structured(prompt, SceneProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, SceneProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -188,7 +188,7 @@ Evaluate:
 
 Provide a critique matching SceneCritique schema."""
 
-        return self.invoke_structured(prompt, SceneCritique, max_tokens=600)
+        return self.invoke_structured(prompt, SceneCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -217,7 +217,7 @@ You CANNOT vote for your own proposal (SCENE_PLOT).
 
 Provide a vote matching SceneVote schema."""
 
-        return self.invoke_structured(prompt, SceneVote, max_tokens=300)
+        return self.invoke_structured(prompt, SceneVote, max_tokens=8000)
 
 
 class SceneCharacterAgent(BaseStoryAgent):
@@ -296,12 +296,12 @@ You design scenes that REVEAL and DEVELOP character."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')} - Arc: {c.get('arc', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
             for loc in locations[:5]
         ])
 
@@ -340,7 +340,7 @@ After 'NO_AND' or major events, characters often need sequel scenes to process.
 
 Provide a proposal matching SceneProposal schema with methodology_focus='character'."""
 
-        return self.invoke_structured(prompt, SceneProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, SceneProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -374,7 +374,7 @@ Evaluate:
 
 Provide a critique matching SceneCritique schema."""
 
-        return self.invoke_structured(prompt, SceneCritique, max_tokens=600)
+        return self.invoke_structured(prompt, SceneCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -403,7 +403,7 @@ You CANNOT vote for your own proposal (SCENE_CHARACTER).
 
 Provide a vote matching SceneVote schema."""
 
-        return self.invoke_structured(prompt, SceneVote, max_tokens=300)
+        return self.invoke_structured(prompt, SceneVote, max_tokens=8000)
 
 
 class ScenePacingAgent(BaseStoryAgent):
@@ -486,12 +486,12 @@ You design scenes that CREATE RHYTHM and MANAGE TENSION."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('atmosphere', 'unknown')}"
             for loc in locations[:5]
         ])
 
@@ -533,7 +533,7 @@ RHYTHM GUIDELINES:
 
 Provide a proposal matching SceneProposal schema with methodology_focus='pacing'."""
 
-        return self.invoke_structured(prompt, SceneProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, SceneProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -565,7 +565,7 @@ Evaluate:
 
 Provide a critique matching SceneCritique schema."""
 
-        return self.invoke_structured(prompt, SceneCritique, max_tokens=600)
+        return self.invoke_structured(prompt, SceneCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -593,7 +593,7 @@ You CANNOT vote for your own proposal (SCENE_PACING).
 
 Provide a vote matching SceneVote schema."""
 
-        return self.invoke_structured(prompt, SceneVote, max_tokens=300)
+        return self.invoke_structured(prompt, SceneVote, max_tokens=8000)
 
 
 class SceneStructureAgent(BaseStoryAgent):
@@ -680,12 +680,12 @@ You design scenes that SERVE THE STORY STRUCTURE."""
 
         # Include ID so LLM can populate character_ids
         char_summary = "\n".join([
-            f"  - {c.get('name', 'Unknown')} (id: {c.get('id', '')}): {c.get('role_in_story', 'unknown')}"
+            f"  - {c.get('name', 'Unknown')} (id: {c.get('character_id', c.get('id', ''))}): {c.get('role_in_story', 'unknown')}"
             for c in characters[:5]
         ])
 
         loc_summary = "\n".join([
-            f"  - {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown')}"
+            f"  - [{loc.get('id', '')}] {loc.get('name', 'Unknown')}: {loc.get('type', 'unknown')}"
             for loc in locations[:5]
         ])
 
@@ -731,7 +731,7 @@ The structure_connection field MUST be one of: hook, plot_turn_1, pinch_point_1,
 
 Provide a proposal matching SceneProposal schema with methodology_focus='structure'."""
 
-        return self.invoke_structured(prompt, SceneProposal, max_tokens=1500)
+        return self.invoke_structured(prompt, SceneProposal, max_tokens=8000)
 
     def critique_proposal(
         self,
@@ -764,7 +764,7 @@ Evaluate:
 
 Provide a critique matching SceneCritique schema."""
 
-        return self.invoke_structured(prompt, SceneCritique, max_tokens=600)
+        return self.invoke_structured(prompt, SceneCritique, max_tokens=8000)
 
     def vote_for_best(
         self,
@@ -795,4 +795,4 @@ You CANNOT vote for your own proposal (SCENE_STRUCTURE).
 
 Provide a vote matching SceneVote schema."""
 
-        return self.invoke_structured(prompt, SceneVote, max_tokens=300)
+        return self.invoke_structured(prompt, SceneVote, max_tokens=8000)

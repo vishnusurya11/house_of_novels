@@ -103,7 +103,7 @@ STRICT TITLE RULES:
 
 Description should be 500-1000 characters with hashtags at the end (#Story #Fiction #Drama etc.)"""
 
-        return self.invoke_structured(prompt, YouTubeMetadata, max_tokens=1000)
+        return self.invoke_structured(prompt, YouTubeMetadata, max_tokens=8000)
 
 
 def generate_youtube_metadata(

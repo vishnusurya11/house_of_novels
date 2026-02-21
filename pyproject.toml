@@ -15,8 +15,15 @@ dependencies = [
     "moviepy>=2.0.0",
     "pydub>=0.25.1",
     "audioop-lts>=0.2.1",
+    "pyyaml>=6.0",  # Config file loading
+    "diskcache>=5.6.0",  # LLM response caching for re-runs
     # YouTube upload (Phase 7)
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
 ]

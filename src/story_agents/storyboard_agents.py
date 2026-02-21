@@ -158,7 +158,7 @@ Remember:
 - Include camera directions and transitions
 - Describe visual details for AI video generation"""
 
-        return self.invoke_structured(prompt, StoryboardSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, StoryboardSchema, max_tokens=8000)
 
     def revise_storyboard(
         self,
@@ -217,7 +217,7 @@ Create an IMPROVED storyboard addressing ALL critic concerns.
 Focus especially on categories that scored below 7.
 Ensure dialogue word counts fit within shot durations (25-35 words max per 10-15 sec shot)."""
 
-        return self.invoke_structured(prompt, StoryboardSchema, max_tokens=4000)
+        return self.invoke_structured(prompt, StoryboardSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -311,7 +311,7 @@ Consider:
 - Are character positions precise?
 - Will AI video understand these directions?"""
 
-        return self.invoke_structured(prompt, VisualCritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, VisualCritiqueSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -406,7 +406,7 @@ Provide SPECIFIC suggestions for improvement.
 Check that parentheticals guide voice actors on tone.
 Verify SFX and music cues enhance the story."""
 
-        return self.invoke_structured(prompt, DialogueCritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, DialogueCritiqueSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -506,7 +506,7 @@ Check:
 - Is there good shot variety for visual interest?
 - Does pacing match the emotional tone?"""
 
-        return self.invoke_structured(prompt, ContinuityCritiqueSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, ContinuityCritiqueSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -518,7 +518,7 @@ def get_character_context(character_names: list[str], all_characters: list[dict]
     relevant = []
     for char in all_characters:
         if char.get("name") in character_names:
-            char_id = char.get("id", "unknown")
+            char_id = char.get("character_id", char.get("id", "unknown"))
             relevant.append(
                 f"**{char.get('name')}** (ID: {char_id}): {char.get('gender', 'unknown')}, "
                 f"{char.get('age', 'unknown')}. "
@@ -534,7 +534,7 @@ def build_character_id_map(all_characters: list[dict]) -> dict[str, str]:
     id_map = {}
     for char in all_characters:
         name = char.get("name", "")
-        char_id = char.get("id", "")
+        char_id = char.get("character_id", char.get("id", ""))
         if name and char_id:
             # Map both uppercase first name and full name
             first_name = name.split()[0].upper() if name else ""

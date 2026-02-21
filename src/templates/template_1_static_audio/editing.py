@@ -284,8 +284,8 @@ def run_template1_editing(
     # Step timing
     step_timings = {}
 
-    narrative = codex.get("story", {}).get("narrative", {})
-    chapters = narrative.get("chapters", [])
+    chapters_data = codex.get("story", {}).get("chapters", {})
+    chapters = chapters_data.get("chapters", [])
 
     # Helper function to get scene image path
     def get_scene_image_path(ch_num: int, sc_num: int) -> Path | None:
@@ -309,11 +309,11 @@ def run_template1_editing(
         print("STEP 1: Verify Audio Items")
         print(f"{'='*60}")
 
-        audio_gen_data = narrative.get("audio_generation", {})
+        audio_gen_data = chapters_data.get("audio_generation", {})
         audio_items = audio_gen_data.get("items", [])
 
         if not audio_items:
-            print(">>> No audio items found in narrative.audio_generation.items")
+            print(">>> No audio items found in chapters.audio_generation.items")
             print(">>> Run Phase 3 Step 1 (audio generation) first")
         else:
             completed = [i for i in audio_items if i.get("status") == "completed"]
@@ -351,13 +351,13 @@ def run_template1_editing(
         else:
             # Reload codex in case Step 1 was run in a previous invocation
             codex = load_codex(codex_path)
-            narrative = codex.get("story", {}).get("narrative", {})
-            chapters = narrative.get("chapters", [])
+            chapters_data = codex.get("story", {}).get("chapters", {})
+            chapters = chapters_data.get("chapters", [])
 
             videos_dir = forge_dir / "videos"
             videos_dir.mkdir(parents=True, exist_ok=True)
 
-            audio_items = narrative.get("audio_generation", {}).get("items", [])
+            audio_items = chapters_data.get("audio_generation", {}).get("items", [])
             completed_items = [i for i in audio_items if i.get("status") == "completed"]
 
             if not completed_items:
@@ -444,10 +444,10 @@ def run_template1_editing(
         else:
             # Reload codex in case Steps 1-2 were run in previous invocations
             codex = load_codex(codex_path)
-            narrative = codex.get("story", {}).get("narrative", {})
+            chapters_data = codex.get("story", {}).get("chapters", {})
 
             # Collect video paths from audio items in sequence order
-            audio_items = narrative.get("audio_generation", {}).get("items", [])
+            audio_items = chapters_data.get("audio_generation", {}).get("items", [])
             completed_items = sorted(
                 [i for i in audio_items if i.get("status") == "completed" and i.get("video_path")],
                 key=lambda x: x.get("sequence", 0)

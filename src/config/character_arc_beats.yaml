@@ -1,0 +1,383 @@
+# Character Arc Beat Sheets
+# Based on K.M. Weiland's Character Arc Structure
+# Source: https://www.helpingwritersbecomeauthors.com/character-arcs-2/
+
+positive_change:
+  name: "Positive Change Arc"
+  description: "Character starts believing a Lie, learns the Truth, and transforms"
+  beats:
+    - name: "Characteristic Moment"
+      timing: "0-10%"
+      plot_function: "First impression of protagonist"
+      arc_function: "Show character living the Lie"
+      key_elements:
+        - "Character demonstrates their normal behavior"
+        - "Hints at the Lie they believe"
+        - "Shows skills/traits that will serve them later"
+
+    - name: "Normal World"
+      timing: "0-12%"
+      plot_function: "Establish status quo before change"
+      arc_function: "Show world shaped by character's Lie"
+      key_elements:
+        - "Character's normal life"
+        - "Relationships and routines"
+        - "The Lie in action"
+
+    - name: "Ghost/Backstory"
+      timing: "5-15%"
+      plot_function: "Reveal character's past"
+      arc_function: "Show origin of the Lie"
+      key_elements:
+        - "Past wound or trauma"
+        - "Event that created the Lie"
+        - "Why character believes the Lie"
+
+    - name: "First Plot Point"
+      timing: "25%"
+      plot_function: "Thrust into new situation"
+      arc_function: "Force character to confront Lie"
+      key_elements:
+        - "Can't go back to Normal World"
+        - "New world challenges the Lie"
+        - "Character still clings to Lie"
+
+    - name: "First Pinch Point"
+      timing: "37%"
+      plot_function: "Antagonistic force appears"
+      arc_function: "Pressure on the Lie increases"
+      key_elements:
+        - "Glimpse of what character is up against"
+        - "Lie is tested but holds"
+        - "Stakes become clearer"
+
+    - name: "Midpoint"
+      timing: "50%"
+      plot_function: "Major revelation or shift"
+      arc_function: "Character glimpses the Truth (doesn't commit)"
+      key_elements:
+        - "Moment of clarity about the Truth"
+        - "Character sees possibility of change"
+        - "Not ready to fully embrace Truth yet"
+
+    - name: "Second Pinch Point"
+      timing: "62%"
+      plot_function: "Antagonistic force closes in"
+      arc_function: "Lie fails progressively"
+      key_elements:
+        - "Old methods stop working"
+        - "Lie brings consequences"
+        - "Truth becomes more appealing"
+
+    - name: "Third Plot Point (All Is Lost)"
+      timing: "75%"
+      plot_function: "Lowest point/major loss"
+      arc_function: "Lie collapses completely"
+      key_elements:
+        - "Lie fails catastrophically"
+        - "Character can no longer deceive self"
+        - "Forced to face the Truth"
+
+    - name: "Dark Night of the Soul"
+      timing: "75-80%"
+      plot_function: "Emotional pit"
+      arc_function: "Mourn the Lie"
+      key_elements:
+        - "Character grieves old identity"
+        - "Sits in the wreckage"
+        - "Prepares to embrace Truth"
+
+    - name: "Climax Decision"
+      timing: "90%"
+      plot_function: "Final choice moment"
+      arc_function: "Character chooses Truth over Lie"
+      key_elements:
+        - "Active choice to embrace Truth"
+        - "Reject the Lie permanently"
+        - "Use Truth to solve problem"
+
+    - name: "Climactic Moment"
+      timing: "95%"
+      plot_function: "Final confrontation"
+      arc_function: "Use Truth to succeed"
+      key_elements:
+        - "Character acts from Truth not Lie"
+        - "Demonstrates transformation"
+        - "Proves they've changed"
+
+    - name: "Resolution"
+      timing: "95-100%"
+      plot_function: "Show new normal"
+      arc_function: "Living the Truth"
+      key_elements:
+        - "New Normal World"
+        - "Contrast with Opening"
+        - "Demonstrate lasting change"
+
+flat:
+  name: "Flat Arc"
+  description: "Character already knows the Truth and transforms the world around them"
+  beats:
+    - name: "Characteristic Moment"
+      timing: "0-10%"
+      plot_function: "First impression of protagonist"
+      arc_function: "Show character already knows Truth"
+      key_elements:
+        - "Character demonstrates their existing Truth"
+        - "Shows conviction and strength"
+        - "Hints at world that needs changing"
+
+    - name: "Normal World"
+      timing: "0-12%"
+      plot_function: "Establish status quo"
+      arc_function: "Show world cursed by Lie (or blessed by Truth)"
+      key_elements:
+        - "World believes the Lie"
+        - "Character is outsider/voice of reason"
+        - "Stakes of Lie are visible"
+
+    - name: "First Plot Point"
+      timing: "25%"
+      plot_function: "Protagonist commits to battle"
+      arc_function: "Decide to use Truth to transform world"
+      key_elements:
+        - "Can't ignore the Lie anymore"
+        - "Commits to fighting for Truth"
+        - "Takes on burden of change"
+
+    - name: "Midpoint"
+      timing: "50%"
+      plot_function: "Major turning point"
+      arc_function: "Truth spreads/Others begin to see"
+      key_elements:
+        - "Impact character starts to transform others"
+        - "Small victories for Truth"
+        - "Antagonist pushes back harder"
+
+    - name: "Third Plot Point"
+      timing: "75%"
+      plot_function: "Major setback"
+      arc_function: "Truth is tested/Character's faith wavers"
+      key_elements:
+        - "Lie seems to win"
+        - "Character questions if Truth is worth it"
+        - "Temptation to give up"
+
+    - name: "Climax"
+      timing: "90-95%"
+      plot_function: "Final confrontation"
+      arc_function: "Character proves Truth through action"
+      key_elements:
+        - "Stand for Truth no matter cost"
+        - "Inspire others to embrace Truth"
+        - "Truth defeats Lie"
+
+    - name: "Resolution"
+      timing: "95-100%"
+      plot_function: "New world order"
+      arc_function: "World transformed by Truth"
+      key_elements:
+        - "Others have changed, not protagonist"
+        - "New Normal based on Truth"
+        - "Character's sacrifice pays off"
+
+disillusionment:
+  name: "Disillusionment Arc (Negative Arc Type 1)"
+  description: "Character believes positive Lie, overcomes it, but discovers Tragic Truth"
+  beats:
+    - name: "Characteristic Moment"
+      timing: "0-10%"
+      plot_function: "First impression"
+      arc_function: "Show character believing hopeful/positive Lie"
+      key_elements:
+        - "Character seems optimistic"
+        - "Hints at naivety"
+        - "Seeds of disillusionment"
+
+    - name: "Normal World"
+      timing: "0-12%"
+      plot_function: "Status quo"
+      arc_function: "Show glitter and glamour of the Lie"
+      key_elements:
+        - "World seems bright through Lie's lens"
+        - "Character happy in ignorance"
+        - "Cracks in the facade"
+
+    - name: "First Plot Point"
+      timing: "25%"
+      plot_function: "Enter new situation"
+      arc_function: "First real challenge to the Lie"
+      key_elements:
+        - "Reality starts to intrude"
+        - "Lie is questioned"
+        - "Character defensive of Lie"
+
+    - name: "Midpoint"
+      timing: "50%"
+      plot_function: "Major revelation"
+      arc_function: "Overcome the Lie"
+      key_elements:
+        - "Lie is shattered"
+        - "Character sees they were wrong"
+        - "Begins to see Tragic Truth"
+
+    - name: "Third Plot Point"
+      timing: "75%"
+      plot_function: "Major loss"
+      arc_function: "Fully grasp the Tragic Truth"
+      key_elements:
+        - "Can't un-see the darkness"
+        - "Lose innocence permanently"
+        - "Descent into cynicism/despair"
+
+    - name: "Climax"
+      timing: "90-95%"
+      plot_function: "Final choice"
+      arc_function: "Embrace Tragic Truth"
+      key_elements:
+        - "Accept dark reality"
+        - "Give up hope"
+        - "Transformed into sadder, wiser person"
+
+    - name: "Resolution"
+      timing: "95-100%"
+      plot_function: "New reality"
+      arc_function: "Living with Tragic Truth"
+      key_elements:
+        - "Can't go back to innocence"
+        - "World is darker now"
+        - "Character fundamentally changed (negatively)"
+
+fall:
+  name: "Fall Arc (Negative Arc Type 2)"
+  description: "Character deeply believes Lie, rejects Truth, embraces even stronger Lie"
+  beats:
+    - name: "Characteristic Moment"
+      timing: "0-10%"
+      plot_function: "First impression"
+      arc_function: "Show character with destructive potential"
+      key_elements:
+        - "Hints at darkness within"
+        - "Lie already has strong hold"
+        - "Seeds of downfall visible"
+
+    - name: "Normal World"
+      timing: "0-12%"
+      plot_function: "Status quo"
+      arc_function: "Show cracks in the Lie (character ignores)"
+      key_elements:
+        - "Lie is failing but character doubles down"
+        - "Warning signs ignored"
+        - "Path to destruction visible"
+
+    - name: "First Plot Point"
+      timing: "25%"
+      plot_function: "Forced into conflict"
+      arc_function: "Offered the Truth (rejects it)"
+      key_elements:
+        - "Clear chance to choose Truth"
+        - "Character rejects it"
+        - "Commits to destructive path"
+
+    - name: "Midpoint"
+      timing: "50%"
+      plot_function: "False victory or deeper fall"
+      arc_function: "Reject New Truth / Double down on Lie"
+      key_elements:
+        - "Truth is offered again"
+        - "Character actively rejects it"
+        - "Begins believing worse/stronger Lie"
+
+    - name: "Third Plot Point"
+      timing: "75%"
+      plot_function: "Major consequences"
+      arc_function: "Pay price for rejecting Truth"
+      key_elements:
+        - "Lie brings destruction"
+        - "Still refuses to change"
+        - "Spiral accelerates"
+
+    - name: "Climax"
+      timing: "90-95%"
+      plot_function: "Final choice"
+      arc_function: "Fully embrace the Lie"
+      key_elements:
+        - "One last chance to choose Truth"
+        - "Character rejects it definitively"
+        - "Becomes worst version of self"
+
+    - name: "Resolution"
+      timing: "95-100%"
+      plot_function: "Tragic end"
+      arc_function: "Destroyed by the Lie"
+      key_elements:
+        - "Character is broken/corrupted"
+        - "Believes Lie more than ever"
+        - "Cautionary tale complete"
+
+corruption:
+  name: "Corruption Arc (Negative Arc Type 3)"
+  description: "Character starts in world of Truth, rejects it, fully embraces the Lie"
+  beats:
+    - name: "Characteristic Moment"
+      timing: "0-10%"
+      plot_function: "First impression"
+      arc_function: "Show seeds of potential darkness"
+      key_elements:
+        - "Character seems good/normal"
+        - "Hints at hidden darkness"
+        - "Potential for corruption visible"
+
+    - name: "Normal World"
+      timing: "0-12%"
+      plot_function: "Status quo"
+      arc_function: "Show world nourished by Truth"
+      key_elements:
+        - "Character lives in Truth"
+        - "But isn't satisfied"
+        - "Temptation toward Lie present"
+
+    - name: "First Plot Point"
+      timing: "25%"
+      plot_function: "Temptation appears"
+      arc_function: "First taste of the Lie"
+      key_elements:
+        - "Lie is presented as attractive"
+        - "Character is tempted"
+        - "Takes first step toward darkness"
+
+    - name: "Midpoint"
+      timing: "50%"
+      plot_function: "Point of no return"
+      arc_function: "Reject Truth / Embrace Lie"
+      key_elements:
+        - "Actively chooses Lie over Truth"
+        - "Turning point of corruption"
+        - "Can still turn back (but won't)"
+
+    - name: "Third Plot Point"
+      timing: "75%"
+      plot_function: "Final temptation"
+      arc_function: "Last chance to return to Truth (refuses)"
+      key_elements:
+        - "Truth offers redemption"
+        - "Character rejects it"
+        - "Commits fully to Lie"
+
+    - name: "Climax"
+      timing: "90-95%"
+      plot_function: "Becomes the antagonist"
+      arc_function: "Fully embrace the Lie"
+      key_elements:
+        - "Complete transformation to dark side"
+        - "Actively fights for Lie against Truth"
+        - "Becomes what they once opposed"
+
+    - name: "Resolution"
+      timing: "95-100%"
+      plot_function: "Tragic victory"
+      arc_function: "Living in the Lie"
+      key_elements:
+        - "Character 'wins' but is corrupted"
+        - "Lost their soul/morality"
+        - "Cautionary tale of corruption"

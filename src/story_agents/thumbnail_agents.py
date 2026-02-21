@@ -389,10 +389,10 @@ def generate_thumbnail_prompts_via_council(
     # Extract story context
     story = codex.get("story", {})
     outline = story.get("outline", {})
-    narrative = story.get("narrative", {})
+    chapters_data = story.get("chapters", {})
 
-    # Get title from narrative (Step 7 naming) OR fallback to outline
-    title = narrative.get("title") or outline.get("title", "Untitled Story")
+    # Get title from chapters_data (Step 7 naming) OR fallback to outline
+    title = chapters_data.get("title") or outline.get("title", "Untitled Story")
     logline = outline.get("logline", "A compelling story unfolds.")
     genre = codex.get("config", {}).get("genre", "fantasy")
 
@@ -404,28 +404,18 @@ def generate_thumbnail_prompts_via_council(
         desc = f"{c.get('name', 'Unknown')} ({c.get('role_in_story', 'unknown')}): {phys.get('hair', 'unknown')} hair, {phys.get('eyes', 'unknown')} eyes, {phys.get('clothing', 'typical attire')}"
         char_descriptions.append(desc)
 
-    # Key moments from narrative - use chapters (new structure) or acts (legacy)
-    chapters = narrative.get("chapters", [])
+    # Key moments from chapters
+    chapters = chapters_data.get("chapters", [])
     key_moments = []
-    if chapters:
-        # New structure: chapters[].scenes[]
-        for chapter in chapters:
-            for scene in chapter.get("scenes", []):
-                # Use prose snippet as summary if no explicit summary
-                summary = scene.get("summary", "")
-                if not summary:
-                    prose = scene.get("prose", "")
-                    summary = prose[:200] + "..." if len(prose) > 200 else prose
-                if summary:
-                    key_moments.append(summary)
-    else:
-        # Legacy structure: acts[].scenes[]
-        acts = narrative.get("acts", [])
-        for act in acts:
-            for scene in act.get("scenes", []):
-                summary = scene.get("summary", scene.get("happens", ""))
-                if summary:
-                    key_moments.append(summary)
+    for chapter in chapters:
+        for scene in chapter.get("scenes", []):
+            # Use prose snippet as summary if no explicit summary
+            summary = scene.get("summary", "")
+            if not summary:
+                prose = scene.get("prose", "")
+                summary = prose[:200] + "..." if len(prose) > 200 else prose
+            if summary:
+                key_moments.append(summary)
     key_moments = key_moments[:5]  # Max 5 moments
 
     # Select genre examples

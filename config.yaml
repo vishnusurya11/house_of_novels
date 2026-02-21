@@ -1,0 +1,170 @@
+# House of Novels - Centralized Configuration
+# All hardcoded values moved here for easy tuning
+
+# Global defaults
+global:
+  default_model: "openai/gpt-4.1-nano"  # Primary: $0.10/M input, $0.40/M output, 1M context, 32K output, reliable JSON schema
+  fallback_models:  # Automatic fallbacks if primary fails - ONLY models with reliable json_schema support
+    - "openai/gpt-4o-mini"   # Fallback 1: Proven structured output, $0.15/M input, $0.60/M output
+    - "openai/gpt-4.1-mini"  # Fallback 2: Higher quality, $0.40/M input, $1.60/M output
+    # REMOVED: "anthropic/claude-3-haiku" - returns plain prose instead of JSON (json_schema unreliable on OpenRouter)
+    # REMOVED: "mistralai/mistral-7b-instruct" - returns plain prose instead of JSON
+    # REMOVED: "qwen/qwen-turbo" - returns plain prose instead of JSON
+    # REMOVED: "deepseek/deepseek-chat-v3" - incompatible with "Paid model training" data policy
+  default_temperature: 0.7
+  default_token_limit: 8000
+  max_concurrent_api_calls: 25  # Global cap on simultaneous OpenRouter API calls (threading.Semaphore)
+
+# Step-level configuration (Phase 1)
+steps:
+  # Step 0: Theme Foundation
+  step0_theme:
+    temperature: 0.7
+    token_limits:
+      general: 16000  # Increased for GPT-5-nano reasoning tokens (psychology tasks need 8K reasoning + 8K output)
+    parallel_processing:
+      enabled: true
+      max_workers: 5
+
+  # Step 1: Character Creation
+  step1_characters:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    parallel_processing:
+      enabled: true
+      character_level: true
+      debate_level: true
+      max_workers_characters: 6
+      max_workers_debates: 5
+
+  # Step 2: Story Shape & Genre
+  step2_story_shape:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    parallel_processing:
+      enabled: true
+      max_workers: 5
+
+  # Step 3: Plot Structure
+  step3_plot_structure:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    structure:
+      num_save_the_cat_beats: 15
+    parallel_processing:
+      enabled: true
+      max_workers: 5
+
+  # Step 4: World Building
+  step4_world_building:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+      economy: 8000
+      government: 8000
+      religion: 8000
+    parallel_processing:
+      enabled: true
+      location_level: true
+      debate_level: true
+      max_workers_locations: 6
+      max_workers_debates: 5
+
+  # Step 5: Scene Breakdown
+  step5_scene_breakdown:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    structure:
+      num_chapters: 11
+      scenes_per_chapter_min: 2
+      scenes_per_chapter_max: 4
+      num_save_the_cat_beats: 15
+      critiques_per_proposal_min: 3
+      critiques_per_proposal_max: 5
+    parallel_processing:
+      enabled: true
+      chapter_level: true
+      debate_level: true
+      max_workers_chapters: 6
+      max_workers_debates: 5
+
+  # Step 5B: Foreshadowing
+  step5b_foreshadowing:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    tracking:
+      rule_of_three_required: true  # 1 of 3, 2 of 3, 3 of 3
+    parallel_processing:
+      enabled: true
+      max_workers: 5
+
+  # Step 5C: Interconnection
+  step5c_interconnection:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    parallel_processing:
+      enabled: true
+      scene_level: true
+      analysis_level: true
+      max_workers_scenes: 6
+      max_workers_analysis: 5
+
+  # Step 6: Prose Generation (MOST DETAILED)
+  step6_prose_generation:
+    model: "openai/gpt-4.1-nano"  # Best prose quality with reliable JSON schema; switch to gpt-4.1-mini for ~3x higher cost but better quality
+    temperature: 0.7
+    token_limits:
+      prose_proposal: 16000   # Long prose needs more tokens
+      prose_critique: 12000   # Increased: critiques need room for detailed analysis
+      prose_synthesis: 32000  # Max for gpt-4.1-nano; synthesis of 5 proposals needs most
+      dialogue_analysis: 12000  # Increased: complex dialogue analysis
+      dialogue_vote: 6000    # Increased: reasoning about vote needs space
+      vote: 6000             # Increased: vote reasoning needs space
+    targets:
+      words_per_scene_min: 1500
+      words_per_scene_max: 2000
+      sensory_count: 2  # Primary senses per scene
+      active_voice_percent: 80
+      passive_voice_percent: 20
+    parallel_processing:
+      enabled: true  # Enable parallel chapter processing
+      max_workers: 6  # Number of concurrent chapters (6× speedup, safe for rate limits with global semaphore)
+
+  # Step 7: Revision & Critique
+  step7_revision:
+    temperature: 0.7
+    token_limits:
+      critique: 8000
+      revision: 16000
+      scene_critique: 8000
+      chapter_critique: 10000
+      story_critique: 12000
+    revision_strategy:
+      multi_pass: true  # Run critiques, revise, re-critique
+      max_passes: 2
+      score_threshold: 7.5  # Don't revise if score above this
+    critique_levels:
+      scene_level: true
+      chapter_level: true
+      story_level: true
+    parallel_processing:
+      enabled: true  # Enable parallel chapter revision
+      max_workers: 6  # Number of concurrent scenes (6× speedup, safe for rate limits)
+
+  # Step 8: Title Naming
+  step8_naming:
+    temperature: 0.7
+    token_limits:
+      general: 8000
+    parallel_processing:
+      enabled: true
+      proposal_level: true
+      debate_level: true
+      max_workers_proposals: 6
+      max_workers_debates: 5

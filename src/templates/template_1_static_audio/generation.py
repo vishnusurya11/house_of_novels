@@ -469,13 +469,13 @@ def run_template1_generation(
             with open(audio_workflow_path, "r", encoding="utf-8") as f:
                 audio_workflow = json.load(f)
 
-            narrative = codex.get("story", {}).get("narrative", {})
+            chapters_data = codex.get("story", {}).get("chapters", {})
 
             # Build ordered list of audio items: title, chapter titles, scenes
             audio_items = []
 
             # 1. Book title
-            book_title = narrative.get("title", "Untitled")
+            book_title = chapters_data.get("title", "Untitled")
             if book_title:
                 audio_items.append({
                     "type": "title",
@@ -484,7 +484,7 @@ def run_template1_generation(
                 })
 
             # 2. Chapters and scenes
-            chapters = narrative.get("chapters", [])
+            chapters = chapters_data.get("chapters", [])
             for ch_idx, chapter in enumerate(chapters):
                 ch_num = chapter.get("chapter_number", ch_idx + 1)
                 ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
@@ -512,7 +512,7 @@ def run_template1_generation(
                         })
 
             if not audio_items:
-                print(">>> No audio items found (no narrative title/chapters/scenes)")
+                print(">>> No audio items found (no title/chapters/scenes)")
             else:
                 print(f">>> Total audio items to generate: {len(audio_items)}")
                 print(f"    - 1 book title")
@@ -520,9 +520,9 @@ def run_template1_generation(
                 print(f"    - {len([i for i in audio_items if i['type'] == 'scene'])} scenes")
                 print(f">>> Timeout: {AUDIO_GENERATION_TIMEOUT}s ({AUDIO_GENERATION_TIMEOUT // 60} minutes) per item")
 
-                # Initialize audio generation tracking in narrative
+                # Initialize audio generation tracking in chapters_data
                 # Reset audio generation tracking (clear old items from previous runs)
-                narrative["audio_generation"] = {"items": [], "total_generated": 0}
+                chapters_data["audio_generation"] = {"items": [], "total_generated": 0}
 
                 audio_generated_count = 0
 
@@ -560,12 +560,12 @@ def run_template1_generation(
                     if item["type"] == "scene":
                         gen_data["scene_number"] = item["scene_number"]
 
-                    narrative["audio_generation"]["items"].append(gen_data)
+                    chapters_data["audio_generation"]["items"].append(gen_data)
 
                     if success is None:
                         # Fatal connection error - save and exit
                         print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                        narrative["audio_generation"]["total_generated"] = audio_generated_count
+                        chapters_data["audio_generation"]["total_generated"] = audio_generated_count
                         save_codex(codex, codex_path)
                         return GenerationResult(
                             codex_path=codex_path,
@@ -583,7 +583,7 @@ def run_template1_generation(
                         audio_generated_count += 1
 
                     # Save codex after each item to preserve progress
-                    narrative["audio_generation"]["total_generated"] = audio_generated_count
+                    chapters_data["audio_generation"]["total_generated"] = audio_generated_count
                     save_codex(codex, codex_path)
 
                 audio_count = audio_generated_count
@@ -831,8 +831,8 @@ def run_template1_generation(
         print("STEP 3: Generate Scene Images")
         print(f"{'='*60}")
 
-        narrative = codex.get("story", {}).get("narrative", {})
-        chapters = narrative.get("chapters", [])
+        chapters_data = codex.get("story", {}).get("chapters", {})
+        chapters = chapters_data.get("chapters", [])
 
         # Count total scenes with prompts
         total_scenes = 0

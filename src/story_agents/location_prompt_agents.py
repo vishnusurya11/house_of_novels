@@ -117,7 +117,7 @@ Generate a prompt that captures the FULL ATMOSPHERE of this place. Focus on:
 Remember: 300-500 words, single paragraph, natural language, HYPER-DETAILED.
 Focus on creating an IMMERSIVE, CINEMATIC environment."""
 
-        return self.invoke_structured(prompt, LocationPromptSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationPromptSchema, max_tokens=8000)
 
 
     def revise_prompt(self, original_prompt: str, critique: LocationPromptCritique,
@@ -173,7 +173,7 @@ Maintain 300-500 words, single paragraph, natural language.
 CRITICAL: Ensure style prefix at START and style suffix at END.
 Focus especially on categories that scored below 8."""
 
-        return self.invoke_structured(prompt, LocationPromptSchema, max_tokens=1500)
+        return self.invoke_structured(prompt, LocationPromptSchema, max_tokens=8000)
 
 
 # =============================================================================
@@ -296,7 +296,7 @@ Consider:
 - Is the visual style correctly applied (prefix at start, suffix at end)?
 - Are quality/style tags appropriate for environment art?"""
 
-        return self.invoke_structured(critique_prompt, LocationPromptCritique, max_tokens=1000)
+        return self.invoke_structured(critique_prompt, LocationPromptCritique, max_tokens=8000)
 
 
 # =============================================================================
