@@ -104,7 +104,7 @@ uv run python -m src.phases.phase1_author forge/20260208202311/codex_20260208202
 uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 0 1    # Steps 0-1 (Theme + Plotting)
 uv run python -m src.phases.phase1_author forge/20260105143022/codex_20260105143022.json --steps 1      # Step 1 only (Plotting) 
 
-uv run python -B -m src.phases.phase1_author forge/20260218162320/codex_20260218162320.json --steps 0 1 2 3 4 5 6 7 8 
+uv run python -B -m src.phases.phase1_author forge/20260219180034/codex_20260219180034.json --steps 0 1 2 3 4 5 6 7 8 
 
 uv run python -B -m src.phases.phase1_author forge/20260213170931/codex_20260213170931.json --steps 5
 
