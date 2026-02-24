@@ -1395,7 +1395,177 @@ class TitleVote(BaseModel):
 
 
 # =============================================================================
-# Phase 4 Step 4: Scene Image Prompt Schemas
+# Phase 2 Step 4: Layered Scene Image Prompt Schemas
+# =============================================================================
+
+class LocationLayerPrompt(BaseModel):
+    """Layer 1: How to modify the pre-generated location image for this scene.
+
+    The base location image already exists from Phase 3 Step 2.
+    This prompt describes ONLY the changes needed for this specific scene
+    (time of day, weather, damage, atmospheric effects, etc.).
+    """
+    prompt: str = Field(
+        ...,
+        description=(
+            "100-200 word prompt describing ONLY how the base location image "
+            "should be modified for this scene. Focus on: time of day changes, "
+            "weather effects, lighting shifts, damage/destruction, seasonal "
+            "changes, crowd presence, fire, smoke, etc. Do NOT describe the "
+            "location from scratch — describe CHANGES to the existing image."
+        )
+    )
+    time_of_day: str = Field(
+        ...,
+        description="Time of day in this scene: dawn, morning, noon, afternoon, dusk, night"
+    )
+    weather_atmosphere: str = Field(
+        ...,
+        description="Weather and atmospheric conditions: clear, foggy, rainy, stormy, snowy, etc."
+    )
+    modifications: list[str] = Field(
+        ...,
+        description=(
+            "List of specific visual modifications to apply to the base location "
+            "(e.g., 'burning buildings in background', 'heavy rain', 'night with torchlight')"
+        )
+    )
+    requires_modification: bool = Field(
+        ...,
+        description=(
+            "False if the base location image can be used as-is (same time of day, "
+            "no weather changes, no damage). True if modifications are needed."
+        )
+    )
+
+
+class CharacterLayerPrompt(BaseModel):
+    """Layer 2+: How to place one character into the scene image.
+
+    The character's reference portrait provides their physical appearance.
+    This prompt describes ONLY pose, action, position, and expression —
+    never hair color, eye color, clothing, height, or build.
+    """
+    character_name: str = Field(
+        ...,
+        description="Character name from codex (for reference lookup, NOT used in image generation)"
+    )
+    character_id: str = Field(
+        ...,
+        description="Character ID from codex (e.g., 'char_001') for portrait image lookup"
+    )
+    prompt: str = Field(
+        ...,
+        description=(
+            "100-200 word prompt describing ONLY this character's placement in the scene. "
+            "Focus on: pose, action, expression, position in frame (left/center/right, "
+            "foreground/midground), interaction with environment or other characters. "
+            "Do NOT describe the character's physical appearance (the reference image "
+            "provides that). Do NOT describe the location (already in the image)."
+        )
+    )
+    position_in_frame: str = Field(
+        ...,
+        description="Where in the frame: 'left foreground', 'center midground', 'right background', etc."
+    )
+    action_pose: str = Field(
+        ...,
+        description="What the character is doing: 'standing with arms crossed', 'kneeling', 'running', etc."
+    )
+    emotional_expression: str = Field(
+        ...,
+        description="Facial expression and emotional state: 'determined gaze', 'tearful', 'smirking', etc."
+    )
+    is_primary: bool = Field(
+        ...,
+        description="True if this is the primary/focal character of the scene"
+    )
+
+
+class LayeredSceneImagePromptSchema(BaseModel):
+    """Complete layered prompt structure for iterative scene image generation.
+
+    Instead of one monolithic prompt, the scene is built layer by layer:
+    1. Location layer modifies the pre-generated location image
+    2. Character layers add characters one-by-one using portrait references
+    """
+    location_name: str = Field(
+        ...,
+        description="Location name from codex"
+    )
+    location_id: str = Field(
+        default="",
+        description="Location ID from codex (e.g., 'loc_001') for base image lookup"
+    )
+    location_layer: LocationLayerPrompt = Field(
+        ...,
+        description="Layer 1: Location modification prompt"
+    )
+    character_layers: list[CharacterLayerPrompt] = Field(
+        ...,
+        description=(
+            "Layers 2+: Character placement prompts, ordered by importance. "
+            "First character is the primary/focal character."
+        )
+    )
+    scene_summary: str = Field(
+        ...,
+        description="Brief 1-2 sentence summary of the key visual moment"
+    )
+    composition_notes: str = Field(
+        ...,
+        description="Overall composition: camera angle, framing, depth of field"
+    )
+    mood_lighting: str = Field(
+        ...,
+        description="Overall mood and lighting description for the complete scene"
+    )
+    total_layers: int = Field(
+        ...,
+        description="Total number of generation layers (1 location + N characters)"
+    )
+
+
+class LayeredSceneImageCritiqueSchema(BaseModel):
+    """Critique for layered scene image prompts."""
+    location_modification_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are location changes specific and actionable?"
+    )
+    character_placement_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are character poses, positions, and actions clearly described?"
+    )
+    no_redundancy_score: float = Field(
+        ..., ge=1, le=10,
+        description=(
+            "Score 10 if layers avoid redundant descriptions. Score low if character "
+            "layers describe physical appearance (handled by reference image) or "
+            "location details (handled by location layer)."
+        )
+    )
+    composition_score: float = Field(
+        ..., ge=1, le=10,
+        description="Do character positions create good visual composition together?"
+    )
+    action_clarity_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are character actions and interactions clear and visually interesting?"
+    )
+    overall_score: float = Field(..., description="Average of all scores")
+    needs_revision: bool = Field(
+        ...,
+        description="True if any score < 7"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Specific improvements needed"
+    )
+
+
+# =============================================================================
+# DEPRECATED: Use LayeredSceneImagePromptSchema instead
+# Kept for backward compatibility with existing codex files
 # =============================================================================
 
 class SceneImagePromptSchema(BaseModel):
@@ -1420,7 +1590,7 @@ class SceneImagePromptSchema(BaseModel):
 
 
 class SceneImageCritiqueSchema(BaseModel):
-    """Critique for scene image prompts."""
+    """DEPRECATED: Use LayeredSceneImageCritiqueSchema instead. Critique for scene image prompts."""
     character_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="Physical descriptions match codex character profiles"

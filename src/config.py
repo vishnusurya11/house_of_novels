@@ -253,6 +253,15 @@ def get_workflow_path(workflow_type: str) -> Path:
     return PROJECT_ROOT / relative_path
 
 
+def get_max_character_layers() -> int:
+    """Max characters with individual layers in layered scene prompts.
+
+    Excess characters beyond this limit become background figures
+    noted in the last character layer's prompt.
+    """
+    return YAML_CONFIG.get("phase2_scene_prompts", {}).get("max_character_layers", 3)
+
+
 def should_run_step(step_index: int) -> bool:
     """Check if a generation step should run based on GENERATION_STEPS config.
 

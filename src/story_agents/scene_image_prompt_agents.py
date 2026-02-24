@@ -771,3 +771,584 @@ def generate_scene_image_prompt(
         },
         "critique_history": critique_history,
     }
+
+
+# =============================================================================
+# Layered Scene Image Prompt Generation
+# =============================================================================
+# Each function does ONE thing. The orchestrator wires them together.
+# =============================================================================
+
+from src.story_schemas import (
+    LayeredSceneImagePromptSchema,
+    LayeredSceneImageCritiqueSchema,
+    LocationLayerPrompt,
+    CharacterLayerPrompt,
+)
+from src.config import get_max_character_layers
+
+
+# =============================================================================
+# System Prompts
+# =============================================================================
+
+LAYERED_COMPOSER_SYSTEM_PROMPT = """You are a MASTER cinematic scene composition engineer.
+
+Your task is to create a LAYERED image generation plan for a scene. Each layer will be
+applied sequentially to build the final scene image using FLUX Kontext iterative editing.
+
+## HOW LAYERED GENERATION WORKS:
+1. Layer 1 (Location): Takes the pre-generated location image and modifies it
+   for this scene's context (time of day, weather, damage, atmospheric effects).
+2. Layer 2 (Primary Character): Takes the modified location + character portrait
+   reference image and places the character in the scene.
+3. Layer 3+ (Additional Characters): Same process for each additional character,
+   building on the previous layer's output.
+
+## CRITICAL RULES:
+
+1. **LOCATION LAYER** — Describe ONLY modifications to the existing location image.
+   - The base location image already exists. Do NOT describe the location from scratch.
+   - Focus on: time changes (night vs day), weather (rain, fog, snow), damage (fire,
+     destruction), atmospheric effects (dust, smoke), crowd presence, lighting shifts.
+   - If no modifications needed (same conditions as the base location), set
+     requires_modification=false with a minimal prompt like "No changes needed."
+   - Keep the prompt to 100-200 words.
+
+2. **CHARACTER LAYERS** — Describe ONLY pose, action, position, and expression.
+   - The character's reference portrait provides their physical appearance automatically.
+   - Do NOT describe hair color, eye color, clothing, height, build, skin tone, etc.
+   - DO describe: what they are doing, their emotional state, where they stand in the
+     frame (left/center/right, foreground/midground/background), how they interact
+     with the environment or other characters already placed.
+   - Order characters by narrative importance: primary/focal character FIRST.
+   - Keep each prompt to 100-200 words.
+
+3. **USE THE TOOLS** to retrieve character and location data from the codex:
+   - Use lookup_character_by_role to find character names and IDs from role descriptions
+   - Use get_character_description to get character IDs
+   - Use get_location_description to get the location ID
+   - You need these IDs for cross-referencing with pre-generated images.
+
+4. **COMPOSITION** — Think about the overall composition across all layers:
+   - Where does each character stand relative to the camera and each other?
+   - What is the visual focal point?
+   - Do the character positions create natural interaction?
+   - Consider depth: foreground, midground, background placement.
+
+## OUTPUT FIELDS:
+- location_id: From get_location_description tool (e.g., 'loc_001')
+- character_layers: Ordered list — primary character FIRST
+- Each character_layer needs character_name and character_id from the lookup tools
+- total_layers: 1 (location) + number of character layers"""
+
+
+LAYERED_CRITIC_SYSTEM_PROMPT = """You are a CRITICAL reviewer of layered scene image prompts.
+
+These prompts are designed for FLUX Kontext iterative image generation where:
+- Layer 1 modifies an existing location image
+- Layers 2+ add characters using portrait reference images
+
+## USE THE TOOLS to verify:
+1. Character IDs exist in the codex
+2. Location ID exists in the codex
+3. Character descriptions in character layers do NOT duplicate physical appearance
+
+## EVALUATION CRITERIA (Score 1-10 each):
+
+1. **LOCATION_MODIFICATION** (Score 1-10)
+   - Does the location layer describe CHANGES, not the full location?
+   - Are modifications specific and actionable (e.g., "add torchlight" not "dark atmosphere")?
+   - Is requires_modification correctly set (false only if truly no changes needed)?
+
+2. **CHARACTER_PLACEMENT** (Score 1-10)
+   - Are poses, positions, and actions clearly described?
+   - Is each character's position in the frame specified?
+   - Are interactions between characters described where applicable?
+
+3. **NO_REDUNDANCY** (Score 1-10) — CRITICAL!
+   - Score 10 if character layers contain ZERO physical appearance descriptions
+   - Score LOW if any character layer mentions hair color, eye color, clothing details,
+     height, build, skin tone, etc. (the portrait reference handles all of this)
+   - Score LOW if character layers re-describe the location setting
+
+4. **COMPOSITION** (Score 1-10)
+   - Do the character positions create a visually balanced layout?
+   - Is there a clear focal point (primary character)?
+   - Does the spatial arrangement make sense for the scene's action?
+
+5. **ACTION_CLARITY** (Score 1-10)
+   - Are character actions visually interesting and specific?
+   - Can the actions be depicted in a still image?
+   - Do actions convey the emotional tone of the scene?
+
+## OVERALL SCORE:
+- Calculate overall_score as the average of all 5 component scores above.
+
+## DECISION RULES:
+- If ANY score is below 7, mark needs_revision = true
+- Provide SPECIFIC suggestions referencing what needs to change"""
+
+
+# =============================================================================
+# Agent Constructors
+# =============================================================================
+
+def create_layered_composer_agent(codex: dict, model: str = DEFAULT_MODEL, temperature: float = 0.7):
+    """Create a ReAct agent for layered scene prompt composition."""
+    llm = ChatOpenAI(
+        model=model,
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL,
+        temperature=temperature,
+    )
+    tools = create_codex_tools(codex)
+    return create_react_agent(
+        model=llm,
+        tools=tools,
+        response_format=LayeredSceneImagePromptSchema,
+    )
+
+
+def create_layered_critic_agent(codex: dict, model: str = DEFAULT_MODEL, temperature: float = 0.3):
+    """Create a ReAct agent for layered scene prompt critique."""
+    llm = ChatOpenAI(
+        model=model,
+        api_key=OPENROUTER_API_KEY,
+        base_url=OPENROUTER_BASE_URL,
+        temperature=temperature,
+    )
+    tools = create_codex_tools(codex)
+    return create_react_agent(
+        model=llm,
+        tools=tools,
+        response_format=LayeredSceneImageCritiqueSchema,
+    )
+
+
+# =============================================================================
+# Prompt Builders
+# =============================================================================
+
+def build_composer_prompt(scene_data: dict, act_number: int, visual_style: dict | None) -> str:
+    """Build the user prompt string for the layered composer agent."""
+    scene_json = json.dumps({
+        "scene_number": scene_data.get("scene_number"),
+        "location": scene_data.get("location"),
+        "time_of_day": scene_data.get("time_of_day", ""),
+        "characters": scene_data.get("characters", []),
+        "pov_character": scene_data.get("pov_character", ""),
+        "text": scene_data.get("text", "")[:1000],
+    }, indent=2)
+
+    style_info = ""
+    if visual_style:
+        style_info = f"""
+## VISUAL STYLE: {visual_style.get("name", "Anime")}
+Note: Style is applied at the image generation level, not in layer prompts.
+Keep layer prompts focused on content/action, not artistic style."""
+
+    return f"""Generate a LAYERED image composition plan for this scene.
+
+## SCENE DATA:
+Act {act_number}, Scene {scene_data.get("scene_number")}
+Location: {scene_data.get("location")}
+Time of Day: {scene_data.get("time_of_day", "unknown")}
+POV Character: {scene_data.get("pov_character", "unknown")}
+Characters: {scene_data.get("characters", [])}
+
+{scene_json}
+{style_info}
+## INSTRUCTIONS:
+
+1. FIRST: Use get_location_description tool to get the location details and ID
+2. SECOND: For EACH character, use lookup_character_by_role or get_character_description
+   to get their NAME and ID
+3. THIRD: Create the layered prompt plan:
+
+   - LOCATION LAYER: What changes from the base location image for THIS scene?
+     (time of day, weather, atmospheric effects, damage, etc.)
+     If the base location already matches, set requires_modification=false.
+
+   - CHARACTER LAYERS (one per character, primary/POV character FIRST):
+     What is each character DOING? Where do they STAND in the frame?
+     What is their EXPRESSION? How do they INTERACT with the scene/each other?
+     Do NOT describe their appearance — the portrait reference handles that.
+
+4. Set total_layers = 1 + number of character layers
+
+CRITICAL: Keep each layer prompt to 100-200 words. Be specific and actionable."""
+
+
+def build_revision_prompt(
+    original: LayeredSceneImagePromptSchema,
+    critique: LayeredSceneImageCritiqueSchema,
+    scene_data: dict,
+    visual_style: dict | None,
+) -> str:
+    """Build the user prompt string for a revision pass."""
+    suggestions = "\n".join(f"- {s}" for s in critique.suggestions)
+
+    # Serialize the original layered prompt
+    location_info = (
+        f"requires_modification: {original.location_layer.requires_modification}\n"
+        f"prompt: {original.location_layer.prompt}"
+    )
+    char_info = "\n".join(
+        f"  [{i+1}] {cl.character_name} ({cl.character_id}): {cl.prompt[:100]}..."
+        for i, cl in enumerate(original.character_layers)
+    )
+
+    return f"""REVISE this layered scene image prompt based on critic feedback.
+
+## ORIGINAL LOCATION LAYER:
+{location_info}
+
+## ORIGINAL CHARACTER LAYERS:
+{char_info}
+
+## CRITIC SCORES:
+- Location Modification: {critique.location_modification_score}/10
+- Character Placement: {critique.character_placement_score}/10
+- No Redundancy (CRITICAL): {critique.no_redundancy_score}/10
+- Composition: {critique.composition_score}/10
+- Action Clarity: {critique.action_clarity_score}/10
+
+## SUGGESTIONS FOR IMPROVEMENT:
+{suggestions}
+
+## SCENE DATA (reference):
+Location: {scene_data.get("location")}
+Characters: {scene_data.get("characters", [])}
+
+FIRST: Use the tools to re-fetch character and location data for accuracy.
+THEN: Create IMPROVED layered prompt addressing ALL the critic's concerns.
+
+CRITICAL REMINDERS:
+- Location layer: CHANGES only, not full description
+- Character layers: POSE/ACTION/POSITION only, no physical appearance
+- Keep each layer prompt to 100-200 words"""
+
+
+def build_critique_prompt(
+    scene_prompt: LayeredSceneImagePromptSchema,
+    scene_data: dict,
+    visual_style: dict | None,
+) -> str:
+    """Build the user prompt string for the critic agent."""
+    # Serialize location layer
+    loc_layer = scene_prompt.location_layer
+    loc_summary = (
+        f"requires_modification: {loc_layer.requires_modification}\n"
+        f"time_of_day: {loc_layer.time_of_day}\n"
+        f"weather: {loc_layer.weather_atmosphere}\n"
+        f"modifications: {loc_layer.modifications}\n"
+        f"prompt: {loc_layer.prompt}"
+    )
+
+    # Serialize character layers
+    char_summaries = []
+    for i, cl in enumerate(scene_prompt.character_layers):
+        char_summaries.append(
+            f"  [{i+1}] {cl.character_name} ({cl.character_id})\n"
+            f"      position: {cl.position_in_frame}\n"
+            f"      action: {cl.action_pose}\n"
+            f"      expression: {cl.emotional_expression}\n"
+            f"      is_primary: {cl.is_primary}\n"
+            f"      prompt: {cl.prompt}"
+        )
+    char_info = "\n".join(char_summaries)
+
+    characters = scene_data.get("characters", [])
+
+    return f"""CRITICALLY EVALUATE this layered scene image prompt.
+
+## LOCATION LAYER:
+{loc_summary}
+
+## CHARACTER LAYERS:
+{char_info}
+
+## SCENE DATA:
+Location: {scene_data.get("location")}
+Characters: {characters}
+
+## INSTRUCTIONS:
+
+1. FIRST: Use get_character_description for each character: {characters}
+2. SECOND: Use get_location_description to get the location details
+3. THIRD: Compare each layer against codex data and score
+
+KEY CHECKS:
+- Does the location layer describe CHANGES only (not the full location)?
+- Do character layers avoid physical appearance descriptions?
+  (Check: NO mentions of hair color, eye color, clothing details, height, build)
+- Do character positions create a sensible spatial layout?
+- Are actions specific enough to depict in a still image?
+
+Set needs_revision=true if ANY score is below 7."""
+
+
+# =============================================================================
+# Single-Step Execution
+# =============================================================================
+
+def run_composer(agent, user_prompt: str) -> LayeredSceneImagePromptSchema:
+    """Run the layered composer agent once. Returns structured output."""
+    result = agent.invoke({
+        "messages": [
+            {"role": "system", "content": LAYERED_COMPOSER_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+    })
+    return result["structured_response"]
+
+
+def run_critic(agent, user_prompt: str) -> LayeredSceneImageCritiqueSchema:
+    """Run the layered critic agent once. Returns structured output."""
+    result = agent.invoke({
+        "messages": [
+            {"role": "system", "content": LAYERED_CRITIC_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+    })
+    return result["structured_response"]
+
+
+# =============================================================================
+# Post-Processing
+# =============================================================================
+
+def enforce_character_limit(
+    schema: LayeredSceneImagePromptSchema,
+    max_layers: int,
+) -> LayeredSceneImagePromptSchema:
+    """Truncate character_layers to max_layers. Excess become background note in last layer."""
+    max_layers = max(1, max_layers)
+    if len(schema.character_layers) <= max_layers:
+        return schema
+
+    kept = list(schema.character_layers[:max_layers])
+    excess = schema.character_layers[max_layers:]
+
+    # Append background note to the last kept layer's prompt
+    excess_names = [cl.character_name for cl in excess]
+    background_note = (
+        f" Other characters present in the background: {', '.join(excess_names)}."
+    )
+    last_layer = kept[-1]
+    kept[-1] = last_layer.model_copy(update={"prompt": last_layer.prompt + background_note})
+
+    return schema.model_copy(update={
+        "character_layers": kept,
+        "total_layers": 1 + len(kept),
+    })
+
+
+def check_needs_revision(critique: LayeredSceneImageCritiqueSchema) -> bool:
+    """Return True if any score < 7 or critique says needs_revision."""
+    min_score = min(
+        critique.location_modification_score,
+        critique.character_placement_score,
+        critique.no_redundancy_score,
+        critique.composition_score,
+        critique.action_clarity_score,
+    )
+    return critique.needs_revision or min_score < 7
+
+
+def resolve_ids(schema: LayeredSceneImagePromptSchema, codex: dict) -> LayeredSceneImagePromptSchema:
+    """Ensure location_id and character_ids are resolved from codex."""
+    # Resolve location ID if missing
+    location_id = schema.location_id
+    if not location_id:
+        location_id = _lookup_location_id(schema.location_name, codex)
+
+    # Resolve character IDs if missing
+    updated_layers = []
+    for cl in schema.character_layers:
+        char_id = cl.character_id
+        if not char_id:
+            # Try to find by name
+            characters = codex.get("story", {}).get("characters", [])
+            for char in characters:
+                if char.get("name", "").lower().strip() == cl.character_name.lower().strip():
+                    char_id = char.get("id", "")
+                    break
+        if not char_id:
+            print(f"  [WARN] Character '{cl.character_name}' not found in codex characters")
+        updated_layers.append(cl.model_copy(update={"character_id": char_id}))
+
+    return schema.model_copy(update={
+        "location_id": location_id,
+        "character_layers": updated_layers,
+    })
+
+
+def build_character_description(character_name: str, codex: dict) -> str:
+    """Build a physical description string for a character from codex data.
+
+    Image models need visual descriptors (hair, eyes, build, clothing) — not names.
+    This extracts the physical fields and returns a comma-separated description.
+    """
+    characters = codex.get("story", {}).get("characters", [])
+    for char in characters:
+        if char.get("name", "").lower().strip() == character_name.lower().strip():
+            physical = char.get("physical", {})
+            parts = []
+            gender = char.get("gender", "")
+            if gender:
+                parts.append(f"a {gender}")
+            height = physical.get("height", "")
+            build = physical.get("build", "")
+            if height or build:
+                body = ", ".join(filter(None, [height, build]))
+                parts.append(body)
+            hair = physical.get("hair_color", "") or physical.get("hair", "")
+            if hair:
+                # Only append "hair" if the value is just a color (no descriptors)
+                parts.append(f"{hair} hair" if len(hair.split()) <= 3 else hair)
+            eyes = physical.get("eye_color", "") or physical.get("eyes", "")
+            if eyes:
+                parts.append(f"{eyes} eyes" if len(eyes.split()) <= 3 else eyes)
+            skin = physical.get("skin_tone", "")
+            if skin:
+                parts.append(f"{skin} skin" if len(skin.split()) <= 3 else skin)
+            features = physical.get("distinguishing_features", "")
+            if features:
+                parts.append(features)
+            clothing = char.get("clothing", "")
+            if clothing:
+                parts.append(f"wearing {clothing}")
+            if parts:
+                return ", ".join(parts) + "."
+    return ""
+
+
+def format_layered_result(
+    schema: LayeredSceneImagePromptSchema,
+    critique_history: list[dict],
+    revision_count: int,
+    codex: dict,
+) -> dict:
+    """Convert schema + metadata into the final codex-ready dict.
+
+    Enriches each character layer prompt with the character's physical description
+    from the codex, so image models can render the character without a reference image.
+    """
+    final_scores = {}
+    if critique_history:
+        last = critique_history[-1]
+        final_scores = {
+            "location_modification": last.get("location_modification_score"),
+            "character_placement": last.get("character_placement_score"),
+            "no_redundancy": last.get("no_redundancy_score"),
+            "composition": last.get("composition_score"),
+            "action_clarity": last.get("action_clarity_score"),
+            "overall": last.get("overall_score"),
+        }
+
+    # Enrich character layer prompts with physical descriptions from codex
+    enriched_layers = []
+    for cl in schema.character_layers:
+        char_desc = build_character_description(cl.character_name, codex)
+        layer_dict = cl.model_dump()
+        if char_desc:
+            layer_dict["prompt"] = f"{char_desc} {cl.prompt}"
+        enriched_layers.append(layer_dict)
+
+    return {
+        "prompt_type": "layered",
+        "location_name": schema.location_name,
+        "location_id": schema.location_id,
+        "location_layer": schema.location_layer.model_dump(),
+        "character_layers": enriched_layers,
+        "scene_summary": schema.scene_summary,
+        "composition_notes": schema.composition_notes,
+        "mood_lighting": schema.mood_lighting,
+        "total_layers": schema.total_layers,
+        "revision_count": revision_count,
+        "final_scores": final_scores,
+        "critique_history": critique_history,
+    }
+
+
+# =============================================================================
+# Orchestrator
+# =============================================================================
+
+def generate_layered_scene_image_prompt(
+    scene_data: dict,
+    act_number: int,
+    codex: dict,
+    visual_style: dict | None = None,
+    model: str = DEFAULT_MODEL,
+    max_revisions: int = 2,
+) -> dict:
+    """Generate a layered scene image prompt using composer + critic workflow.
+
+    Each function called does exactly one thing:
+    - create agents → build prompt → run composer → enforce limits
+    - loop: build critique → run critic → check → build revision → run composer
+    - resolve IDs → format result
+
+    Args:
+        scene_data: Scene dict with location, characters, text
+        act_number: Act/chapter number for context
+        codex: Full codex with characters and locations
+        visual_style: Visual style dict with name, prefix, suffix
+        model: LLM model to use
+        max_revisions: Maximum revision cycles (default 2)
+
+    Returns:
+        Dict with prompt_type="layered", location_layer, character_layers, etc.
+    """
+    max_layers = get_max_character_layers()
+    scene_num = scene_data.get("scene_number", "?")
+    location = scene_data.get("location", "Unknown")
+    print(f"      Creating layered scene prompt for scene {scene_num} at {location}...")
+
+    # 1. Create agents
+    composer_agent = create_layered_composer_agent(codex, model)
+    critic_agent = create_layered_critic_agent(codex, model)
+
+    # 2. Initial composition
+    prompt = build_composer_prompt(scene_data, act_number, visual_style)
+    current = run_composer(composer_agent, prompt)
+    current = enforce_character_limit(current, max_layers)
+
+    # 3. Critique-revision loop
+    critique_history = []
+    revision_count = 0
+
+    for i in range(max_revisions):
+        print(f"        Critique cycle {i + 1}/{max_revisions}...")
+
+        crit_prompt = build_critique_prompt(current, scene_data, visual_style)
+        critique = run_critic(critic_agent, crit_prompt)
+
+        critique_dict = critique.model_dump()
+        critique_dict["cycle"] = i + 1
+        critique_history.append(critique_dict)
+
+        if not check_needs_revision(critique):
+            print(f"        Approved! Overall: {critique.overall_score:.1f}/10")
+            break
+
+        if i < max_revisions - 1:
+            min_score = min(
+                critique.location_modification_score,
+                critique.character_placement_score,
+                critique.no_redundancy_score,
+                critique.composition_score,
+                critique.action_clarity_score,
+            )
+            print(f"        Revising (min score: {min_score:.1f})...")
+            rev_prompt = build_revision_prompt(current, critique, scene_data, visual_style)
+            current = run_composer(composer_agent, rev_prompt)
+            current = enforce_character_limit(current, max_layers)
+            revision_count += 1
+
+    # 4. Finalize
+    current = resolve_ids(current, codex)
+    return format_layered_result(current, critique_history, revision_count, codex)

@@ -168,3 +168,7 @@ steps:
       debate_level: true
       max_workers_proposals: 6
       max_workers_debates: 5
+
+# Phase 2: Prompt Generation
+phase2_scene_prompts:
+  max_character_layers: 3  # Max characters with individual layers; excess become background figures
