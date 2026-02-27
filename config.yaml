@@ -172,3 +172,6 @@ steps:
 # Phase 2: Prompt Generation
 phase2_scene_prompts:
   max_character_layers: 3  # Max characters with individual layers; excess become background figures
+  shot_selection:
+    enabled: true       # Set false to disable shot selection (uses full_shot default)
+    force_shot_type:    # Override shot type for all scenes (for testing); null = auto-select

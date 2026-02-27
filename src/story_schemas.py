@@ -1395,6 +1395,77 @@ class TitleVote(BaseModel):
 
 
 # =============================================================================
+# Phase 2 Step 4: Shot Type & Staging (internal data containers)
+# =============================================================================
+
+
+class ShotTypeSpec(BaseModel):
+    """Camera framing specification for a scene image.
+
+    Computed deterministically from scene metadata — NOT part of LLM output.
+    Injected into the composer prompt as a mandatory constraint.
+    """
+    shot_type: str = Field(
+        ...,
+        description=(
+            "One of: wide_establishing, full_shot, medium_wide, two_shot, "
+            "over_shoulder, crowd_tension, tracking_motion, insert_detail"
+        )
+    )
+    shot_description: str = Field(
+        ...,
+        description="Human-readable description of the shot framing"
+    )
+    camera_distance: str = Field(
+        ...,
+        description="Focal length keyword: '24mm wide-angle', '85mm telephoto', etc."
+    )
+    character_scale: str = Field(
+        ...,
+        description="How much of the frame characters occupy: '5-20% of frame', 'knees-up', etc."
+    )
+    composition_rule: str = Field(
+        ...,
+        description="Primary composition guideline for this shot type"
+    )
+    negative_composition: str = Field(
+        default="",
+        description="Framing to AVOID (e.g., 'NOT: close-up, portrait, headshot')"
+    )
+
+
+class CharacterStagingHint(BaseModel):
+    """Pre-computed action/body-language hint for a character in a scene.
+
+    Inferred from scene metadata before the LLM runs. Provides the composer
+    agent with staging direction so characters are not passively standing.
+    Internal only — NOT part of LLM structured output.
+    """
+    character_name: str = Field(..., description="Character name")
+    character_id: str = Field(default="", description="Character ID")
+    staging_role: str = Field(
+        default="",
+        description="Narrative staging role: 'focal POV character in dialogue', 'hidden observer', etc."
+    )
+    physical_action: str = Field(
+        default="",
+        description="Specific physical action: 'gripping coat cuff, half-turned toward speaker'"
+    )
+    body_language: str = Field(
+        default="",
+        description="Posture and tension: 'shoulders hunched, arms crossed defensively'"
+    )
+    attention_direction: str = Field(
+        default="",
+        description="Where the character is looking: 'eyes locked on the unseen leader'"
+    )
+    camera_awareness: str = Field(
+        default="unaware",
+        description="Relationship to camera: 'unaware' (candid, default), 'turned away', 'profile'"
+    )
+
+
+# =============================================================================
 # Phase 2 Step 4: Layered Scene Image Prompt Schemas
 # =============================================================================
 
@@ -1480,6 +1551,23 @@ class CharacterLayerPrompt(BaseModel):
         ...,
         description="True if this is the primary/focal character of the scene"
     )
+    # Staging fields — optional with defaults for backward compatibility
+    staging_role: str = Field(
+        default="",
+        description="Narrative staging role: 'focal protagonist in crisis', 'hidden observer', etc."
+    )
+    body_language: str = Field(
+        default="",
+        description="Specific body language: 'shoulders hunched defensively', 'leaning forward aggressively'"
+    )
+    attention_direction: str = Field(
+        default="",
+        description="Where character is looking: 'eyes locked on opponent', 'gazing into distance'"
+    )
+    camera_awareness: str = Field(
+        default="unaware",
+        description="Relationship to camera: 'unaware' (candid, default), 'turned away', 'profile'"
+    )
 
 
 class LayeredSceneImagePromptSchema(BaseModel):
@@ -1524,6 +1612,18 @@ class LayeredSceneImagePromptSchema(BaseModel):
         ...,
         description="Total number of generation layers (1 location + N characters)"
     )
+    # Shot type fields — optional with defaults for backward compatibility
+    shot_type: str = Field(
+        default="full_shot",
+        description=(
+            "Camera shot type: wide_establishing, full_shot, medium_wide, two_shot, "
+            "over_shoulder, crowd_tension, tracking_motion, insert_detail"
+        )
+    )
+    camera_notes: str = Field(
+        default="",
+        description="Camera distance and framing notes (e.g., '24mm wide-angle, character occupies 10% of frame')"
+    )
 
 
 class LayeredSceneImageCritiqueSchema(BaseModel):
@@ -1552,7 +1652,22 @@ class LayeredSceneImageCritiqueSchema(BaseModel):
         ..., ge=1, le=10,
         description="Are character actions and interactions clear and visually interesting?"
     )
-    overall_score: float = Field(..., description="Average of all scores")
+    # Shot type and character action scoring — optional with defaults for backward compat
+    shot_adherence_score: float = Field(
+        default=8.0, ge=1, le=10,
+        description=(
+            "Does the composition match the specified shot type? "
+            "Character scale, camera distance, framing consistent with shot_type."
+        )
+    )
+    character_action_score: float = Field(
+        default=8.0, ge=1, le=10,
+        description=(
+            "Are characters actively DOING something, not just standing? "
+            "Body language specific, attention direction clear, actions match scene emotion."
+        )
+    )
+    overall_score: float = Field(..., description="Average of all 7 scores")
     needs_revision: bool = Field(
         ...,
         description="True if any score < 7"

@@ -262,6 +262,16 @@ def get_max_character_layers() -> int:
     return YAML_CONFIG.get("phase2_scene_prompts", {}).get("max_character_layers", 3)
 
 
+def get_shot_selection_config() -> dict:
+    """Get shot selection config for Phase 2 scene image prompts.
+
+    Returns dict with 'enabled' (bool) and 'force_shot_type' (str | None).
+    """
+    return YAML_CONFIG.get("phase2_scene_prompts", {}).get(
+        "shot_selection", {"enabled": True, "force_shot_type": None}
+    )
+
+
 def should_run_step(step_index: int) -> bool:
     """Check if a generation step should run based on GENERATION_STEPS config.
 
