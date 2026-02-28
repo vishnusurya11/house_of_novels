@@ -666,6 +666,16 @@ def _resolve_scene_location(scene_data: dict, codex: dict) -> tuple[str, str, di
     return scene_loc_name, scene_loc_id, {}
 
 
+def _pronouns_for_gender(gender: str) -> str:
+    """Return pronoun set string from a gender value."""
+    g = gender.lower().strip()
+    if g in ("male", "man", "boy"):
+        return "he/him/his"
+    if g in ("female", "woman", "girl"):
+        return "she/her/her"
+    return "they/them/their"
+
+
 def _build_character_context(profiles: list[dict]) -> str:
     """Build a character context block from resolved profiles for injection into agent prompt."""
     if not profiles:
@@ -674,10 +684,12 @@ def _build_character_context(profiles: list[dict]) -> str:
     for char in profiles:
         physical = char.get("physical", {})
         char_id = char.get("id") or char.get("character_id", "")
+        gender = char.get("gender", "unknown")
+        pronouns = _pronouns_for_gender(gender)
         parts = [
             f"**{char.get('name', 'Unknown')}** (ID: {char_id})",
             f"  Role: {char.get('role_in_story', 'unknown')}",
-            f"  Gender: {char.get('gender', 'unknown')}, Age: {char.get('age', 'unknown')}",
+            f"  Gender: {gender}, Pronouns: {pronouns}, Age: {char.get('age', 'unknown')}",
             f"  Height: {physical.get('height', 'unknown')}, Build: {physical.get('build', 'unknown')}",
             f"  Hair: {physical.get('hair_color', '') or physical.get('hair', 'unknown')}",
             f"  Eyes: {physical.get('eye_color', '') or physical.get('eyes', 'unknown')}",
@@ -1233,6 +1245,9 @@ with scene-specific details. The image should capture a MOMENT, not a character 
    - Fill in staging_role, body_language, attention_direction, camera_awareness fields.
    - Order characters by narrative importance: primary/focal character FIRST.
    - Keep each prompt to 100-200 words.
+   - **PRONOUN CONSISTENCY**: Use pronouns that match the character's stated gender.
+     Male = he/him/his. Female = she/her/her. Non-binary = they/them/their.
+     NEVER use mismatched pronouns (e.g., "her" for a male character).
 
 3. **USE THE TOOLS** to retrieve character and location data from the codex:
    - Use lookup_character_by_role to find character names and IDs from role descriptions
@@ -1465,6 +1480,7 @@ Characters: {scene_data.get("_resolved_character_names") or scene_data.get("char
      What is their EXPRESSION? How do they INTERACT with the scene/each other?
      Do NOT describe their appearance — the portrait reference handles that.
      Use the character NAMES and IDs from the details above for each layer.
+     CRITICAL: Match pronouns to each character's stated gender and pronouns above.
 
 3. Set total_layers = 1 + number of character layers
 {shot_instructions}

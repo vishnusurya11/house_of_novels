@@ -84,15 +84,17 @@ You always connect the external to the internal."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance based on psychological analysis."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design the physical appearance for this character based on their psychological state:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
 EMOTIONAL STATE: {adjective}
 GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design their appearance to REFLECT their psychological state.
@@ -104,6 +106,7 @@ Consider:
 - What physical signs of their emotional state would be visible?
 
 CRITICAL FORMAT:
+- gender: MUST be "{gender}" (pre-assigned, do not change)
 - body_build: How their life/state shaped their body (1-2 sentences)
 - height: Simple height description
 - hair_color: Hair color AND style that reflects their state
@@ -111,6 +114,8 @@ CRITICAL FORMAT:
 - eye_color: Eye color
 - distinguishing_features: ONLY if meaningful to their psychology, otherwise leave empty
 - costume: DETAILED clothing that tells their story (2-3 sentences)
+
+IMPORTANT: All description fields must use pronouns matching the character's gender ({gender}).
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -228,6 +233,32 @@ When designing:
 - Connect physical details to their role and occupation
 - Create memorable, specific details (not generic ones)
 
+## VISUAL DIFFERENTIATION RULES (MANDATORY):
+1. Apply the SILHOUETTE TEST: if this character is filled solid black,
+   can you tell them apart from every other character by outline alone?
+2. Assign a PRIMARY SHAPE to overall body proportions:
+   - CIRCULAR = warm, rounded, approachable
+   - RECTANGULAR = broad, sturdy, stable
+   - TRIANGULAR = angular, dynamic, sharp
+   No two characters should share the same primary shape.
+3. HAIR is the #1 visual identifier — vary color AND style across cast.
+4. VARY body builds deliberately: wiry, stocky, lean, muscular, petite, lanky.
+   NOT everyone "average" or "athletic."
+5. VARY heights: short, average, tall. NOT everyone the same.
+6. Scars are NOT a distinguishing feature unless the story demands it.
+   Prefer: freckles, dimples, calloused hands, ink stains, weather-beaten skin.
+7. Each character should have ONE unmistakable visual signature that
+   no other character shares (a unique hairstyle, a striking eye color,
+   an unusual build, a specific posture).
+
+FORBIDDEN (these are lazy AI defaults):
+- Giving every character a facial scar
+- Making everyone "average height" with "dark hair"
+- Using "athletic build" as the default for everyone
+- Making all characters the same ethnicity unless the story requires it
+- Hazel eyes on more than one character
+- "Soft" or "deep" as eye color modifiers on everyone
+
 You design characters that readers can VISUALIZE instantly."""
 
     def propose_physical(
@@ -238,13 +269,15 @@ You design characters that readers can VISUALIZE instantly."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance focused on visual distinctiveness."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design a VISUALLY DISTINCTIVE physical appearance for this character:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
-GOAL: {goal}
+GOAL: {goal}{gender_line}
 WORLD SETTING: {setting}
 
 Create a design that makes this character INSTANTLY RECOGNIZABLE.
@@ -256,10 +289,12 @@ Focus on:
 4. Memorable, SPECIFIC details (not generic)
 
 CRITICAL RULES:
+- gender: MUST be "{gender}" (pre-assigned, do not change)
 - NO default scars, birthmarks, or mysterious marks unless they mean something
 - distinguishing_features should be EMPTY unless truly significant
 - Costume should be 2-3 sentences of SPECIFIC detail
 - Make them visually memorable
+- All description fields must use pronouns matching the character's gender ({gender})
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -381,15 +416,17 @@ You design characters that FIT their narrative function."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance based on narrative function."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design physical appearance based on NARRATIVE FUNCTION:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type} (their function: protagonist/antagonist/supporting)
 PROTAGONIST STATE: {adjective}
 PROTAGONIST GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design appearance that reflects their NARRATIVE PURPOSE.
@@ -404,6 +441,8 @@ For {role_type}:
 - Protagonist: Design that readers root for
 - Antagonist: Design that creates meaningful opposition
 - Supporting: Design that complements/contrasts protagonist
+
+IMPORTANT: gender MUST be "{gender}" (pre-assigned). All descriptions must use matching pronouns.
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -522,15 +561,17 @@ You design characters that readers emotionally invest in."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance focused on audience connection."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design physical appearance that creates AUDIENCE CONNECTION:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
 EMOTIONAL STATE: {adjective}
 GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design appearance that makes readers CARE about this character.
@@ -544,6 +585,8 @@ Consider:
 For a {adjective} character:
 - What physical signs of their struggle would readers recognize?
 - How do we show their humanity through appearance?
+
+IMPORTANT: gender MUST be "{gender}" (pre-assigned). All descriptions must use matching pronouns.
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 

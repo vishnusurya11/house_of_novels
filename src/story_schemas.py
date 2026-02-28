@@ -108,9 +108,49 @@ class PhysicalDescriptionSchema(BaseModel):
         description="Ethnic appearance/complexion (e.g., 'dark-skinned with West African features', 'pale with East Asian features', 'olive Mediterranean complexion')"
     )
     eye_color: str = Field(..., description="Eye color")
+    posture: str = Field(
+        default="",
+        description=(
+            "Default standing bearing reflecting personality: 'military-straight', "
+            "'scholarly hunch', 'predatory lean', 'casual slouch', 'guarded arms-crossed'"
+        )
+    )
     distinguishing_features: str = Field(
         default="",
-        description="OPTIONAL: Meaningful unique features only if relevant to story (NOT default scars). Leave empty if none."
+        description=(
+            "OPTIONAL: ONE truly unique visual feature only if it serves the story. "
+            "BANNED defaults: facial scars, mysterious marks, glowing eyes, heterochromia. "
+            "Good examples: 'gap between front teeth', 'constellation of freckles across nose', "
+            "'ink-stained fingers', 'single gray streak in dark hair'. "
+            "Leave EMPTY if character is distinguished by other means (hair, build, clothing)."
+        )
+    )
+
+
+class CorrectedCharacterPhysical(BaseModel):
+    """A single character's corrected physical fields from cast audit."""
+    character_name: str = Field(..., description="Exact character name from input")
+    body_build: str = Field(..., description="Corrected body build")
+    height: str = Field(..., description="Corrected height")
+    hair_color: str = Field(..., description="Corrected hair color AND style")
+    eye_color: str = Field(..., description="Corrected eye color")
+    ethnicity: str = Field(..., description="Corrected ethnicity/complexion")
+    posture: str = Field(..., description="Corrected posture/bearing")
+    distinguishing_features: str = Field(default="", description="Corrected distinguishing feature (leave empty if not needed)")
+    changes_made: str = Field(
+        default="no changes",
+        description="Brief explanation of what was changed and why, or 'no changes' if character is fine"
+    )
+
+
+class CastVisualAuditResult(BaseModel):
+    """Result of validating visual uniqueness across the full character cast."""
+    characters: list[CorrectedCharacterPhysical] = Field(
+        ..., description="All characters with corrected physical fields. Characters with no collisions are returned unchanged."
+    )
+    collision_summary: str = Field(
+        default="",
+        description="Brief summary of all collisions found and fixes applied"
     )
 
 
