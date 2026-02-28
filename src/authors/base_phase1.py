@@ -13,8 +13,19 @@ import random
 import string
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING, TypeVar, Type
+
+
+_builtin_print = print  # Save reference before bulk replace
+
+
+def tprint(*args, **kwargs):
+    """Timestamped print — prepends [HH:MM:SS] wall-clock time to every line."""
+    ts = datetime.now().strftime("[%H:%M:%S]")
+    _builtin_print(ts, *args, **kwargs)
+
 
 from src.config import (
     DEFAULT_MODEL,
@@ -154,6 +165,7 @@ from src.story_schemas import (
     # Step 2: Character schemas
     CharacterSheetSchema,
     PhysicalDescriptionSchema,
+    CastVisualAuditResult,
     NameProposal,
     NameCritiques,
     NameVote,
@@ -191,6 +203,24 @@ from src.story_schemas import (
     EmotionalResonanceCritique,
     SceneCritiqueBundle,
 )
+
+# Timeout for parallel agent calls — read from config, used by all as_completed() calls
+_AGENT_TIMEOUT = float(GLOBAL_CONFIG.get("agent_call_timeout", 300))
+
+
+def _safe_as_completed(futures_collection, timeout, label=""):
+    """Wrapper around as_completed that catches TimeoutError gracefully.
+
+    Yields completed futures just like as_completed(). When the timeout expires,
+    logs a warning and stops iteration instead of crashing the pipeline.
+    Already-collected results are preserved.
+    """
+    from concurrent.futures import as_completed, TimeoutError
+    try:
+        yield from as_completed(futures_collection, timeout=timeout)
+    except TimeoutError:
+        pending = sum(1 for f in futures_collection if not f.done())
+        tprint(f"⏰ Timeout: {pending} task(s) still pending after {timeout:.0f}s — continuing with available results [{label}]")
 
 if TYPE_CHECKING:
     from src.authors.base_author import BaseAuthor
@@ -552,14 +582,14 @@ class BaseAuthorPhase1:
 
         # If all models banned for this step, reset step-specific ban list
         if not models_to_try:
-            print(f"⚠️  All models banned for step '{step_context}' - resetting step ban list")
+            tprint(f"⚠️  All models banned for step '{step_context}' - resetting step ban list")
             BaseAuthorPhase1._step_banned_models[step_context] = set()
             models_to_try = all_models
 
         for model_index, current_model in enumerate(models_to_try):
             # Create LLM instance for current model
             if current_model != self.model:
-                print(f"\n🔄 [Phase1Author] Switching to fallback model: {current_model}")
+                tprint(f"\n🔄 [Phase1Author] Switching to fallback model: {current_model}")
 
             llm = ChatOpenAI(
                 model=current_model,
@@ -577,7 +607,7 @@ class BaseAuthorPhase1:
                     include_raw=True  # Include raw AIMessage with token usage metadata
                 )
             except Exception as e:
-                print(f"⚠️  WARNING: json_schema method not supported, falling back to function_calling: {e}")
+                tprint(f"⚠️  WARNING: json_schema method not supported, falling back to function_calling: {e}")
                 structured_llm = llm.with_structured_output(
                     schema,
                     method="function_calling",
@@ -601,9 +631,9 @@ class BaseAuthorPhase1:
                         raw_message = response
 
                     if result is None:
-                        print(f"\n⚠️  WARNING: Phase1Author received None (schema: {schema.__name__}, attempt {attempt + 1}/{max_retries + 1})")
+                        tprint(f"\n⚠️  WARNING: Phase1Author received None (schema: {schema.__name__}, attempt {attempt + 1}/{max_retries + 1})")
                         if attempt < max_retries:
-                            print(f"   Retrying with explicit field requirements...")
+                            tprint(f"   Retrying with explicit field requirements...")
                             messages.append(HumanMessage(content=f"""
 RETRY REQUEST: Previous response was None (validation failed).
 
@@ -617,7 +647,7 @@ Try again with complete data for every field."""))
 
                     # Success!
                     if current_model != self.model:
-                        print(f"✅ SUCCESS with fallback model: {current_model}")
+                        tprint(f"✅ SUCCESS with fallback model: {current_model}")
 
                     # Extract token usage from raw message if requested
                     if return_usage:
@@ -627,24 +657,24 @@ Try again with complete data for every field."""))
 
                 except Exception as e:
                     error_msg = str(e)
-                    print(f"\n❌ ERROR in Phase1Author.invoke_structured() (Attempt {attempt + 1}/{max_retries + 1}):")
-                    print(f"   Model: {current_model}")
-                    print(f"   Schema: {schema.__name__}")
-                    print(f"   Error: {error_msg[:300]}")
+                    tprint(f"\n❌ ERROR in Phase1Author.invoke_structured() (Attempt {attempt + 1}/{max_retries + 1}):")
+                    tprint(f"   Model: {current_model}")
+                    tprint(f"   Schema: {schema.__name__}")
+                    tprint(f"   Error: {error_msg[:300]}")
 
                     # Check if this is a reasoning token error
                     if "length limit was reached" in error_msg and "reasoning_tokens" in error_msg:
-                        print(f"⚠️  Reasoning token error detected with {current_model}")
+                        tprint(f"⚠️  Reasoning token error detected with {current_model}")
                         # Ban this model for THIS STEP ONLY (not globally)
                         if step_context not in BaseAuthorPhase1._step_banned_models:
                             BaseAuthorPhase1._step_banned_models[step_context] = set()
                         BaseAuthorPhase1._step_banned_models[step_context].add(current_model)
-                        print(f"🚫 Banning {current_model} for step '{step_context}' only (reasoning token issues)")
-                        print(f"   Banned for this step: {BaseAuthorPhase1._step_banned_models[step_context]}")
+                        tprint(f"🚫 Banning {current_model} for step '{step_context}' only (reasoning token issues)")
+                        tprint(f"   Banned for this step: {BaseAuthorPhase1._step_banned_models[step_context]}")
                         break
 
                     if attempt < max_retries:
-                        print(f"   Retrying with error feedback...")
+                        tprint(f"   Retrying with error feedback...")
                         messages.append(HumanMessage(content=f"""
 VALIDATION ERROR: {error_msg[:500]}
 
@@ -656,7 +686,7 @@ Please try again and ensure ALL required fields are present:
 Return your response with COMPLETE data."""))
                     else:
                         if model_index < len(models_to_try) - 1:
-                            print(f"   All retries exhausted with {current_model}, trying fallback...")
+                            tprint(f"   All retries exhausted with {current_model}, trying fallback...")
                             break
                         else:
                             raise
@@ -781,19 +811,25 @@ Return your response with COMPLETE data."""))
         seconds = int(elapsed % 60)
         return f"[{minutes:02d}:{seconds:02d}]"
 
-    def _parallel_agent_calls(self, agents, method_name: str, *args, **kwargs) -> list:
+    def _parallel_agent_calls(self, agents, method_name: str, *args, timeout: float | None = None, **kwargs) -> list:
         """Run the same method on multiple agents in parallel, preserving order.
 
         Args:
             agents: List of agent instances
             method_name: Name of the method to call on each agent (e.g., 'propose_question')
             *args: Positional arguments to pass to each agent's method
+            timeout: Max seconds to wait for all agents to complete.
+                Defaults to config global.agent_call_timeout (300s).
+                Agents that don't finish in time return None.
             **kwargs: Keyword arguments to pass to each agent's method
 
         Returns:
-            list: Results in the same order as agents (None for failed calls)
+            list: Results in the same order as agents (None for failed/timed-out calls)
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+
+        if timeout is None:
+            timeout = float(GLOBAL_CONFIG.get("agent_call_timeout", 300))
 
         results = [None] * len(agents)
         worker_id = self._get_worker_id()
@@ -804,13 +840,19 @@ Return your response with COMPLETE data."""))
                 method = getattr(agent, method_name)
                 futures[executor.submit(method, *args, **kwargs)] = i
 
-            for future in as_completed(futures):
-                idx = futures[future]
-                try:
-                    results[idx] = future.result()
-                except Exception as e:
+            try:
+                for future in as_completed(futures, timeout=timeout):
+                    idx = futures[future]
+                    try:
+                        results[idx] = future.result(timeout=10)
+                    except Exception as e:
+                        agent_name = getattr(agents[idx], 'name', f'Agent-{idx}')
+                        tprint(f"[Worker-{worker_id}]   {agent_name}.{method_name}() failed: {str(e)[:80]}")
+            except TimeoutError:
+                timed_out = [i for f, i in futures.items() if not f.done()]
+                for idx in timed_out:
                     agent_name = getattr(agents[idx], 'name', f'Agent-{idx}')
-                    print(f"[Worker-{worker_id}]   {agent_name}.{method_name}() failed: {str(e)[:80]}")
+                    tprint(f"[Worker-{worker_id}]   ⏰ {agent_name}.{method_name}() timed out after {timeout:.0f}s")
 
         return results
 
@@ -899,11 +941,11 @@ Return your response with COMPLETE data."""))
             # Get worker ID for thread-safe logging
             worker_id = threading.current_thread().name.split('-')[-1] if '-' in threading.current_thread().name else 'Main'
 
-            print(f"\n[Worker-{worker_id}] >>> Logline: {story_prompt}")
+            tprint(f"\n[Worker-{worker_id}] >>> Logline: {story_prompt}")
             if setting_prompt:
-                print(f"[Worker-{worker_id}] >>> Setting: {setting_prompt[:100]}...")
-            print(f"[Worker-{worker_id}] >>> Config: parallel_enabled={parallel_enabled}, max_workers={max_workers}")
-            print(f"[Worker-{worker_id}] >>> NOTE: Substeps must run sequentially (substep2 needs substep1 output, substep3 needs substep1+2)")
+                tprint(f"[Worker-{worker_id}] >>> Setting: {setting_prompt[:100]}...")
+            tprint(f"[Worker-{worker_id}] >>> Config: parallel_enabled={parallel_enabled}, max_workers={max_workers}")
+            tprint(f"[Worker-{worker_id}] >>> NOTE: Substeps must run sequentially (substep2 needs substep1 output, substep3 needs substep1+2)")
 
             # Initialize substep timing and token tracking
             substep_timings = {}
@@ -913,9 +955,9 @@ Return your response with COMPLETE data."""))
             # SUBSTEP 1: THEME QUESTION DEBATE
             # =========================================================================
             substep1_start = time.time()
-            print(f"\n[Worker-{worker_id}] {'='*60}")
-            print(f"[Worker-{worker_id}] SUBSTEP 1: THEME QUESTION DEBATE")
-            print(f"[Worker-{worker_id}] {'='*60}")
+            tprint(f"\n[Worker-{worker_id}] {'='*60}")
+            tprint(f"[Worker-{worker_id}] SUBSTEP 1: THEME QUESTION DEBATE")
+            tprint(f"[Worker-{worker_id}] {'='*60}")
 
             # Initialize 3 theme question agents
             philosopher = ThemePhilosopherAgent(model=self.model)
@@ -924,16 +966,16 @@ Return your response with COMPLETE data."""))
 
             question_agents = [philosopher, emotional, dramatic]
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
             question_proposals = self._parallel_agent_calls(
                 question_agents, 'propose_question',
                 logline=story_prompt, world_context=setting_prompt
             )
             question_proposals = [p for p in question_proposals if p is not None]
             for p in question_proposals:
-                print(f"[Worker-{worker_id}]       → {p.question.question}")
+                tprint(f"[Worker-{worker_id}]       → {p.question.question}")
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
             critique_results = self._parallel_agent_calls(
                 question_agents, 'critique_questions',
                 proposals=question_proposals, logline=story_prompt
@@ -943,14 +985,14 @@ Return your response with COMPLETE data."""))
                 if result is not None:
                     all_question_critiques.extend(result)
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
             question_votes = self._parallel_agent_calls(
                 question_agents, 'vote',
                 proposals=question_proposals, logline=story_prompt
             )
             question_votes = [v for v in question_votes if v is not None]
             for v in question_votes:
-                print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+                tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
             # Count votes
             vote_counts = {}
@@ -960,8 +1002,8 @@ Return your response with COMPLETE data."""))
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_question = question_proposals[winner_index].question
 
-            print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f"[Worker-{worker_id}] >>> CENTRAL QUESTION: {winning_question.question}")
+            tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f"[Worker-{worker_id}] >>> CENTRAL QUESTION: {winning_question.question}")
 
             # Collect SUBSTEP 1 timing and tokens
             substep1_duration = time.time() - substep1_start
@@ -977,9 +1019,9 @@ Return your response with COMPLETE data."""))
             # SUBSTEP 2: THEMATIC SQUARE DEBATE
             # =========================================================================
             substep2_start = time.time()
-            print(f"\n[Worker-{worker_id}] {'='*60}")
-            print(f"[Worker-{worker_id}] SUBSTEP 2: THEMATIC SQUARE DEBATE")
-            print(f"[Worker-{worker_id}] {'='*60}")
+            tprint(f"\n[Worker-{worker_id}] {'='*60}")
+            tprint(f"[Worker-{worker_id}] SUBSTEP 2: THEMATIC SQUARE DEBATE")
+            tprint(f"[Worker-{worker_id}] {'='*60}")
 
             # Initialize 3 square agents
             architect = SquareArchitectAgent(model=self.model)
@@ -988,16 +1030,16 @@ Return your response with COMPLETE data."""))
 
             square_agents = [architect, character, conflict]
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
             square_proposals = self._parallel_agent_calls(
                 square_agents, 'propose_square',
                 central_question=winning_question.question, logline=story_prompt
             )
             square_proposals = [p for p in square_proposals if p is not None]
             for p in square_proposals:
-                print(f"[Worker-{worker_id}]       POSITIVE: {p.thematic_square.positive}")
+                tprint(f"[Worker-{worker_id}]       POSITIVE: {p.thematic_square.positive}")
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
             critique_results = self._parallel_agent_calls(
                 square_agents, 'critique_squares',
                 proposals=square_proposals, central_question=winning_question.question
@@ -1007,14 +1049,14 @@ Return your response with COMPLETE data."""))
                 if result is not None:
                     all_square_critiques.extend(result)
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
             square_votes = self._parallel_agent_calls(
                 square_agents, 'vote',
                 proposals=square_proposals, central_question=winning_question.question
             )
             square_votes = [v for v in square_votes if v is not None]
             for v in square_votes:
-                print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+                tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
             # Count votes
             vote_counts = {}
@@ -1024,12 +1066,12 @@ Return your response with COMPLETE data."""))
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_square = square_proposals[winner_index].thematic_square
 
-            print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f"[Worker-{worker_id}] >>> THEMATIC SQUARE:")
-            print(f"[Worker-{worker_id}]     POSITIVE: {winning_square.positive}")
-            print(f"[Worker-{worker_id}]     CONTRADICTORY: {winning_square.contradictory}")
-            print(f"[Worker-{worker_id}]     CONTRARY: {winning_square.contrary}")
-            print(f"[Worker-{worker_id}]     NEGATION: {winning_square.negation_of_negation}")
+            tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f"[Worker-{worker_id}] >>> THEMATIC SQUARE:")
+            tprint(f"[Worker-{worker_id}]     POSITIVE: {winning_square.positive}")
+            tprint(f"[Worker-{worker_id}]     CONTRADICTORY: {winning_square.contradictory}")
+            tprint(f"[Worker-{worker_id}]     CONTRARY: {winning_square.contrary}")
+            tprint(f"[Worker-{worker_id}]     NEGATION: {winning_square.negation_of_negation}")
 
             # Collect SUBSTEP 2 timing and tokens
             substep2_duration = time.time() - substep2_start
@@ -1045,9 +1087,9 @@ Return your response with COMPLETE data."""))
             # SUBSTEP 3: PERSPECTIVE SET DEBATE
             # =========================================================================
             substep3_start = time.time()
-            print(f"\n[Worker-{worker_id}] {'='*60}")
-            print(f"[Worker-{worker_id}] SUBSTEP 3: PERSPECTIVE SET DEBATE")
-            print(f"[Worker-{worker_id}] {'='*60}")
+            tprint(f"\n[Worker-{worker_id}] {'='*60}")
+            tprint(f"[Worker-{worker_id}] SUBSTEP 3: PERSPECTIVE SET DEBATE")
+            tprint(f"[Worker-{worker_id}] {'='*60}")
 
             # Initialize 3 perspective agents
             diversity = PerspectiveDiversityAgent(model=self.model)
@@ -1056,8 +1098,8 @@ Return your response with COMPLETE data."""))
 
             perspective_agents = [diversity, story_fit, balance]
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
             def _propose_perspective(agent):
                 if agent.name == "PERSPECTIVE_STORY":
@@ -1073,18 +1115,18 @@ Return your response with COMPLETE data."""))
             perspective_proposals = [None] * len(perspective_agents)
             with ThreadPoolExecutor(max_workers=len(perspective_agents)) as executor:
                 futures = {executor.submit(_propose_perspective, a): i for i, a in enumerate(perspective_agents)}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step0/perspective-proposals"):
                     idx = futures[future]
                     try:
                         perspective_proposals[idx] = future.result()
                     except Exception as e:
-                        print(f"[Worker-{worker_id}]   Proposal failed: {str(e)[:60]}")
+                        tprint(f"[Worker-{worker_id}]   Proposal failed: {str(e)[:60]}")
             perspective_proposals = [p for p in perspective_proposals if p is not None]
             for p in perspective_proposals:
                 for persp in p.perspectives:
-                    print(f"[Worker-{worker_id}]       - {persp.perspective_name} ({persp.corner})")
+                    tprint(f"[Worker-{worker_id}]       - {persp.perspective_name} ({persp.corner})")
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (3 agents, parallel)")
             def _critique_perspective(agent):
                 if agent.name == "PERSPECTIVE_STORY":
                     return agent.critique_perspective_sets(
@@ -1099,22 +1141,22 @@ Return your response with COMPLETE data."""))
             all_perspective_critiques = []
             with ThreadPoolExecutor(max_workers=len(perspective_agents)) as executor:
                 futures = {executor.submit(_critique_perspective, a): i for i, a in enumerate(perspective_agents)}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step0/perspective-critiques"):
                     try:
                         result = future.result()
                         if result is not None:
                             all_perspective_critiques.extend(result)
                     except Exception as e:
-                        print(f"[Worker-{worker_id}]   Critique failed: {str(e)[:60]}")
+                        tprint(f"[Worker-{worker_id}]   Critique failed: {str(e)[:60]}")
 
-            print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
+            tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (3 agents, parallel)")
             perspective_votes = self._parallel_agent_calls(
                 perspective_agents, 'vote',
                 proposals=perspective_proposals, central_question=winning_question.question
             )
             perspective_votes = [v for v in perspective_votes if v is not None]
             for v in perspective_votes:
-                print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+                tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
             # Count votes
             vote_counts = {}
@@ -1124,11 +1166,11 @@ Return your response with COMPLETE data."""))
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_perspectives = perspective_proposals[winner_index].perspectives
 
-            print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f"[Worker-{worker_id}] >>> PERSPECTIVES:")
+            tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f"[Worker-{worker_id}] >>> PERSPECTIVES:")
             for p in winning_perspectives:
-                print(f"[Worker-{worker_id}]     - {p.perspective_name} ({p.corner})")
-                print(f"[Worker-{worker_id}]       Position: {p.position}")
+                tprint(f"[Worker-{worker_id}]     - {p.perspective_name} ({p.corner})")
+                tprint(f"[Worker-{worker_id}]       Position: {p.position}")
 
             # =========================================================================
             # BUILD THEME FOUNDATION OUTPUT (CLEAN - NO DEBATES)
@@ -1279,10 +1321,10 @@ Return your response with COMPLETE data."""))
 
             duration = time.time() - start_time
 
-            print(f"\n[Worker-{worker_id}] {'='*60}")
-            print(f"[Worker-{worker_id}] STEP 0 COMPLETE! Duration: {duration:.1f}s")
-            print(f"[Worker-{worker_id}]   Tokens used: {total_tokens_used:,} ({total_calls} LLM calls)")
-            print(f"[Worker-{worker_id}] {'='*60}")
+            tprint(f"\n[Worker-{worker_id}] {'='*60}")
+            tprint(f"[Worker-{worker_id}] STEP 0 COMPLETE! Duration: {duration:.1f}s")
+            tprint(f"[Worker-{worker_id}]   Tokens used: {total_tokens_used:,} ({total_calls} LLM calls)")
+            tprint(f"[Worker-{worker_id}] {'='*60}")
 
             return Step0Result(
                 theme_foundation=theme_foundation,
@@ -1297,7 +1339,7 @@ Return your response with COMPLETE data."""))
         except Exception as e:
             duration = time.time() - start_time
             worker_id = threading.current_thread().name.split('-')[-1] if '-' in threading.current_thread().name else 'Main'
-            print(f"\n[Worker-{worker_id}] >>> Step 0 FAILED: {e}")
+            tprint(f"\n[Worker-{worker_id}] >>> Step 0 FAILED: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1315,7 +1357,8 @@ Return your response with COMPLETE data."""))
 
     def _create_character_parallel(self, char_idx: int, perspective: dict, central_question: str,
                                    story_prompt: str, setting_prompt: str, existing_names: list,
-                                   codex: dict) -> tuple:
+                                   codex: dict,
+                                   existing_characters_visual: list[dict] | None = None) -> tuple:
         """Create a single character in parallel with thread-safe logging.
 
         This method extracts the character creation logic to enable parallel processing.
@@ -1337,10 +1380,10 @@ Return your response with COMPLETE data."""))
         worker_id = threading.current_thread().name.split('-')[-1] if '-' in threading.current_thread().name else 'Main'
         char_id = f"char_{char_idx+1:03d}"
 
-        print(f"\n[Worker-{worker_id}] {'='*60}")
-        print(f"[Worker-{worker_id}] CHARACTER {char_idx+1}: {perspective['perspective_name']}")
-        print(f"[Worker-{worker_id}] Corner: {perspective['corner']}")
-        print(f"[Worker-{worker_id}] {'='*60}")
+        tprint(f"\n[Worker-{worker_id}] {'='*60}")
+        tprint(f"[Worker-{worker_id}] CHARACTER {char_idx+1}: {perspective['perspective_name']}")
+        tprint(f"[Worker-{worker_id}] Corner: {perspective['corner']}")
+        tprint(f"[Worker-{worker_id}] {'='*60}")
 
         # Import psychology agents
         from src.story_agents.character_psychology_agents import (
@@ -1371,7 +1414,7 @@ Return your response with COMPLETE data."""))
         # =========================================================
         # SUBSTEP 1: LIE/TRUTH DEBATE
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 1: LIE/TRUTH DEBATE ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 1: LIE/TRUTH DEBATE ---")
 
         # Initialize agents
         lie_truth_philosopher = LieTruthPhilosopherAgent(model=self.model)
@@ -1381,7 +1424,7 @@ Return your response with COMPLETE data."""))
         lie_truth_agents = [lie_truth_philosopher, lie_truth_psychologist, lie_truth_narrative]
 
         # Proposals (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
         lie_truth_proposals = self._parallel_agent_calls(
             lie_truth_agents, 'propose_lie_truth',
             perspective=perspective, central_question=central_question,
@@ -1389,10 +1432,10 @@ Return your response with COMPLETE data."""))
         )
         lie_truth_proposals = [p for p in lie_truth_proposals if p is not None]
         for p in lie_truth_proposals:
-            print(f"[Worker-{worker_id}]       Lie: {p.lie_character_believes[:60]}...")
+            tprint(f"[Worker-{worker_id}]       Lie: {p.lie_character_believes[:60]}...")
 
         # Critiques (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             lie_truth_agents, 'critique_lie_truth',
             proposals=lie_truth_proposals, perspective=perspective,
@@ -1404,14 +1447,14 @@ Return your response with COMPLETE data."""))
                 all_lie_truth_critiques.extend(result)
 
         # Votes (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         lie_truth_votes = self._parallel_agent_calls(
             lie_truth_agents, 'vote',
             proposals=lie_truth_proposals, perspective=perspective
         )
         lie_truth_votes = [v for v in lie_truth_votes if v is not None]
         for v in lie_truth_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
         # Select winner
         vote_counts = {}
@@ -1421,11 +1464,11 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_lie_truth = lie_truth_proposals[winner_index]
 
-        print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-        print(f"[Worker-{worker_id}] >>> Lie: {winning_lie_truth.lie_character_believes}")
-        print(f"[Worker-{worker_id}] >>> Truth: {winning_lie_truth.truth_character_needs}")
-        print(f"[Worker-{worker_id}] >>> Want: {winning_lie_truth.want}")
-        print(f"[Worker-{worker_id}] >>> Need: {winning_lie_truth.need}")
+        tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+        tprint(f"[Worker-{worker_id}] >>> Lie: {winning_lie_truth.lie_character_believes}")
+        tprint(f"[Worker-{worker_id}] >>> Truth: {winning_lie_truth.truth_character_needs}")
+        tprint(f"[Worker-{worker_id}] >>> Want: {winning_lie_truth.want}")
+        tprint(f"[Worker-{worker_id}] >>> Need: {winning_lie_truth.need}")
 
         character_debate_history["lie_truth_debate"] = {
             "proposals": [p.model_dump() for p in lie_truth_proposals],
@@ -1438,7 +1481,7 @@ Return your response with COMPLETE data."""))
         # =========================================================
         # SUBSTEP 2A: SHADOW DEBATE (3 agents)
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 2A: SHADOW DEBATE ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 2A: SHADOW DEBATE ---")
 
         # Initialize 3 shadow agents
         shadow_archetype = ShadowArchetypeAgent(model=self.model)
@@ -1448,7 +1491,7 @@ Return your response with COMPLETE data."""))
         shadow_agents = [shadow_archetype, shadow_narrative, shadow_psychologist]
 
         # Proposals (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
         shadow_proposals = self._parallel_agent_calls(
             shadow_agents, 'propose_shadow',
             perspective=perspective, lie=winning_lie_truth.lie_character_believes,
@@ -1457,7 +1500,7 @@ Return your response with COMPLETE data."""))
         shadow_proposals = [p for p in shadow_proposals if p is not None]
 
         # Critiques (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             shadow_agents, 'critique_shadow',
             proposals=shadow_proposals, perspective=perspective,
@@ -1469,14 +1512,14 @@ Return your response with COMPLETE data."""))
                 all_shadow_critiques.extend(result)
 
         # Votes (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         shadow_votes = self._parallel_agent_calls(
             shadow_agents, 'vote',
             proposals=shadow_proposals, perspective=perspective
         )
         shadow_votes = [v for v in shadow_votes if v is not None]
         for v in shadow_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
         # Select winner
         vote_counts = {}
@@ -1486,10 +1529,10 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_shadow = shadow_proposals[winner_index]
 
-        print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-        print(f"[Worker-{worker_id}] >>> Shadow Traits:")
+        tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+        tprint(f"[Worker-{worker_id}] >>> Shadow Traits:")
         for key, value in winning_shadow.shadow_traits.items():
-            print(f"[Worker-{worker_id}]     {key}: {value}")
+            tprint(f"[Worker-{worker_id}]     {key}: {value}")
 
         character_debate_history["shadow_debate"] = {
             "proposals": [p.model_dump() for p in shadow_proposals],
@@ -1502,7 +1545,7 @@ Return your response with COMPLETE data."""))
         # =========================================================
         # SUBSTEP 2B: ARC TYPE DEBATE (3 agents)
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 2B: ARC TYPE DEBATE ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 2B: ARC TYPE DEBATE ---")
 
         # Initialize 3 arc type agents
         arc_agent = ArcTypeAgent(model=self.model)
@@ -1512,7 +1555,7 @@ Return your response with COMPLETE data."""))
         arc_agents = [arc_agent, arc_narrative, arc_thematic]
 
         # Proposals (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
         arc_proposals = self._parallel_agent_calls(
             arc_agents, 'propose_arc_type',
             perspective=perspective, lie=winning_lie_truth.lie_character_believes,
@@ -1520,10 +1563,10 @@ Return your response with COMPLETE data."""))
         )
         arc_proposals = [p for p in arc_proposals if p is not None]
         for p in arc_proposals:
-            print(f"[Worker-{worker_id}]       Arc: {p.arc_type}")
+            tprint(f"[Worker-{worker_id}]       Arc: {p.arc_type}")
 
         # Critiques (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             arc_agents, 'critique_arc_type',
             proposals=arc_proposals, perspective=perspective,
@@ -1536,14 +1579,14 @@ Return your response with COMPLETE data."""))
                 all_arc_critiques.extend(result)
 
         # Votes (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         arc_votes = self._parallel_agent_calls(
             arc_agents, 'vote',
             proposals=arc_proposals, perspective=perspective
         )
         arc_votes = [v for v in arc_votes if v is not None]
         for v in arc_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
         # Select winner
         vote_counts = {}
@@ -1553,9 +1596,9 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_arc = arc_proposals[winner_index]
 
-        print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-        print(f"[Worker-{worker_id}] >>> Arc Type: {winning_arc.arc_type}")
-        print(f"[Worker-{worker_id}] >>> Journey: {winning_arc.arc_journey}")
+        tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+        tprint(f"[Worker-{worker_id}] >>> Arc Type: {winning_arc.arc_type}")
+        tprint(f"[Worker-{worker_id}] >>> Journey: {winning_arc.arc_journey}")
 
         character_debate_history["arc_type_debate"] = {
             "proposals": [p.model_dump() for p in arc_proposals],
@@ -1568,7 +1611,7 @@ Return your response with COMPLETE data."""))
         # =========================================================
         # SUBSTEP 2C: GHOST DEBATE (3 agents)
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 2C: GHOST DEBATE ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 2C: GHOST DEBATE ---")
 
         # Initialize 3 ghost agents
         ghost_agent = GhostAgent(model=self.model)
@@ -1578,17 +1621,17 @@ Return your response with COMPLETE data."""))
         ghost_agents = [ghost_agent, ghost_emotional, ghost_thematic]
 
         # Proposals (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
         ghost_proposals = self._parallel_agent_calls(
             ghost_agents, 'propose_ghost',
             perspective=perspective, lie=winning_lie_truth.lie_character_believes
         )
         ghost_proposals = [p for p in ghost_proposals if p is not None]
         for p in ghost_proposals:
-            print(f"[Worker-{worker_id}]       Event: {p.ghost_event[:60]}...")
+            tprint(f"[Worker-{worker_id}]       Event: {p.ghost_event[:60]}...")
 
         # Critiques (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             ghost_agents, 'critique_ghost',
             proposals=ghost_proposals, perspective=perspective,
@@ -1600,14 +1643,14 @@ Return your response with COMPLETE data."""))
                 all_ghost_critiques.extend(result)
 
         # Votes (parallel)
-        print(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"\n[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         ghost_votes = self._parallel_agent_calls(
             ghost_agents, 'vote',
             proposals=ghost_proposals, perspective=perspective
         )
         ghost_votes = [v for v in ghost_votes if v is not None]
         for v in ghost_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.voted_for_index}")
 
         # Select winner
         vote_counts = {}
@@ -1617,9 +1660,9 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_ghost = ghost_proposals[winner_index]
 
-        print(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-        print(f"[Worker-{worker_id}] >>> Ghost Event: {winning_ghost.ghost_event}")
-        print(f"[Worker-{worker_id}] >>> How It Created Lie: {winning_ghost.how_it_created_lie}")
+        tprint(f"\n[Worker-{worker_id}] >>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+        tprint(f"[Worker-{worker_id}] >>> Ghost Event: {winning_ghost.ghost_event}")
+        tprint(f"[Worker-{worker_id}] >>> How It Created Lie: {winning_ghost.how_it_created_lie}")
 
         character_debate_history["ghost_debate"] = {
             "proposals": [p.model_dump() for p in ghost_proposals],
@@ -1632,11 +1675,11 @@ Return your response with COMPLETE data."""))
         # =========================================================
         # SUBSTEP 3: NAME GENERATION (reuse existing system)
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 3: NAME GENERATION ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 3: NAME GENERATION ---")
 
         first_initial = random.choice(string.ascii_uppercase)
         last_initial = random.choice(string.ascii_uppercase)
-        print(f"[Worker-{worker_id}]     Initials: {first_initial}.{last_initial}.")
+        tprint(f"[Worker-{worker_id}]     Initials: {first_initial}.{last_initial}.")
 
         name_result = self._run_name_debate(
             character_role=perspective['perspective_name'],
@@ -1648,14 +1691,17 @@ Return your response with COMPLETE data."""))
         )
 
         final_name = name_result["final_name"]
-        print(f"[Worker-{worker_id}]     >>> Name: {final_name}")
+        tprint(f"[Worker-{worker_id}]     >>> Name: {final_name}")
 
         character_debate_history["name_debate"] = name_result.get("debate", {})
 
         # =========================================================
         # SUBSTEP 4: PHYSICAL APPEARANCE (reuse existing system)
         # =========================================================
-        print(f"\n[Worker-{worker_id}] --- SUBSTEP 4: PHYSICAL APPEARANCE ---")
+        tprint(f"\n[Worker-{worker_id}] --- SUBSTEP 4: PHYSICAL APPEARANCE ---")
+
+        # Pre-assign gender so debate agents use consistent pronouns
+        gender = random.choice(["male", "female"])
 
         physical_result = self._run_physical_debate(
             character_role=perspective['perspective_name'],
@@ -1664,6 +1710,8 @@ Return your response with COMPLETE data."""))
             goal=winning_lie_truth.want,
             stakes=winning_lie_truth.need,
             setting_prompt=setting_prompt,
+            existing_characters_visual=existing_characters_visual,
+            gender=gender,
         )
 
         # Extract physical description from winning proposal
@@ -1672,7 +1720,7 @@ Return your response with COMPLETE data."""))
         if winning_physical.get('distinguishing_features'):
             final_physical += f", {winning_physical['distinguishing_features']}"
 
-        print(f"[Worker-{worker_id}]     >>> Physical: {final_physical[:100]}...")
+        tprint(f"[Worker-{worker_id}]     >>> Physical: {final_physical[:100]}...")
 
         character_debate_history["physical_debate"] = {
             "proposals": physical_result.get("proposals", []),
@@ -1699,13 +1747,14 @@ Return your response with COMPLETE data."""))
         character = {
             "character_id": char_id,
             "name": final_name,
-            "gender": random.choice(["male", "female"]),
+            "gender": gender,
             "body_build": winning_physical.get('body_build', 'average build'),
             "height": winning_physical.get('height', 'average height'),
             "hair_color": winning_physical.get('hair_color', 'dark hair'),
             "eye_color": winning_physical.get('eye_color', 'brown eyes'),
             "ethnicity": winning_physical.get('ethnicity', 'mixed heritage'),
             "distinguishing_features": winning_physical.get('distinguishing_features', ''),
+            "posture": winning_physical.get('posture', ''),
             "costume": "",  # Will be designed in Step 4 (World Building) with full world context
             "costume_details": None,  # Detailed costume breakdown added in Step 4
             "role": character_role,  # Story function (protagonist/antagonist/supporting)
@@ -1723,10 +1772,114 @@ Return your response with COMPLETE data."""))
             "how_ghost_created_lie": winning_ghost.how_it_created_lie,
         }
 
-        print(f"\n[Worker-{worker_id}] >>> Character {char_idx+1} complete!")
+        tprint(f"\n[Worker-{worker_id}] >>> Character {char_idx+1} complete!")
 
         return (character, character_debate_history)
 
+    def _validate_cast_visual_uniqueness(self, characters: list[dict]) -> list[dict]:
+        """Validate and fix visual uniqueness across the full character cast.
+
+        Sends ALL character physical descriptions to an LLM agent that checks
+        for hair/eye/build/height collisions and returns minimum fixes.
+
+        Args:
+            characters: List of character dicts from Step 1 creation.
+
+        Returns:
+            Updated character list with collision fixes applied.
+        """
+        if len(characters) < 2:
+            return characters
+
+        from src.story_agents.base_story_agent import BaseStoryAgent
+
+        # Build a concrete agent class inline for the audit
+        class CastVisualAuditor(BaseStoryAgent):
+            @property
+            def name(self) -> str:
+                return "CAST_VISUAL_AUDITOR"
+
+            @property
+            def role(self) -> str:
+                return "Visual Uniqueness Validator"
+
+            @property
+            def system_prompt(self) -> str:
+                return (
+                    "You are a CAST VISUAL AUDITOR. You receive ALL characters and check for "
+                    "visual collisions that would make them indistinguishable in images.\n\n"
+                    "CHECK EACH PAIR for these collisions:\n"
+                    "1. HAIR: same base color + similar style = COLLISION\n"
+                    "2. EYES: same color on 3+ characters = COLLISION\n"
+                    "3. BUILD: same body type + same height = COLLISION\n"
+                    "4. FEATURES: same distinguishing feature type (2+ scars) = COLLISION\n"
+                    "5. HEIGHT: all 'average' or all 'tall' = COLLISION\n"
+                    "6. MISSING FIELDS: empty body_build, ethnicity, or posture = MUST FIX\n\n"
+                    "For each collision: return the MINIMUM change to one character to fix it.\n"
+                    "Example: 'Change Quintus hair from dark brown to auburn red'\n"
+                    "Do NOT redesign characters — make the smallest targeted fix.\n\n"
+                    "Output: the corrected physical description fields for ALL characters. "
+                    "Characters with no collisions are returned unchanged with changes_made='no changes'."
+                )
+
+        auditor = CastVisualAuditor(model=self.model)
+
+        # Build the audit prompt with all character data
+        char_lines = []
+        for ch in characters:
+            char_lines.append(
+                f"- {ch['name']} (ID: {ch.get('character_id', 'unknown')}):\n"
+                f"  hair: {ch.get('hair_color', 'unset')}\n"
+                f"  eyes: {ch.get('eye_color', 'unset')}\n"
+                f"  build: {ch.get('body_build', 'unset')}\n"
+                f"  height: {ch.get('height', 'unset')}\n"
+                f"  ethnicity: {ch.get('ethnicity', 'unset')}\n"
+                f"  posture: {ch.get('posture', 'unset')}\n"
+                f"  distinguishing: {ch.get('distinguishing_features', 'none')}"
+            )
+
+        prompt = (
+            f"AUDIT these {len(characters)} characters for visual collisions.\n"
+            f"Return corrected physical fields for ALL characters.\n\n"
+            + "\n".join(char_lines)
+        )
+
+        tprint(f"\n>>> Running cast visual uniqueness audit on {len(characters)} characters...")
+
+        try:
+            result = auditor.invoke_structured(prompt, CastVisualAuditResult, max_tokens=8000)
+
+            # Apply corrections back to character dicts
+            corrections_by_name = {c.character_name: c for c in result.characters}
+            changes_applied = 0
+
+            for ch in characters:
+                correction = corrections_by_name.get(ch["name"])
+                if not correction or correction.changes_made == "no changes":
+                    continue
+
+                # Apply the corrected fields
+                ch["body_build"] = correction.body_build
+                ch["height"] = correction.height
+                ch["hair_color"] = correction.hair_color
+                ch["eye_color"] = correction.eye_color
+                ch["ethnicity"] = correction.ethnicity
+                ch["posture"] = correction.posture
+                ch["distinguishing_features"] = correction.distinguishing_features
+                changes_applied += 1
+                tprint(f"  Fixed {ch['name']}: {correction.changes_made}")
+
+            if result.collision_summary:
+                tprint(f"  Audit summary: {result.collision_summary}")
+            if changes_applied == 0:
+                tprint(f"  No collisions found — all characters visually distinct!")
+            else:
+                tprint(f"  Applied {changes_applied} correction(s)")
+
+        except Exception as e:
+            tprint(f"  WARNING: Cast visual audit failed ({e}), proceeding with original characters")
+
+        return characters
 
     def step1_character_creation(self, codex: dict) -> Step1Result:
         """Generate psychologically complex characters from Step 0 thematic perspectives.
@@ -1780,11 +1933,11 @@ Return your response with COMPLETE data."""))
             # Get prompts for context
             story_prompt, setting_prompt = self.extract_prompts(codex)
 
-            print(f"\n{'='*60}")
-            print("STEP 1: CHARACTER CREATION (Theme → Characters)")
-            print(f"{'='*60}")
-            print(f">>> Creating {len(perspectives)} characters from thematic perspectives")
-            print(f">>> Central Question: {central_question}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 1: CHARACTER CREATION (Theme → Characters)")
+            tprint(f"{'='*60}")
+            tprint(f">>> Creating {len(perspectives)} characters from thematic perspectives")
+            tprint(f">>> Central Question: {central_question}")
 
             # Import psychology agents
             from src.story_agents.character_psychology_agents import (
@@ -1814,9 +1967,9 @@ Return your response with COMPLETE data."""))
 
             # Process characters in parallel or sequentially
             if character_level_parallel and len(perspectives) > 1:
-                print(f">>> Processing characters in parallel (max_workers={max_workers_characters})")
+                tprint(f">>> Processing characters in parallel (max_workers={max_workers_characters})")
 
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 name_lock = threading.Lock()  # Thread-safe name list management
 
@@ -1849,7 +2002,7 @@ Return your response with COMPLETE data."""))
 
                     # Collect results in order
                     results = [None] * len(perspectives)
-                    for future in as_completed(future_to_idx):
+                    for future in _safe_as_completed(future_to_idx, _AGENT_TIMEOUT, "step1/characters"):
                         idx, char, debate = future.result()
                         results[idx] = (char, debate)
 
@@ -1863,7 +2016,7 @@ Return your response with COMPLETE data."""))
                             codex["story"] = {}
                         codex["story"]["characters"] = characters
             else:
-                print(f">>> Processing characters sequentially")
+                tprint(f">>> Processing characters sequentially")
 
                 # Sequential processing (use helper method for consistency)
                 for idx, perspective in enumerate(perspectives):
@@ -1874,7 +2027,8 @@ Return your response with COMPLETE data."""))
                         story_prompt=story_prompt,
                         setting_prompt=setting_prompt,
                         existing_names=existing_names,
-                        codex=codex
+                        codex=codex,
+                        existing_characters_visual=characters if characters else None,
                     )
 
                     existing_names.append(char['name'])
@@ -1886,19 +2040,26 @@ Return your response with COMPLETE data."""))
                         codex["story"] = {}
                     codex["story"]["characters"] = characters
 
+            # Validate visual uniqueness across the full cast
+            characters = self._validate_cast_visual_uniqueness(characters)
+            # Update codex with validated characters
+            if "story" not in codex:
+                codex["story"] = {}
+            codex["story"]["characters"] = characters
+
             # Final summary
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print(f"STEP 1 COMPLETE! Created {len(characters)} characters")
-            print(f"Duration: {duration:.1f}s")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"STEP 1 COMPLETE! Created {len(characters)} characters")
+            tprint(f"Duration: {duration:.1f}s")
+            tprint(f"{'='*60}")
 
             for i, char in enumerate(characters):
-                print(f"\n{i+1}. {char['name']} ({char['thematic_perspective']})")
-                print(f"   Arc: {char['arc_type']}")
-                print(f"   Lie: {char['lie_character_believes'][:60]}...")
-                print(f"   Truth: {char['truth_character_needs'][:60]}...")
+                tprint(f"\n{i+1}. {char['name']} ({char['thematic_perspective']})")
+                tprint(f"   Arc: {char['arc_type']}")
+                tprint(f"   Lie: {char['lie_character_believes'][:60]}...")
+                tprint(f"   Truth: {char['truth_character_needs'][:60]}...")
 
             return Step1Result(
                 characters=characters,
@@ -1909,7 +2070,7 @@ Return your response with COMPLETE data."""))
 
         except Exception as e:
             duration = time.time() - start_time
-            print(f"\n>>> Step 1 FAILED: {e}")
+            tprint(f"\n>>> Step 1 FAILED: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1943,9 +2104,9 @@ Return your response with COMPLETE data."""))
             dict: Debate results with winner and metadata
         """
         worker_id = self._get_worker_id()
-        print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] DEBATE 1: STORY SHAPE (7 Basic Plots)")
-        print(f"[Worker-{worker_id}] {'='*50}")
+        tprint(f"\n[Worker-{worker_id}] {'='*50}")
+        tprint(f"[Worker-{worker_id}] DEBATE 1: STORY SHAPE (7 Basic Plots)")
+        tprint(f"[Worker-{worker_id}] {'='*50}")
 
         from src.story_agents.story_shape_agents import (
             StoryShapeJourneyAgent, StoryShapeEmotionalAgent, StoryShapeThematicAgent
@@ -1958,16 +2119,16 @@ Return your response with COMPLETE data."""))
         ]
 
         # Proposals (parallel)
-        print(f"[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 1: Proposals (3 agents, parallel)")
         shape_proposals = self._parallel_agent_calls(
             shape_agents, 'propose_story_shape', story_prompt, theme_question, characters
         )
         shape_proposals = [p for p in shape_proposals if p is not None]
         for p in shape_proposals:
-            print(f"[Worker-{worker_id}]       Shape: {p.story_shape}")
+            tprint(f"[Worker-{worker_id}]       Shape: {p.story_shape}")
 
         # Critiques (parallel)
-        print(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             shape_agents, 'critique_story_shape', shape_proposals, story_prompt, characters
         )
@@ -1977,11 +2138,11 @@ Return your response with COMPLETE data."""))
                 all_shape_critiques.extend(result)
 
         # Votes (parallel)
-        print(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         shape_votes = self._parallel_agent_calls(shape_agents, 'vote', shape_proposals, story_prompt)
         shape_votes = [v for v in shape_votes if v is not None]
         for v in shape_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
 
         # Determine winner
         vote_counts = {}
@@ -1990,7 +2151,7 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_shape = shape_proposals[winner_index]
 
-        print(f"[Worker-{worker_id}] >>> WINNER: {winning_shape.story_shape} ({vote_counts[winner_index]} votes)")
+        tprint(f"[Worker-{worker_id}] >>> WINNER: {winning_shape.story_shape} ({vote_counts[winner_index]} votes)")
 
         return {
             "winning_shape": winning_shape,
@@ -2019,9 +2180,9 @@ Return your response with COMPLETE data."""))
             dict: Debate results with winner and metadata
         """
         worker_id = self._get_worker_id()
-        print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] DEBATE 2: SAVE THE CAT TYPE")
-        print(f"[Worker-{worker_id}] {'='*50}")
+        tprint(f"\n[Worker-{worker_id}] {'='*50}")
+        tprint(f"[Worker-{worker_id}] DEBATE 2: SAVE THE CAT TYPE")
+        tprint(f"[Worker-{worker_id}] {'='*50}")
 
         from src.story_agents.story_shape_agents import (
             SaveTheCatStakesAgent, SaveTheCatCharacterAgent, SaveTheCatThematicAgent
@@ -2033,15 +2194,15 @@ Return your response with COMPLETE data."""))
             SaveTheCatThematicAgent(model=self.model),
         ]
 
-        print(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
         stc_proposals = self._parallel_agent_calls(
             stc_agents, 'propose_save_the_cat', story_prompt, theme_question, characters, ""
         )
         stc_proposals = [p for p in stc_proposals if p is not None]
         for p in stc_proposals:
-            print(f"[Worker-{worker_id}]     - {p.save_the_cat_type}")
+            tprint(f"[Worker-{worker_id}]     - {p.save_the_cat_type}")
 
-        print(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             stc_agents, 'critique_save_the_cat', stc_proposals, story_prompt, characters
         )
@@ -2050,11 +2211,11 @@ Return your response with COMPLETE data."""))
             if result is not None:
                 all_stc_critiques.extend(result)
 
-        print(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         stc_votes = self._parallel_agent_calls(stc_agents, 'vote', stc_proposals, story_prompt)
         stc_votes = [v for v in stc_votes if v is not None]
         for v in stc_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
 
         vote_counts = {}
         for vote in stc_votes:
@@ -2062,7 +2223,7 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_stc = stc_proposals[winner_index]
 
-        print(f"[Worker-{worker_id}] >>> WINNER: {winning_stc.save_the_cat_type}")
+        tprint(f"[Worker-{worker_id}] >>> WINNER: {winning_stc.save_the_cat_type}")
 
         return {
             "winning_stc": winning_stc,
@@ -2089,9 +2250,9 @@ Return your response with COMPLETE data."""))
             dict: Debate results with winner and metadata
         """
         worker_id = self._get_worker_id()
-        print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] DEBATE 3: GENRE SELECTION")
-        print(f"[Worker-{worker_id}] {'='*50}")
+        tprint(f"\n[Worker-{worker_id}] {'='*50}")
+        tprint(f"[Worker-{worker_id}] DEBATE 3: GENRE SELECTION")
+        tprint(f"[Worker-{worker_id}] {'='*50}")
 
         from src.story_agents.story_shape_agents import (
             GenrePressureAgent, GenreToneAgent, GenreAudienceAgent
@@ -2103,15 +2264,15 @@ Return your response with COMPLETE data."""))
             GenreAudienceAgent(model=self.model),
         ]
 
-        print(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
         genre_proposals = self._parallel_agent_calls(
             genre_agents, 'propose_genre', story_prompt, theme_question, "", ""
         )
         genre_proposals = [p for p in genre_proposals if p is not None]
         for p in genre_proposals:
-            print(f"[Worker-{worker_id}]     - {p.primary_genre}/{p.secondary_genre or 'none'}")
+            tprint(f"[Worker-{worker_id}]     - {p.primary_genre}/{p.secondary_genre or 'none'}")
 
-        print(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             genre_agents, 'critique_genre', genre_proposals, story_prompt
         )
@@ -2120,11 +2281,11 @@ Return your response with COMPLETE data."""))
             if result is not None:
                 all_genre_critiques.extend(result)
 
-        print(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         genre_votes = self._parallel_agent_calls(genre_agents, 'vote', genre_proposals, story_prompt)
         genre_votes = [v for v in genre_votes if v is not None]
         for v in genre_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
 
         vote_counts = {}
         for vote in genre_votes:
@@ -2132,7 +2293,7 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_genre = genre_proposals[winner_index]
 
-        print(f"[Worker-{worker_id}] >>> WINNER: {winning_genre.primary_genre}" +
+        tprint(f"[Worker-{worker_id}] >>> WINNER: {winning_genre.primary_genre}" +
               (f"/{winning_genre.secondary_genre}" if winning_genre.secondary_genre else ""))
 
         return {
@@ -2160,9 +2321,9 @@ Return your response with COMPLETE data."""))
             dict: Debate results with winner and metadata
         """
         worker_id = self._get_worker_id()
-        print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] DEBATE 4: TROPE SELECTION")
-        print(f"[Worker-{worker_id}] {'='*50}")
+        tprint(f"\n[Worker-{worker_id}] {'='*50}")
+        tprint(f"[Worker-{worker_id}] DEBATE 4: TROPE SELECTION")
+        tprint(f"[Worker-{worker_id}] {'='*50}")
 
         from src.story_agents.story_shape_agents import (
             TropeConventionAgent, TropeThematicAgent, TropeSubversionAgent
@@ -2177,15 +2338,15 @@ Return your response with COMPLETE data."""))
         # Use generic fantasy genre as placeholder since debates run in parallel
         genres = ["Fantasy"]
 
-        print(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 1: Proposals (parallel)")
         trope_proposals = self._parallel_agent_calls(
             trope_agents, 'propose_tropes', story_prompt, genres, "", theme_question
         )
         trope_proposals = [p for p in trope_proposals if p is not None]
         for p in trope_proposals:
-            print(f"[Worker-{worker_id}]     - {len(p.tropes)} tropes")
+            tprint(f"[Worker-{worker_id}]     - {len(p.tropes)} tropes")
 
-        print(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 2: Critiques (parallel)")
         critique_results = self._parallel_agent_calls(
             trope_agents, 'critique_tropes', trope_proposals, story_prompt, genres
         )
@@ -2194,11 +2355,11 @@ Return your response with COMPLETE data."""))
             if result is not None:
                 all_trope_critiques.extend(result)
 
-        print(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
+        tprint(f"[Worker-{worker_id}] >>> Phase 3: Voting (parallel)")
         trope_votes = self._parallel_agent_calls(trope_agents, 'vote', trope_proposals, story_prompt)
         trope_votes = [v for v in trope_votes if v is not None]
         for v in trope_votes:
-            print(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
+            tprint(f"[Worker-{worker_id}]     - votes for Proposal {v.chosen_proposal_index}")
 
         vote_counts = {}
         for vote in trope_votes:
@@ -2206,9 +2367,9 @@ Return your response with COMPLETE data."""))
         winner_index = max(vote_counts, key=vote_counts.get)
         winning_tropes = trope_proposals[winner_index]
 
-        print(f"[Worker-{worker_id}] >>> WINNER: {len(winning_tropes.tropes)} tropes selected")
+        tprint(f"[Worker-{worker_id}] >>> WINNER: {len(winning_tropes.tropes)} tropes selected")
         for trope in winning_tropes.tropes:
-            print(f"[Worker-{worker_id}]     - {trope.name} ({trope.usage})")
+            tprint(f"[Worker-{worker_id}]     - {trope.name} ({trope.usage})")
 
         return {
             "winning_tropes": winning_tropes,
@@ -2263,11 +2424,11 @@ Return your response with COMPLETE data."""))
             theme_question = theme_foundation.get("central_question", "")
             story_prompt, setting_prompt = self.extract_prompts(codex)
 
-            print(f"\n{'='*60}")
-            print("STEP 2: STORY SHAPE & GENRE SELECTION")
-            print(f"{'='*60}")
-            print(f">>> Theme: {theme_question[:80]}...")
-            print(f">>> Characters: {len(characters)}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 2: STORY SHAPE & GENRE SELECTION")
+            tprint(f"{'='*60}")
+            tprint(f">>> Theme: {theme_question[:80]}...")
+            tprint(f">>> Characters: {len(characters)}")
 
             # Import agents
             from src.story_agents.story_shape_agents import (
@@ -2285,12 +2446,12 @@ Return your response with COMPLETE data."""))
             parallel_enabled = parallel_config.get("enabled", True)
             max_workers = parallel_config.get("max_workers", 4)
 
-            print(f"\n>>> Parallel Processing: {'ENABLED' if parallel_enabled else 'DISABLED'}")
-            print(f">>> Max Workers: {max_workers if parallel_enabled else 1}")
+            tprint(f"\n>>> Parallel Processing: {'ENABLED' if parallel_enabled else 'DISABLED'}")
+            tprint(f">>> Max Workers: {max_workers if parallel_enabled else 1}")
 
             if parallel_enabled:
                 # Run all 4 debates in parallel
-                print(f"\n>>> Running 4 debates in parallel with {max_workers} workers...")
+                tprint(f"\n>>> Running 4 debates in parallel with {max_workers} workers...")
 
                 from concurrent.futures import ThreadPoolExecutor
 
@@ -2313,13 +2474,34 @@ Return your response with COMPLETE data."""))
                         story_prompt, theme_question
                     )
 
-                    # Collect results as they complete
-                    shape_result = future_shape.result()
-                    stc_result = future_stc.result()
-                    genre_result = future_genre.result()
-                    trope_result = future_trope.result()
+                    # Collect results with timeout (configurable, default 10 min per debate)
+                    debate_timeout = float(GLOBAL_CONFIG.get("debate_timeout", 600))
+                    debate_results = {}
+                    for name, future in [
+                        ("story_shape", future_shape),
+                        ("save_the_cat", future_stc),
+                        ("genre", future_genre),
+                        ("trope", future_trope),
+                    ]:
+                        try:
+                            debate_results[name] = future.result(timeout=debate_timeout)
+                        except Exception as e:
+                            tprint(f"⚠️  {name} debate failed/timed out: {str(e)[:100]}")
+                            debate_results[name] = None
 
-                # Extract winners
+                # Extract winners (with fallbacks for failed debates)
+                shape_result = debate_results.get("story_shape")
+                stc_result = debate_results.get("save_the_cat")
+                genre_result = debate_results.get("genre")
+                trope_result = debate_results.get("trope")
+
+                if shape_result is None or stc_result is None or genre_result is None or trope_result is None:
+                    failed = [k for k, v in debate_results.items() if v is None]
+                    raise RuntimeError(
+                        f"Step 2 cannot continue: debate(s) failed/timed out: {', '.join(failed)}. "
+                        f"Re-run with --steps 2 to retry."
+                    )
+
                 winning_shape = shape_result["winning_shape"]
                 winning_stc = stc_result["winning_stc"]
                 winning_genre = genre_result["winning_genre"]
@@ -2337,9 +2519,9 @@ Return your response with COMPLETE data."""))
                 # ====================
                 # DEBATE 1: STORY SHAPE
                 # ====================
-                print(f"\n{'='*50}")
-                print("DEBATE 1: STORY SHAPE (7 Basic Plots)")
-                print(f"{'='*50}")
+                tprint(f"\n{'='*50}")
+                tprint("DEBATE 1: STORY SHAPE (7 Basic Plots)")
+                tprint(f"{'='*50}")
 
                 shape_agents = [
                     StoryShapeJourneyAgent(model=self.model),
@@ -2348,30 +2530,30 @@ Return your response with COMPLETE data."""))
                 ]
 
                 # Proposals
-                print(f"\n>>> Phase 1: Proposals (3 agents)")
+                tprint(f"\n>>> Phase 1: Proposals (3 agents)")
                 shape_proposals = []
                 for agent in shape_agents:
-                    print(f"    - {agent.name} proposing...")
+                    tprint(f"    - {agent.name} proposing...")
                     proposal = agent.propose_story_shape(story_prompt, theme_question, characters)
                     shape_proposals.append(proposal)
-                    print(f"      Shape: {proposal.story_shape}")
+                    tprint(f"      Shape: {proposal.story_shape}")
 
                 # Critiques
-                print(f"\n>>> Phase 2: Critiques")
+                tprint(f"\n>>> Phase 2: Critiques")
                 all_shape_critiques = []
                 for agent in shape_agents:
                     critiques = agent.critique_story_shape(shape_proposals, story_prompt, characters)
                     all_shape_critiques.extend(critiques)
                     for c in critiques:
-                        print(f"    - {agent.name}: Proposal {c.proposal_index} = {c.score}/10")
+                        tprint(f"    - {agent.name}: Proposal {c.proposal_index} = {c.score}/10")
 
                 # Votes
-                print(f"\n>>> Phase 3: Voting")
+                tprint(f"\n>>> Phase 3: Voting")
                 shape_votes = []
                 for agent in shape_agents:
                     vote = agent.vote(shape_proposals, story_prompt)
                     shape_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
+                    tprint(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
 
                 # Determine winner
                 vote_counts = {}
@@ -2380,7 +2562,7 @@ Return your response with COMPLETE data."""))
                 winner_index = max(vote_counts, key=vote_counts.get)
                 winning_shape = shape_proposals[winner_index]
 
-                print(f"\n>>> WINNER: {winning_shape.story_shape} ({vote_counts[winner_index]} votes)")
+                tprint(f"\n>>> WINNER: {winning_shape.story_shape} ({vote_counts[winner_index]} votes)")
 
                 step2_debates["story_shape_debate"] = {
                     "proposals": [p.model_dump() for p in shape_proposals],
@@ -2392,9 +2574,9 @@ Return your response with COMPLETE data."""))
                 # ====================
                 # DEBATE 2: SAVE THE CAT TYPE
                 # ====================
-                print(f"\n{'='*50}")
-                print("DEBATE 2: SAVE THE CAT TYPE")
-                print(f"{'='*50}")
+                tprint(f"\n{'='*50}")
+                tprint("DEBATE 2: SAVE THE CAT TYPE")
+                tprint(f"{'='*50}")
 
                 stc_agents = [
                     SaveTheCatStakesAgent(model=self.model),
@@ -2402,16 +2584,16 @@ Return your response with COMPLETE data."""))
                     SaveTheCatThematicAgent(model=self.model),
                 ]
 
-                print(f"\n>>> Phase 1: Proposals (parallel)")
+                tprint(f"\n>>> Phase 1: Proposals (parallel)")
                 stc_proposals = self._parallel_agent_calls(
                     stc_agents, 'propose_save_the_cat',
                     story_prompt, theme_question, characters, winning_shape.story_shape
                 )
                 for i, proposal in enumerate(stc_proposals):
                     if proposal:
-                        print(f"    - {stc_agents[i].name}: {proposal.save_the_cat_type}")
+                        tprint(f"    - {stc_agents[i].name}: {proposal.save_the_cat_type}")
 
-                print(f"\n>>> Phase 2: Critiques (parallel)")
+                tprint(f"\n>>> Phase 2: Critiques (parallel)")
                 critique_results = self._parallel_agent_calls(
                     stc_agents, 'critique_save_the_cat',
                     stc_proposals, story_prompt, characters
@@ -2421,11 +2603,11 @@ Return your response with COMPLETE data."""))
                     if cr:
                         all_stc_critiques.extend(cr)
 
-                print(f"\n>>> Phase 3: Voting (parallel)")
+                tprint(f"\n>>> Phase 3: Voting (parallel)")
                 stc_votes = self._parallel_agent_calls(stc_agents, 'vote', stc_proposals, story_prompt)
                 for i, vote in enumerate(stc_votes):
                     if vote:
-                        print(f"    - {stc_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
+                        tprint(f"    - {stc_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
 
                 vote_counts = {}
                 for vote in stc_votes:
@@ -2433,7 +2615,7 @@ Return your response with COMPLETE data."""))
                 winner_index = max(vote_counts, key=vote_counts.get)
                 winning_stc = stc_proposals[winner_index]
 
-                print(f"\n>>> WINNER: {winning_stc.save_the_cat_type}")
+                tprint(f"\n>>> WINNER: {winning_stc.save_the_cat_type}")
 
                 step2_debates["save_the_cat_debate"] = {
                     "proposals": [p.model_dump() for p in stc_proposals],
@@ -2445,9 +2627,9 @@ Return your response with COMPLETE data."""))
                 # ====================
                 # DEBATE 3: GENRE
                 # ====================
-                print(f"\n{'='*50}")
-                print("DEBATE 3: GENRE SELECTION")
-                print(f"{'='*50}")
+                tprint(f"\n{'='*50}")
+                tprint("DEBATE 3: GENRE SELECTION")
+                tprint(f"{'='*50}")
 
                 genre_agents = [
                     GenrePressureAgent(model=self.model),
@@ -2455,25 +2637,25 @@ Return your response with COMPLETE data."""))
                     GenreAudienceAgent(model=self.model),
                 ]
 
-                print(f"\n>>> Phase 1: Proposals")
+                tprint(f"\n>>> Phase 1: Proposals")
                 genre_proposals = []
                 for agent in genre_agents:
                     proposal = agent.propose_genre(story_prompt, theme_question, winning_shape.story_shape, winning_stc.save_the_cat_type)
                     genre_proposals.append(proposal)
-                    print(f"    - {agent.name}: {proposal.primary_genre}/{proposal.secondary_genre or 'none'}")
+                    tprint(f"    - {agent.name}: {proposal.primary_genre}/{proposal.secondary_genre or 'none'}")
 
-                print(f"\n>>> Phase 2: Critiques")
+                tprint(f"\n>>> Phase 2: Critiques")
                 all_genre_critiques = []
                 for agent in genre_agents:
                     critiques = agent.critique_genre(genre_proposals, story_prompt)
                     all_genre_critiques.extend(critiques)
 
-                print(f"\n>>> Phase 3: Voting")
+                tprint(f"\n>>> Phase 3: Voting")
                 genre_votes = []
                 for agent in genre_agents:
                     vote = agent.vote(genre_proposals, story_prompt)
                     genre_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
+                    tprint(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
 
                 vote_counts = {}
                 for vote in genre_votes:
@@ -2481,7 +2663,7 @@ Return your response with COMPLETE data."""))
                 winner_index = max(vote_counts, key=vote_counts.get)
                 winning_genre = genre_proposals[winner_index]
 
-                print(f"\n>>> WINNER: {winning_genre.primary_genre}" +
+                tprint(f"\n>>> WINNER: {winning_genre.primary_genre}" +
                       (f"/{winning_genre.secondary_genre}" if winning_genre.secondary_genre else ""))
 
                 step2_debates["genre_debate"] = {
@@ -2494,9 +2676,9 @@ Return your response with COMPLETE data."""))
                 # ====================
                 # DEBATE 4: TROPES
                 # ====================
-                print(f"\n{'='*50}")
-                print("DEBATE 4: TROPE SELECTION")
-                print(f"{'='*50}")
+                tprint(f"\n{'='*50}")
+                tprint("DEBATE 4: TROPE SELECTION")
+                tprint(f"{'='*50}")
 
                 trope_agents = [
                     TropeConventionAgent(model=self.model),
@@ -2508,25 +2690,25 @@ Return your response with COMPLETE data."""))
                 if winning_genre.secondary_genre:
                     genres.append(winning_genre.secondary_genre)
 
-                print(f"\n>>> Phase 1: Proposals")
+                tprint(f"\n>>> Phase 1: Proposals")
                 trope_proposals = []
                 for agent in trope_agents:
                     proposal = agent.propose_tropes(story_prompt, genres, winning_shape.story_shape, theme_question)
                     trope_proposals.append(proposal)
-                    print(f"    - {agent.name}: {len(proposal.tropes)} tropes")
+                    tprint(f"    - {agent.name}: {len(proposal.tropes)} tropes")
 
-                print(f"\n>>> Phase 2: Critiques")
+                tprint(f"\n>>> Phase 2: Critiques")
                 all_trope_critiques = []
                 for agent in trope_agents:
                     critiques = agent.critique_tropes(trope_proposals, story_prompt, genres)
                     all_trope_critiques.extend(critiques)
 
-                print(f"\n>>> Phase 3: Voting")
+                tprint(f"\n>>> Phase 3: Voting")
                 trope_votes = []
                 for agent in trope_agents:
                     vote = agent.vote(trope_proposals, story_prompt)
                     trope_votes.append(vote)
-                    print(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
+                    tprint(f"    - {agent.name} votes for Proposal {vote.chosen_proposal_index}")
 
                 vote_counts = {}
                 for vote in trope_votes:
@@ -2534,9 +2716,9 @@ Return your response with COMPLETE data."""))
                 winner_index = max(vote_counts, key=vote_counts.get)
                 winning_tropes = trope_proposals[winner_index]
 
-                print(f"\n>>> WINNER: {len(winning_tropes.tropes)} tropes selected")
+                tprint(f"\n>>> WINNER: {len(winning_tropes.tropes)} tropes selected")
                 for trope in winning_tropes.tropes:
-                    print(f"    - {trope.name} ({trope.usage})")
+                    tprint(f"    - {trope.name} ({trope.usage})")
 
                 step2_debates["trope_debate"] = {
                     "proposals": [p.model_dump() for p in trope_proposals],
@@ -2550,14 +2732,14 @@ Return your response with COMPLETE data."""))
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print(f"STEP 2 COMPLETE! Duration: {duration:.1f}s")
-            print(f"{'='*60}")
-            print(f">>> Story Shape: {winning_shape.story_shape}")
-            print(f">>> STC Type: {winning_stc.save_the_cat_type}")
-            print(f">>> Genre: {winning_genre.primary_genre}" +
+            tprint(f"\n{'='*60}")
+            tprint(f"STEP 2 COMPLETE! Duration: {duration:.1f}s")
+            tprint(f"{'='*60}")
+            tprint(f">>> Story Shape: {winning_shape.story_shape}")
+            tprint(f">>> STC Type: {winning_stc.save_the_cat_type}")
+            tprint(f">>> Genre: {winning_genre.primary_genre}" +
                   (f"/{winning_genre.secondary_genre}" if winning_genre.secondary_genre else ""))
-            print(f">>> Tropes: {len(winning_tropes.tropes)}")
+            tprint(f">>> Tropes: {len(winning_tropes.tropes)}")
 
             return Step2Result(
                 story_shape=winning_shape.story_shape,
@@ -2573,7 +2755,7 @@ Return your response with COMPLETE data."""))
 
         except Exception as e:
             duration = time.time() - start_time
-            print(f"\n>>> Step 2 FAILED: {e}")
+            tprint(f"\n>>> Step 2 FAILED: {e}")
             import traceback
             traceback.print_exc()
 
@@ -2636,12 +2818,12 @@ Return your response with COMPLETE data."""))
 
             # Get author's preferred structure
             structure = self.get_structure()
-            print(f"\n{'='*60}")
-            print("RESEARCH-DRIVEN MULTI-AGENT DEBATE")
-            print(f"{'='*60}")
-            print(f">>> Structure: {structure.name}")
-            print(f">>> Method: 5 agents embodying different storytelling methodologies")
-            print(f">>> Rules: 3-4 proposals per beat, all 5 agents vote")
+            tprint(f"\n{'='*60}")
+            tprint("RESEARCH-DRIVEN MULTI-AGENT DEBATE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Structure: {structure.name}")
+            tprint(f">>> Method: 5 agents embodying different storytelling methodologies")
+            tprint(f">>> Rules: 3-4 proposals per beat, all 5 agents vote")
 
             # =========================================
             # Initialize 5 Research-Embodied Agents
@@ -2672,26 +2854,26 @@ Return your response with COMPLETE data."""))
                 {"agent": "AudienceAdvocateAgent", "source": audience_advocate.METHODOLOGY_SOURCE, "beliefs": audience_advocate.CORE_BELIEFS},
             ]
 
-            print("\n--- 5 Agent Methodologies ---")
-            print(f"    1. DanWells: {dan_wells.METHODOLOGY_NAME}")
-            print(f"    2. BlakeSnyder: {blake_snyder.METHODOLOGY_NAME}")
-            print(f"    3. PinchMaster: {pinch_master.METHODOLOGY_NAME}")
-            print(f"    4. TruthSeeker: {truth_seeker.METHODOLOGY_NAME}")
-            print(f"    5. AudienceAdvocate: {audience_advocate.METHODOLOGY_NAME}")
+            tprint("\n--- 5 Agent Methodologies ---")
+            tprint(f"    1. DanWells: {dan_wells.METHODOLOGY_NAME}")
+            tprint(f"    2. BlakeSnyder: {blake_snyder.METHODOLOGY_NAME}")
+            tprint(f"    3. PinchMaster: {pinch_master.METHODOLOGY_NAME}")
+            tprint(f"    4. TruthSeeker: {truth_seeker.METHODOLOGY_NAME}")
+            tprint(f"    5. AudienceAdvocate: {audience_advocate.METHODOLOGY_NAME}")
 
             # =========================================
             # ROUND 1: Parse Story Seed
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 1: PARSING STORY SEED")
-            print(f"{'='*50}")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 1: PARSING STORY SEED")
+            tprint(f"{'='*50}")
 
             story_seed_parsed = parser.parse_story_seed(story_prompt, setting_prompt)
-            print(f"    Adjective: {story_seed_parsed.adjective}")
-            print(f"    Why: {story_seed_parsed.adjective_meaning[:80]}...")
-            print(f"    Hero: {story_seed_parsed.hero_role}")
-            print(f"    Goal: {story_seed_parsed.goal}")
-            print(f"    Stakes: {story_seed_parsed.stakes}")
+            tprint(f"    Adjective: {story_seed_parsed.adjective}")
+            tprint(f"    Why: {story_seed_parsed.adjective_meaning[:80]}...")
+            tprint(f"    Hero: {story_seed_parsed.hero_role}")
+            tprint(f"    Goal: {story_seed_parsed.goal}")
+            tprint(f"    Stakes: {story_seed_parsed.stakes}")
 
             debate_summary["rounds"].append({
                 "round": "1_parse_seed",
@@ -2703,10 +2885,10 @@ Return your response with COMPLETE data."""))
             # (4 proposers: DanWells, BlakeSnyder, TruthSeeker, AudienceAdvocate)
             # (5 voters: all agents)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 2: RESOLUTION DESIGN (4 proposals, 5 voters)")
-            print(f"{'='*50}")
-            print(">>> 4 agents propose Resolution based on their methodology...")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 2: RESOLUTION DESIGN (4 proposals, 5 voters)")
+            tprint(f"{'='*50}")
+            tprint(">>> 4 agents propose Resolution based on their methodology...")
 
             # Get 4 proposals (TruthSeeker doesn't have propose_resolution, use similar)
             dan_wells_resolution = dan_wells.propose_resolution(story_seed_parsed, setting_prompt)
@@ -2718,12 +2900,12 @@ Return your response with COMPLETE data."""))
 
             proposals = [dan_wells_resolution, blake_snyder_resolution, audience_resolution]
 
-            print(f"\n    [DanWells] Resolution: {dan_wells_resolution.beat.description[:70]}...")
-            print(f"    [BlakeSnyder] Resolution: {blake_snyder_resolution.beat.description[:70]}...")
-            print(f"    [AudienceAdvocate] Resolution: {audience_resolution.beat.description[:70]}...")
+            tprint(f"\n    [DanWells] Resolution: {dan_wells_resolution.beat.description[:70]}...")
+            tprint(f"    [BlakeSnyder] Resolution: {blake_snyder_resolution.beat.description[:70]}...")
+            tprint(f"    [AudienceAdvocate] Resolution: {audience_resolution.beat.description[:70]}...")
 
             # Critique round
-            print("\n>>> Critique Round...")
+            tprint("\n>>> Critique Round...")
             critiques = []
 
             # Cross-critiques between proposers
@@ -2732,7 +2914,7 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed
             )
             critiques.append(critique1)
-            print(f"    [BlakeSnyder -> DanWells] {critique1.criticism[:60]}...")
+            tprint(f"    [BlakeSnyder -> DanWells] {critique1.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             critique2 = dan_wells.critique_proposal(
@@ -2740,7 +2922,7 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed
             )
             critiques.append(critique2)
-            print(f"    [DanWells -> BlakeSnyder] {critique2.criticism[:60]}...")
+            tprint(f"    [DanWells -> BlakeSnyder] {critique2.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             critique3 = truth_seeker.critique_proposal(
@@ -2748,22 +2930,22 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed
             )
             critiques.append(critique3)
-            print(f"    [TruthSeeker -> AudienceAdvocate] {critique3.criticism[:60]}...")
+            tprint(f"    [TruthSeeker -> AudienceAdvocate] {critique3.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             # Voting - ALL 5 agents vote
-            print("\n>>> All 5 agents vote for best Resolution...")
+            tprint("\n>>> All 5 agents vote for best Resolution...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("resolution", proposals, story_seed_parsed)
                 votes.append(vote)
-                print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
+                tprint(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
             # Determine winner (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             resolution = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
-            print(f"    >>> Resolution: {resolution.emotional_state}")
+            tprint(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"    >>> Resolution: {resolution.emotional_state}")
 
             debate_summary["rounds"].append({
                 "round": "2_resolution",
@@ -2781,10 +2963,10 @@ Return your response with COMPLETE data."""))
             # (4 proposers: DanWells, BlakeSnyder, TruthSeeker, AudienceAdvocate)
             # (5 voters: all agents)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 3: HOOK DESIGN (4 proposals, 5 voters)")
-            print(f"{'='*50}")
-            print(">>> Hook must be OPPOSITE of Resolution...")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 3: HOOK DESIGN (4 proposals, 5 voters)")
+            tprint(f"{'='*50}")
+            tprint(">>> Hook must be OPPOSITE of Resolution...")
 
             # Get 4 proposals
             dan_wells_hook = dan_wells.propose_hook(story_seed_parsed, resolution, setting_prompt)
@@ -2794,49 +2976,49 @@ Return your response with COMPLETE data."""))
 
             proposals = [dan_wells_hook, blake_snyder_hook, truth_seeker_hook, audience_hook]
 
-            print(f"\n    [DanWells] Hook (Opposite): {dan_wells_hook.beat.description[:60]}...")
-            print(f"    [BlakeSnyder] Hook (Save the Cat): {blake_snyder_hook.beat.description[:60]}...")
-            print(f"    [TruthSeeker] Hook (The Lie): {truth_seeker_hook.beat.description[:60]}...")
-            print(f"    [AudienceAdvocate] Hook (Care): {audience_hook.beat.description[:60]}...")
+            tprint(f"\n    [DanWells] Hook (Opposite): {dan_wells_hook.beat.description[:60]}...")
+            tprint(f"    [BlakeSnyder] Hook (Save the Cat): {blake_snyder_hook.beat.description[:60]}...")
+            tprint(f"    [TruthSeeker] Hook (The Lie): {truth_seeker_hook.beat.description[:60]}...")
+            tprint(f"    [AudienceAdvocate] Hook (Care): {audience_hook.beat.description[:60]}...")
 
             # Critique round
-            print("\n>>> Critique Round...")
+            tprint("\n>>> Critique Round...")
             critiques = []
 
             critique = blake_snyder.critique_proposal(
                 dan_wells.name, "hook", dan_wells_hook.beat, story_seed_parsed
             )
             critiques.append(critique)
-            print(f"    [BlakeSnyder -> DanWells] {critique.criticism[:60]}...")
+            tprint(f"    [BlakeSnyder -> DanWells] {critique.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             critique = truth_seeker.critique_proposal(
                 blake_snyder.name, "hook", blake_snyder_hook.beat, story_seed_parsed
             )
             critiques.append(critique)
-            print(f"    [TruthSeeker -> BlakeSnyder] {critique.criticism[:60]}...")
+            tprint(f"    [TruthSeeker -> BlakeSnyder] {critique.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             critique = audience_advocate.critique_proposal(
                 truth_seeker.name, "hook", truth_seeker_hook.beat, story_seed_parsed
             )
             critiques.append(critique)
-            print(f"    [AudienceAdvocate -> TruthSeeker] {critique.criticism[:60]}...")
+            tprint(f"    [AudienceAdvocate -> TruthSeeker] {critique.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             # Voting - ALL 5 agents vote
-            print("\n>>> All 5 agents vote for best Hook...")
+            tprint("\n>>> All 5 agents vote for best Hook...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("hook", proposals, story_seed_parsed)
                 votes.append(vote)
-                print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
+                tprint(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
             # Get winning hook (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             hook = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
-            print(f"    >>> Hook: {hook.emotional_state}")
+            tprint(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"    >>> Hook: {hook.emotional_state}")
 
             debate_summary["rounds"].append({
                 "round": "3_hook",
@@ -2854,10 +3036,10 @@ Return your response with COMPLETE data."""))
             # (3 proposers: DanWells, BlakeSnyder, TruthSeeker)
             # (5 voters: all agents)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 4: MIDPOINT DESIGN (3 proposals, 5 voters)")
-            print(f"{'='*50}")
-            print(">>> The Pivot - from REACTION to ACTION...")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 4: MIDPOINT DESIGN (3 proposals, 5 voters)")
+            tprint(f"{'='*50}")
+            tprint(">>> The Pivot - from REACTION to ACTION...")
 
             dan_wells_midpoint = dan_wells.propose_midpoint(story_seed_parsed, hook, resolution, setting_prompt)
             blake_snyder_midpoint = blake_snyder.propose_midpoint(story_seed_parsed, hook, resolution, setting_prompt)
@@ -2865,23 +3047,23 @@ Return your response with COMPLETE data."""))
 
             proposals = [dan_wells_midpoint, blake_snyder_midpoint, truth_seeker_midpoint]
 
-            print(f"\n    [DanWells] Midpoint (Reaction->Action): {dan_wells_midpoint.beat.description[:55]}...")
-            print(f"    [BlakeSnyder] Midpoint (False V/D): {blake_snyder_midpoint.beat.description[:55]}...")
-            print(f"    [TruthSeeker] Midpoint (Context Change): {truth_seeker_midpoint.beat.description[:50]}...")
+            tprint(f"\n    [DanWells] Midpoint (Reaction->Action): {dan_wells_midpoint.beat.description[:55]}...")
+            tprint(f"    [BlakeSnyder] Midpoint (False V/D): {blake_snyder_midpoint.beat.description[:55]}...")
+            tprint(f"    [TruthSeeker] Midpoint (Context Change): {truth_seeker_midpoint.beat.description[:50]}...")
 
             # Voting - ALL 5 agents vote
-            print("\n>>> All 5 agents vote for best Midpoint...")
+            tprint("\n>>> All 5 agents vote for best Midpoint...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("midpoint", proposals, story_seed_parsed)
                 votes.append(vote)
-                print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
+                tprint(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
             # Get winning midpoint (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(proposals, votes)
             midpoint = winner_proposal.beat
-            print(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
-            print(f"    >>> Midpoint: {midpoint.emotional_state}")
+            tprint(f"\n    >>> WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"    >>> Midpoint: {midpoint.emotional_state}")
 
             debate_summary["rounds"].append({
                 "round": "4_midpoint",
@@ -2897,10 +3079,10 @@ Return your response with COMPLETE data."""))
             # ROUND 5: Plot Turns (3 proposers, 5 voters)
             # (3 proposers: DanWells, PinchMaster, AudienceAdvocate)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 5: PLOT TURNS (3 proposals per turn, 5 voters)")
-            print(f"{'='*50}")
-            print(">>> Doorways into/out of the story...")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 5: PLOT TURNS (3 proposals per turn, 5 voters)")
+            tprint(f"{'='*50}")
+            tprint(">>> Doorways into/out of the story...")
 
             # Use legacy method for base plot turns, then vote
             tension_builder = TensionBuilderAgent(model=self.model)
@@ -2916,8 +3098,8 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed, hook, midpoint, resolution, 2, setting_prompt
             )
 
-            print(f"\n    [TensionBuilder] PT1: {base_pt1.description[:60]}...")
-            print(f"    [AudienceAdvocate] PT1: {audience_pt1.beat.description[:60]}...")
+            tprint(f"\n    [TensionBuilder] PT1: {base_pt1.description[:60]}...")
+            tprint(f"    [AudienceAdvocate] PT1: {audience_pt1.beat.description[:60]}...")
 
             # Create proposal objects for voting
             from src.story_schemas import AgentProposal
@@ -2931,7 +3113,7 @@ Return your response with COMPLETE data."""))
             pt1_proposals = [base_pt1_proposal, audience_pt1]
 
             # Vote for PT1
-            print("\n>>> All 5 agents vote for best Plot Turn 1...")
+            tprint("\n>>> All 5 agents vote for best Plot Turn 1...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("plot_turn_1", pt1_proposals, story_seed_parsed)
@@ -2940,11 +3122,11 @@ Return your response with COMPLETE data."""))
             # Get winning PT1 (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(pt1_proposals, votes)
             plot_turn_1 = winner_proposal.beat
-            print(f"    >>> PT1 WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"    >>> PT1 WINNER: {winner} ({vote_count}/5 votes)")
 
             # Vote for PT2
-            print(f"\n    [TensionBuilder] PT2: {base_pt2.description[:60]}...")
-            print(f"    [AudienceAdvocate] PT2: {audience_pt2.beat.description[:60]}...")
+            tprint(f"\n    [TensionBuilder] PT2: {base_pt2.description[:60]}...")
+            tprint(f"    [AudienceAdvocate] PT2: {audience_pt2.beat.description[:60]}...")
 
             base_pt2_proposal = AgentProposal(
                 agent_name="TENSION_BUILDER",
@@ -2955,7 +3137,7 @@ Return your response with COMPLETE data."""))
 
             pt2_proposals = [base_pt2_proposal, audience_pt2]
 
-            print("\n>>> All 5 agents vote for best Plot Turn 2...")
+            tprint("\n>>> All 5 agents vote for best Plot Turn 2...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("plot_turn_2", pt2_proposals, story_seed_parsed)
@@ -2964,7 +3146,7 @@ Return your response with COMPLETE data."""))
             # Get winning PT2 (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(pt2_proposals, votes)
             plot_turn_2 = winner_proposal.beat
-            print(f"    >>> PT2 WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"    >>> PT2 WINNER: {winner} ({vote_count}/5 votes)")
 
             debate_summary["rounds"].append({
                 "round": "5_plot_turns",
@@ -2977,17 +3159,17 @@ Return your response with COMPLETE data."""))
             # ROUND 6: Pinch Points (3 proposers, 5 voters)
             # (3 proposers: PinchMaster, BlakeSnyder, TruthSeeker)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 6: PINCH POINTS (3 proposals, 5 voters)")
-            print(f"{'='*50}")
-            print(">>> Antagonist pressure points (37% and 62%)...")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 6: PINCH POINTS (3 proposals, 5 voters)")
+            tprint(f"{'='*50}")
+            tprint(">>> Antagonist pressure points (37% and 62%)...")
 
             # PP1 proposals
             pinch_master_pp1 = pinch_master.propose_pinch_point_1(
                 story_seed_parsed, hook, plot_turn_1, setting_prompt
             )
 
-            print(f"\n    [PinchMaster] PP1 (37%): {pinch_master_pp1.beat.description[:60]}...")
+            tprint(f"\n    [PinchMaster] PP1 (37%): {pinch_master_pp1.beat.description[:60]}...")
 
             # Use PinchMaster's PP1 as the base (they specialize in this)
             pinch_point_1 = pinch_master_pp1.beat
@@ -3000,13 +3182,13 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed, pinch_point_1, midpoint, setting_prompt
             )
 
-            print(f"\n    [BlakeSnyder] PP2 (All Is Lost): {blake_snyder_pp2.beat.description[:55]}...")
-            print(f"    [PinchMaster] PP2 (Darker): {pinch_master_pp2.beat.description[:55]}...")
+            tprint(f"\n    [BlakeSnyder] PP2 (All Is Lost): {blake_snyder_pp2.beat.description[:55]}...")
+            tprint(f"    [PinchMaster] PP2 (Darker): {pinch_master_pp2.beat.description[:55]}...")
 
             pp2_proposals = [blake_snyder_pp2, pinch_master_pp2]
 
             # Critique PP2 proposals
-            print("\n>>> Critique Round for PP2...")
+            tprint("\n>>> Critique Round for PP2...")
             critiques = []
 
             critique = pinch_master.critique_proposal(
@@ -3014,7 +3196,7 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed, {"pinch_point_1": pinch_point_1}
             )
             critiques.append(critique)
-            print(f"    [PinchMaster -> BlakeSnyder] {critique.criticism[:60]}...")
+            tprint(f"    [PinchMaster -> BlakeSnyder] {critique.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             critique = blake_snyder.critique_proposal(
@@ -3022,21 +3204,21 @@ Return your response with COMPLETE data."""))
                 story_seed_parsed
             )
             critiques.append(critique)
-            print(f"    [BlakeSnyder -> PinchMaster] {critique.criticism[:60]}...")
+            tprint(f"    [BlakeSnyder -> PinchMaster] {critique.criticism[:60]}...")
             debate_summary["total_critiques"] += 1
 
             # All 5 agents vote for PP2
-            print("\n>>> All 5 agents vote for best Pinch Point 2...")
+            tprint("\n>>> All 5 agents vote for best Pinch Point 2...")
             votes = []
             for agent in all_agents:
                 vote = agent.vote_for_best("pinch_point_2", pp2_proposals, story_seed_parsed)
                 votes.append(vote)
-                print(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
+                tprint(f"    [{agent.name}] votes for: {vote.voted_for_agent}")
 
             # Get winning PP2 (handles mismatched vote names)
             winner_proposal, winner, vote_count = self._find_winner_proposal(pp2_proposals, votes)
             pinch_point_2 = winner_proposal.beat
-            print(f"\n    >>> PP2 WINNER: {winner} ({vote_count}/5 votes)")
+            tprint(f"\n    >>> PP2 WINNER: {winner} ({vote_count}/5 votes)")
 
             debate_summary["rounds"].append({
                 "round": "6_pinch_points",
@@ -3052,9 +3234,9 @@ Return your response with COMPLETE data."""))
             # =========================================
             # ROUND 7: Final Validation (All Methodologies)
             # =========================================
-            print(f"\n{'='*50}")
-            print("ROUND 7: FINAL VALIDATION")
-            print(f"{'='*50}")
+            tprint(f"\n{'='*50}")
+            tprint("ROUND 7: FINAL VALIDATION")
+            tprint(f"{'='*50}")
 
             # Assemble complete structure
             complete_structure = SevenPointStructureSchema(
@@ -3069,21 +3251,21 @@ Return your response with COMPLETE data."""))
 
             validation = validator.validate_structure(story_seed_parsed, complete_structure)
 
-            print(f"\n    VALIDATION RESULTS:")
-            print(f"    Valid: {validation.is_valid}")
-            print(f"    Hook/Resolution Opposite: {validation.hook_resolution_opposite}")
-            print(f"    Tension Escalates: {validation.tension_escalates}")
-            print(f"    Midpoint Pivot Clear: {validation.midpoint_pivot_clear}")
+            tprint(f"\n    VALIDATION RESULTS:")
+            tprint(f"    Valid: {validation.is_valid}")
+            tprint(f"    Hook/Resolution Opposite: {validation.hook_resolution_opposite}")
+            tprint(f"    Tension Escalates: {validation.tension_escalates}")
+            tprint(f"    Midpoint Pivot Clear: {validation.midpoint_pivot_clear}")
 
             if validation.strengths:
-                print(f"\n    STRENGTHS:")
+                tprint(f"\n    STRENGTHS:")
                 for s in validation.strengths[:3]:
-                    print(f"      + {s[:70]}...")
+                    tprint(f"      + {s[:70]}...")
 
             if validation.weaknesses:
-                print(f"\n    WEAKNESSES:")
+                tprint(f"\n    WEAKNESSES:")
                 for w in validation.weaknesses[:3]:
-                    print(f"      - {w[:70]}...")
+                    tprint(f"      - {w[:70]}...")
 
             debate_summary["rounds"].append({
                 "round": "7_validation",
@@ -3102,14 +3284,14 @@ Return your response with COMPLETE data."""))
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print("5-AGENT DEBATE COMPLETE")
-            print(f"{'='*60}")
-            print(f">>> Duration: {duration:.1f}s")
-            print(f">>> Agents: 5 (DanWells, BlakeSnyder, PinchMaster, TruthSeeker, AudienceAdvocate)")
-            print(f">>> Total Critiques Exchanged: {debate_summary['total_critiques']}")
-            print(f">>> Theme: {theme[:80]}...")
-            print(f">>> Title: {title_suggestion}")
+            tprint(f"\n{'='*60}")
+            tprint("5-AGENT DEBATE COMPLETE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Duration: {duration:.1f}s")
+            tprint(f">>> Agents: 5 (DanWells, BlakeSnyder, PinchMaster, TruthSeeker, AudienceAdvocate)")
+            tprint(f">>> Total Critiques Exchanged: {debate_summary['total_critiques']}")
+            tprint(f">>> Theme: {theme[:80]}...")
+            tprint(f">>> Title: {title_suggestion}")
 
             return Step1PlottingResult(
                 story_seed_parsed=story_seed_parsed.model_dump(),
@@ -3240,8 +3422,8 @@ Propose a character name that:
 3. Fits the character's role and setting
 4. Is distinct from existing names"""
 
-        print(f"      Generating name proposals (parallel)...")
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        tprint(f"      Generating name proposals (parallel)...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
         def _name_propose(agent):
             try:
@@ -3267,7 +3449,7 @@ Propose a character name that:
         proposals = [None] * len(agents)
         with ThreadPoolExecutor(max_workers=len(agents)) as executor:
             futures = {executor.submit(_name_propose, agent): i for i, agent in enumerate(agents)}
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/proposals"):
                 proposals[futures[future]] = future.result()
 
         # Round 2: Critiques
@@ -3284,7 +3466,7 @@ PROPOSALS:
 Critique ALL proposals. Score each 1-10."""
 
         critiques = [None] * len(agents)
-        print(f"      Gathering critiques (parallel)...")
+        tprint(f"      Gathering critiques (parallel)...")
 
         def _name_critique(agent):
             try:
@@ -3306,7 +3488,7 @@ Critique ALL proposals. Score each 1-10."""
 
         with ThreadPoolExecutor(max_workers=len(agents)) as executor:
             futures = {executor.submit(_name_critique, agent): i for i, agent in enumerate(agents)}
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/critiques"):
                 critiques[futures[future]] = future.result()
 
         # Round 3: Voting
@@ -3319,7 +3501,7 @@ Vote for the BEST name. You CANNOT vote for your own proposal.
 Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
         votes = {}
-        print(f"      Collecting votes (parallel)...")
+        tprint(f"      Collecting votes (parallel)...")
 
         def _name_vote(i, agent):
             try:
@@ -3333,7 +3515,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
         with ThreadPoolExecutor(max_workers=len(agents)) as executor:
             futures = [executor.submit(_name_vote, i, agent) for i, agent in enumerate(agents)]
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/votes"):
                 name, voted_for = future.result()
                 votes[name] = voted_for
 
@@ -3376,8 +3558,47 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         goal: str,
         stakes: str,
         setting_prompt: str,
+        existing_characters_visual: list[dict] | None = None,
+        gender: str = "",
     ) -> dict:
-        """Run 4-agent physical appearance debate."""
+        """Run 4-agent physical appearance debate.
+
+        Args:
+            existing_characters_visual: Optional list of already-created character dicts.
+                When provided, a summary is injected into the setting context so agents
+                design a character that visually contrasts with existing ones.
+            gender: Pre-assigned gender for this character. Passed to debate agents
+                so physical descriptions use correct pronouns.
+        """
+        # Build setting context with existing character contrast info
+        effective_setting = setting_prompt
+        if existing_characters_visual:
+            lines = [
+                "\n\n## ALREADY CREATED CHARACTERS (you MUST contrast against these):"
+            ]
+            for ch in existing_characters_visual:
+                parts = [ch.get("name", "Unknown")]
+                if ch.get("height"):
+                    parts.append(ch["height"])
+                if ch.get("body_build"):
+                    parts.append(ch["body_build"])
+                if ch.get("hair_color"):
+                    parts.append(ch["hair_color"])
+                if ch.get("eye_color"):
+                    parts.append(ch["eye_color"] + " eyes")
+                if ch.get("posture"):
+                    parts.append(ch["posture"] + " posture")
+                if ch.get("ethnicity"):
+                    parts.append(ch["ethnicity"])
+                lines.append(f"- {', '.join(parts)}")
+            n = len(existing_characters_visual)
+            min_diff = min(4, n + 2)  # Scale: 1st char=no constraint, 2nd=3, 3rd=4, 4th=4
+            lines.append(
+                f"\nYOUR CHARACTER MUST DIFFER from the above on at least {min_diff} of: "
+                "hair color, hair style, body build, height, eye color, posture, ethnicity."
+            )
+            effective_setting += "\n".join(lines)
+
         # Initialize character debate agents
         psychologist = CharacterPsychologistAgent(model=self.model)
         visualist = CharacterVisualistAgent(model=self.model)
@@ -3387,11 +3608,12 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         agents = [psychologist, visualist, narrative, audience]
 
         # Round 1: Proposals from all 4 agents (parallel)
-        print(f"      Generating physical appearance proposals (parallel)...")
+        tprint(f"      Generating physical appearance proposals (parallel)...")
         proposals = self._parallel_agent_calls(
             agents, 'propose_physical',
             role=character_role, role_type=character_type,
-            adjective=adjective, goal=goal, stakes=stakes, setting=setting_prompt,
+            adjective=adjective, goal=goal, stakes=stakes, setting=effective_setting,
+            gender=gender,
         )
         proposals = [p for p in proposals if p is not None]
 
@@ -3399,8 +3621,8 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             return {"error": "All proposal agents failed"}
 
         # Round 2: Cross-critiques (parallel)
-        print(f"      Gathering critiques (parallel)...")
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        tprint(f"      Gathering critiques (parallel)...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
         critiques = []
         with ThreadPoolExecutor(max_workers=3) as executor:
             futures = {}
@@ -3412,21 +3634,21 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     target_agent=target_proposal.agent_name,
                     proposal=target_proposal, role=character_role, adjective=adjective,
                 )] = agent
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "physical-debate/critiques"):
                 try:
                     critiques.append(future.result())
                 except Exception:
                     pass
 
         # Round 3: All 4 agents vote (parallel)
-        print(f"      Collecting votes (parallel)...")
+        tprint(f"      Collecting votes (parallel)...")
         votes = self._parallel_agent_calls(
             agents, 'vote_for_best',
             proposals=proposals, role=character_role, adjective=adjective,
         )
         votes = [v for v in votes if v is not None]
         for v in votes:
-            print(f"        votes for: {v.voted_for_agent}")
+            tprint(f"        votes for: {v.voted_for_agent}")
 
         # Tally votes
         vote_counts = Counter(v.voted_for_agent for v in votes)
@@ -3440,7 +3662,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             winner_proposal = proposals[0]
             winner_agent = winner_proposal.agent_name
 
-        print(f"      Winner: {winner_agent}")
+        tprint(f"      Winner: {winner_agent}")
 
         return {
             "proposals": [p.model_dump() for p in proposals],
@@ -3568,7 +3790,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         agents = [historical_agent, world_agent, visual_agent]
 
         # Round 1: Proposals from all 3 agents (parallel)
-        print(f"      Generating costume proposals (parallel)...")
+        tprint(f"      Generating costume proposals (parallel)...")
         raw_proposals = self._parallel_agent_calls(
             agents, 'propose_costume',
             character=character, world_context=world_context,
@@ -3578,16 +3800,16 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         for i, proposal in enumerate(raw_proposals):
             if proposal is not None:
                 proposals.append(proposal)
-                print(f"        [{agents[i].name}] proposed: {proposal.costume.primary_color} {proposal.costume.garment_type}")
+                tprint(f"        [{agents[i].name}] proposed: {proposal.costume.primary_color} {proposal.costume.garment_type}")
             else:
-                print(f"        [{agents[i].name}] failed")
+                tprint(f"        [{agents[i].name}] failed")
 
         if not proposals:
             return {"error": "All costume proposal agents failed"}
 
         # Round 2: Cross-critiques (parallel)
-        print(f"      Gathering critiques (parallel)...")
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        tprint(f"      Gathering critiques (parallel)...")
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
         def _costume_critique(agent, target_proposal):
             if isinstance(agent, CostumeHistoricalAgent):
@@ -3617,14 +3839,14 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             for i, agent in enumerate(agents[:2]):
                 target_idx = (i + 1) % len(proposals)
                 futures[executor.submit(_costume_critique, agent, proposals[target_idx])] = i
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "costume-debate/critiques"):
                 try:
                     critiques.append(future.result())
                 except Exception:
                     pass
 
         # Round 3: All 3 agents vote (parallel)
-        print(f"      Collecting votes (parallel)...")
+        tprint(f"      Collecting votes (parallel)...")
 
         def _costume_vote(agent):
             if isinstance(agent, CostumeHistoricalAgent):
@@ -3645,11 +3867,11 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         votes = []
         with ThreadPoolExecutor(max_workers=len(agents)) as executor:
             futures = {executor.submit(_costume_vote, agent): agent for agent in agents}
-            for future in as_completed(futures):
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "costume-debate/votes"):
                 try:
                     vote = future.result()
                     votes.append(vote)
-                    print(f"        [{futures[future].name}] votes for: {vote.voted_for_agent}")
+                    tprint(f"        [{futures[future].name}] votes for: {vote.voted_for_agent}")
                 except Exception:
                     pass
 
@@ -3665,7 +3887,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             winner_proposal = proposals[0]
             winner_agent = winner_proposal.agent_name
 
-        print(f"      Winner: {winner_agent}")
+        tprint(f"      Winner: {winner_agent}")
 
         return {
             "proposals": [p.model_dump() for p in proposals],
@@ -3718,17 +3940,17 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             story_prompt, setting_prompt = self.extract_prompts(codex)
             logline = f"{story_seed.get('adjective', '')} {story_seed.get('hero_role', '')} wants to {story_seed.get('goal', '')} but {story_seed.get('stakes', '')}"
 
-            print(f"\n{'='*60}")
-            print("STEP 2: CHARACTER GENERATION (Multi-Agent Debate)")
-            print(f"{'='*60}")
-            print(f">>> Agents: 4 character + 3 name debate agents")
-            print(f">>> Method: Propose -> Critique -> Vote")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 2: CHARACTER GENERATION (Multi-Agent Debate)")
+            tprint(f"{'='*60}")
+            tprint(f">>> Agents: 4 character + 3 name debate agents")
+            tprint(f">>> Method: Propose -> Critique -> Vote")
 
             # Extract character roles from outline
             character_roles = self._extract_characters_from_outline(codex)
-            print(f"\n>>> Found {len(character_roles)} characters to generate:")
+            tprint(f"\n>>> Found {len(character_roles)} characters to generate:")
             for i, char in enumerate(character_roles):
-                print(f"    {i+1}. [{char['type'].upper()}] {char['role']}")
+                tprint(f"    {i+1}. [{char['type'].upper()}] {char['role']}")
 
             # Initialize backstory agent
             backstory_agent = CharacterBackstoryAgent(model=self.model)
@@ -3737,17 +3959,17 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             # Process each character
             for idx, char_info in enumerate(character_roles):
                 char_id = f"char_{idx+1:03d}"
-                print(f"\n{'='*50}")
-                print(f"CHARACTER {idx+1}: {char_info['role'].upper()}")
-                print(f"{'='*50}")
+                tprint(f"\n{'='*50}")
+                tprint(f"CHARACTER {idx+1}: {char_info['role'].upper()}")
+                tprint(f"{'='*50}")
 
                 # Step A: Generate random name initials
                 first_initial = random.choice(string.ascii_uppercase)
                 last_initial = random.choice(string.ascii_uppercase)
-                print(f"    Initials: {first_initial}.{last_initial}.")
+                tprint(f"    Initials: {first_initial}.{last_initial}.")
 
                 # Step B: Name debate
-                print(f"\n    --- NAME DEBATE (3 agents) ---")
+                tprint(f"\n    --- NAME DEBATE (3 agents) ---")
                 name_result = self._run_name_debate(
                     character_role=char_info["role"],
                     first_initial=first_initial,
@@ -3758,13 +3980,16 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 )
                 final_name = name_result["final_name"]
                 existing_names.append(final_name)
-                print(f"    >>> Name: {final_name}")
+                tprint(f"    >>> Name: {final_name}")
 
                 # Build name mapping
                 name_mapping[char_info["role"]] = final_name
 
+                # Pre-assign gender so debate agents use consistent pronouns
+                gender = random.choice(["male", "female"])
+
                 # Step C: Physical appearance debate
-                print(f"\n    --- PHYSICAL APPEARANCE DEBATE (4 agents) ---")
+                tprint(f"\n    --- PHYSICAL APPEARANCE DEBATE (4 agents) ---")
                 physical_result = self._run_physical_debate(
                     character_role=char_info["role"],
                     character_type=char_info["type"],
@@ -3772,13 +3997,11 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     goal=char_info.get("goal", ""),
                     stakes=char_info.get("stakes", ""),
                     setting_prompt=setting_prompt,
+                    gender=gender,
                 )
 
-                # Pre-assign gender randomly before backstory generation
-                gender = random.choice(["male", "female"])
-
                 # Step D: Generate backstory
-                print(f"\n    --- BACKSTORY GENERATION ---")
+                tprint(f"\n    --- BACKSTORY GENERATION ---")
                 try:
                     backstory_result = backstory_agent.generate_backstory(
                         role=char_info["role"],
@@ -3796,11 +4019,11 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     personality_traits = backstory_result.personality_traits
                     accent = backstory_result.accent
                     qualities = backstory_result.qualities
-                    print(f"    >>> {len(backstory_points)} backstory points generated")
-                    print(f"    >>> Personality: {personality_traits[:2]}...")
-                    print(f"    >>> Accent: {accent}")
+                    tprint(f"    >>> {len(backstory_points)} backstory points generated")
+                    tprint(f"    >>> Personality: {personality_traits[:2]}...")
+                    tprint(f"    >>> Accent: {accent}")
                 except Exception as e:
-                    print(f"    >>> Backstory generation failed: {str(e)[:50]}")
+                    tprint(f"    >>> Backstory generation failed: {str(e)[:50]}")
                     backstory_points = [
                         f"Has experienced significant trauma related to being {story_seed.get('adjective', 'troubled').lower()}",
                         f"Their goal is to {char_info.get('goal', 'achieve their objective')}",
@@ -3848,17 +4071,17 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     "physical_debate": physical_result,
                 })
 
-                print(f"\n    >>> Character {char_id} complete: {final_name}")
+                tprint(f"\n    >>> Character {char_id} complete: {final_name}")
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print("STEP 2 COMPLETE")
-            print(f"{'='*60}")
-            print(f">>> Duration: {duration:.1f}s")
-            print(f">>> Characters: {len(characters)}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 2 COMPLETE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Duration: {duration:.1f}s")
+            tprint(f">>> Characters: {len(characters)}")
             for char in characters:
-                print(f"    - {char['name']} ({char['role_in_story']})")
+                tprint(f"    - {char['name']} ({char['role_in_story']})")
 
             return Step2Result(
                 characters=characters,
@@ -3936,22 +4159,22 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     error="No characters found. Run Steps 0 and 1 first.",
                 )
 
-            print(f"\n{'='*60}")
-            print("STEP 3: PLOT STRUCTURE (Character Arc + Story Beats)")
-            print(f"{'='*60}")
-            print(f">>> Theme: {theme_question}")
-            print(f">>> Story Shape: {story_shape}")
-            print(f">>> STC Type: {save_the_cat_type}")
-            print(f">>> Genre: {'/'.join(genres)}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 3: PLOT STRUCTURE (Character Arc + Story Beats)")
+            tprint(f"{'='*60}")
+            tprint(f">>> Theme: {theme_question}")
+            tprint(f">>> Story Shape: {story_shape}")
+            tprint(f">>> STC Type: {save_the_cat_type}")
+            tprint(f">>> Genre: {'/'.join(genres)}")
 
             # =========================================================================
             # SUBSTEP 1: CHARACTER ARC BEAT MAPPING
             # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 1: CHARACTER ARC BEAT MAPPING")
-            print(f"{'='*60}")
-            print(">>> Mapping arc beats for ALL major characters")
-            print(f">>> Characters: {len(characters)} (hero, villain, {len(characters)-2} supporting)")
+            tprint(f"\n{'='*60}")
+            tprint("SUBSTEP 1: CHARACTER ARC BEAT MAPPING")
+            tprint(f"{'='*60}")
+            tprint(">>> Mapping arc beats for ALL major characters")
+            tprint(f">>> Characters: {len(characters)} (hero, villain, {len(characters)-2} supporting)")
 
             arc_agents = [
                 ArcBeatArchitectAgent(model=self.model),
@@ -3959,13 +4182,13 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 ArcBeatDramaticAgent(model=self.model),
             ]
 
-            print(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
+            tprint(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
             arc_proposals = self._parallel_agent_calls(
                 arc_agents, 'propose_arc_beats', characters, story_shape, theme_question
             )
             arc_proposals = [p for p in arc_proposals if p is not None]
             for p in arc_proposals:
-                print(f"      Hero: {p.hero_arc.arc_type} ({len(p.hero_arc.arc_beats)} beats)")
+                tprint(f"      Hero: {p.hero_arc.arc_type} ({len(p.hero_arc.arc_beats)} beats)")
 
             if not arc_proposals:
                 return Step3Result(
@@ -3974,7 +4197,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     success=False, error="All arc beat agents failed to generate proposals"
                 )
 
-            print(f"\n>>> Phase 2: Critiques (parallel)")
+            tprint(f"\n>>> Phase 2: Critiques (parallel)")
             critique_results = self._parallel_agent_calls(
                 arc_agents, 'critique_arc_beats', arc_proposals, theme_question
             )
@@ -3983,11 +4206,11 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 if result is not None:
                     all_arc_critiques.extend(result)
 
-            print(f"\n>>> Phase 3: Voting (parallel)")
+            tprint(f"\n>>> Phase 3: Voting (parallel)")
             arc_votes = self._parallel_agent_calls(arc_agents, 'vote', arc_proposals, theme_question)
             arc_votes = [v for v in arc_votes if v is not None]
             for v in arc_votes:
-                print(f"    - votes for Proposal {v.chosen_proposal_index}")
+                tprint(f"    - votes for Proposal {v.chosen_proposal_index}")
 
             # Count votes
             vote_counts = {}
@@ -3997,16 +4220,16 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_arcs = arc_proposals[winner_index]
 
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Hero Arc: {winning_arcs.hero_arc.arc_summary}")
-            print(f">>> Villain Arc: {winning_arcs.villain_arc.arc_summary}")
+            tprint(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f">>> Hero Arc: {winning_arcs.hero_arc.arc_summary}")
+            tprint(f">>> Villain Arc: {winning_arcs.villain_arc.arc_summary}")
             if winning_arcs.supporting_arcs:
-                print(f">>> Supporting Characters: {len(winning_arcs.supporting_arcs)} micro-arcs")
+                tprint(f">>> Supporting Characters: {len(winning_arcs.supporting_arcs)} micro-arcs")
 
             # =========================================================================
             # ATTACH ARC BEATS TO CHARACTER OBJECTS
             # =========================================================================
-            print(f"\n>>> Attaching arc beats to character objects...")
+            tprint(f"\n>>> Attaching arc beats to character objects...")
 
             # Create a mapping of character name to arc structure
             arc_by_character = {
@@ -4030,20 +4253,20 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                         }
                         for beat in arc.arc_beats
                     ]
-                    print(f"    - {char_name}: {len(arc.arc_beats)} beats attached")
+                    tprint(f"    - {char_name}: {len(arc.arc_beats)} beats attached")
 
             # Verify attachment worked
             chars_with_beats = sum(1 for c in characters if "arc_beats" in c)
-            print(f"\n>>> ✅ Arc beats attached to {chars_with_beats}/{len(characters)} characters")
+            tprint(f"\n>>> ✅ Arc beats attached to {chars_with_beats}/{len(characters)} characters")
             if chars_with_beats < len(characters):
-                print(f">>> ⚠️  WARNING: {len(characters) - chars_with_beats} characters missing arc beats!")
+                tprint(f">>> ⚠️  WARNING: {len(characters) - chars_with_beats} characters missing arc beats!")
 
             # =========================================================================
             # SUBSTEP 2: SAVE THE CAT 15-BEAT STRUCTURE
             # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 2: SAVE THE CAT 15-BEAT STRUCTURE")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("SUBSTEP 2: SAVE THE CAT 15-BEAT STRUCTURE")
+            tprint(f"{'='*60}")
 
             stc_agents = [
                 SaveTheCatStructureAgent(model=self.model),
@@ -4051,8 +4274,8 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 SaveTheCatGenreAgent(model=self.model),
             ]
 
-            print(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            tprint(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
             def _stc_propose(agent):
                 if agent.name == "STC_GENRE":
@@ -4063,12 +4286,12 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             stc_proposals = [None] * len(stc_agents)
             with ThreadPoolExecutor(max_workers=len(stc_agents)) as executor:
                 futures = {executor.submit(_stc_propose, agent): i for i, agent in enumerate(stc_agents)}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step2/stc-proposals"):
                     idx = futures[future]
                     stc_proposals[idx] = future.result()
-                    print(f"    - {stc_agents[idx].name} proposed. Pacing: {stc_proposals[idx].overall_pacing[:50]}...")
+                    tprint(f"    - {stc_agents[idx].name} proposed. Pacing: {stc_proposals[idx].overall_pacing[:50]}...")
 
-            print(f"\n>>> Phase 2: Critiques (each agent critiques all 3, parallel)")
+            tprint(f"\n>>> Phase 2: Critiques (each agent critiques all 3, parallel)")
 
             def _stc_critique(agent):
                 if agent.name == "STC_GENRE":
@@ -4080,21 +4303,21 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             critique_results = [None] * len(stc_agents)
             with ThreadPoolExecutor(max_workers=len(stc_agents)) as executor:
                 futures = {executor.submit(_stc_critique, agent): i for i, agent in enumerate(stc_agents)}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step2/stc-critiques"):
                     idx = futures[future]
                     critiques = future.result()
                     critique_results[idx] = critiques
                     for c in critiques:
-                        print(f"    - {stc_agents[idx].name}: Proposal {c.proposal_index}: {c.score}/10")
+                        tprint(f"    - {stc_agents[idx].name}: Proposal {c.proposal_index}: {c.score}/10")
             for cr in critique_results:
                 if cr:
                     all_stc_critiques.extend(cr)
 
-            print(f"\n>>> Phase 3: Voting (each agent votes, parallel)")
+            tprint(f"\n>>> Phase 3: Voting (each agent votes, parallel)")
             stc_votes = self._parallel_agent_calls(stc_agents, 'vote', stc_proposals, theme_question)
             for i, vote in enumerate(stc_votes):
                 if vote:
-                    print(f"    - {stc_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
+                    tprint(f"    - {stc_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
 
             # Count votes
             vote_counts = {}
@@ -4104,15 +4327,15 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_stc = stc_proposals[winner_index]
 
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Beats: {len(winning_stc.beats)} Save the Cat beats")
+            tprint(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f">>> Beats: {len(winning_stc.beats)} Save the Cat beats")
 
             # =========================================================================
             # SUBSTEP 3: BEAT INTEGRATION
             # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 3: BEAT INTEGRATION (Arc + Plot + Theme)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("SUBSTEP 3: BEAT INTEGRATION (Arc + Plot + Theme)")
+            tprint(f"{'='*60}")
 
             integration_agents = [
                 IntegrationWeaverAgent(model=self.model),
@@ -4120,7 +4343,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 IntegrationConflictAgent(model=self.model),
             ]
 
-            print(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
+            tprint(f"\n>>> Phase 1: Proposals (3 agents, parallel)")
             integration_proposals = self._parallel_agent_calls(
                 integration_agents, 'propose_integration',
                 winning_arcs.hero_arc, winning_arcs.villain_arc,
@@ -4128,9 +4351,9 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             )
             for i, proposal in enumerate(integration_proposals):
                 if proposal:
-                    print(f"    - {integration_agents[i].name}: {len(proposal.integrated_beats)} integrated beats")
+                    tprint(f"    - {integration_agents[i].name}: {len(proposal.integrated_beats)} integrated beats")
 
-            print(f"\n>>> Phase 2: Critiques (each agent critiques all 3, parallel)")
+            tprint(f"\n>>> Phase 2: Critiques (each agent critiques all 3, parallel)")
             critique_results = self._parallel_agent_calls(
                 integration_agents, 'critique_integration',
                 integration_proposals, theme_question
@@ -4140,15 +4363,15 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 if critiques:
                     all_integration_critiques.extend(critiques)
                     for c in critiques:
-                        print(f"    - {integration_agents[i].name}: Proposal {c.proposal_index}: {c.score}/10")
+                        tprint(f"    - {integration_agents[i].name}: Proposal {c.proposal_index}: {c.score}/10")
 
-            print(f"\n>>> Phase 3: Voting (each agent votes, parallel)")
+            tprint(f"\n>>> Phase 3: Voting (each agent votes, parallel)")
             integration_votes = self._parallel_agent_calls(
                 integration_agents, 'vote', integration_proposals, theme_question
             )
             for i, vote in enumerate(integration_votes):
                 if vote:
-                    print(f"    - {integration_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
+                    tprint(f"    - {integration_agents[i].name} votes for Proposal {vote.chosen_proposal_index}")
 
             # Count votes
             vote_counts = {}
@@ -4158,8 +4381,8 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             winner_index = max(vote_counts, key=vote_counts.get)
             winning_integration = integration_proposals[winner_index]
 
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
-            print(f">>> Integrated Beats: {len(winning_integration.integrated_beats)}")
+            tprint(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts[winner_index]} votes)")
+            tprint(f">>> Integrated Beats: {len(winning_integration.integrated_beats)}")
 
             # =========================================================================
             # BUILD STEP 3 OUTPUT
@@ -4183,7 +4406,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
             # Ensure exactly 15 beats (pad or trim if needed)
             if len(integrated_beats_dicts) < 15:
-                print(f">>> WARNING: Only {len(integrated_beats_dicts)} beats generated, padding to 15")
+                tprint(f">>> WARNING: Only {len(integrated_beats_dicts)} beats generated, padding to 15")
                 # Pad with minimal placeholder beats
                 # Create placeholder character_arcs list with all characters
                 placeholder_arcs = [
@@ -4200,7 +4423,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                         "thematic_test": f"Tests theme: {theme_question}",
                     })
             elif len(integrated_beats_dicts) > 15:
-                print(f">>> WARNING: {len(integrated_beats_dicts)} beats generated, trimming to 15")
+                tprint(f">>> WARNING: {len(integrated_beats_dicts)} beats generated, trimming to 15")
                 integrated_beats_dicts = integrated_beats_dicts[:15]
 
             # Build step3_debates for metadata
@@ -4340,13 +4563,13 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
             if character_arc_summaries:
                 codex["story"]["character_arc_beats_summary"] = character_arc_summaries
-                print(f"\n>>> Stored arc beat summaries for {len(character_arc_summaries)} characters")
+                tprint(f"\n>>> Stored arc beat summaries for {len(character_arc_summaries)} characters")
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print(f"STEP 3 COMPLETE! Duration: {duration:.1f}s")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"STEP 3 COMPLETE! Duration: {duration:.1f}s")
+            tprint(f"{'='*60}")
 
             return Step3Result(
                 integrated_beats=integrated_beats_dicts,
@@ -4360,7 +4583,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
         except Exception as e:
             duration = time.time() - start_time
-            print(f"\n>>> Step 3 FAILED: {e}")
+            tprint(f"\n>>> Step 3 FAILED: {e}")
             import traceback
             traceback.print_exc()
 
@@ -4507,11 +4730,11 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             story_prompt, setting_prompt = self.extract_prompts(codex)
             deck_of_worlds = self._parse_deck_of_worlds_prompt(codex)
 
-            print(f"\n{'='*60}")
-            print("STEP 3: WORLD BUILDING")
-            print(f"{'='*60}")
-            print(f">>> Part A: Location Generation (4-agent debate)")
-            print(f">>> Part B: World Context (4 specialized agents)")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 3: WORLD BUILDING")
+            tprint(f"{'='*60}")
+            tprint(f">>> Part A: Location Generation (4-agent debate)")
+            tprint(f">>> Part B: World Context (4 specialized agents)")
 
             # Build story context for agents
             story_seed = outline.get("story_seed_parsed", {})
@@ -4525,9 +4748,9 @@ Theme: {outline.get('theme', '')}
             # =========================================
             # PART A: LOCATION GENERATION (4-Agent Debate)
             # =========================================
-            print(f"\n{'='*50}")
-            print("PART A: LOCATION DEBATE")
-            print(f"{'='*50}")
+            tprint(f"\n{'='*50}")
+            tprint("PART A: LOCATION DEBATE")
+            tprint(f"{'='*50}")
 
             # Initialize location debate agents
             architect = LocationArchitectAgent(model=self.model)
@@ -4538,15 +4761,15 @@ Theme: {outline.get('theme', '')}
 
             # Extract locations needed from outline
             locations_needed = self._extract_locations_from_outline(codex)
-            print(f">>> Found {len(locations_needed)} locations to generate")
+            tprint(f">>> Found {len(locations_needed)} locations to generate")
 
             for idx, loc_info in enumerate(locations_needed[:6]):  # Max 6 locations
                 loc_id = f"loc_{idx+1:03d}"
-                print(f"\n--- LOCATION {idx+1}: {loc_info['source']} ---")
-                print(f"    Description: {loc_info['description'][:60]}...")
+                tprint(f"\n--- LOCATION {idx+1}: {loc_info['source']} ---")
+                tprint(f"    Description: {loc_info['description'][:60]}...")
 
                 # Round 1: All 4 agents propose (parallel)
-                print(f"    Generating proposals (parallel)...")
+                tprint(f"    Generating proposals (parallel)...")
                 proposals = self._parallel_agent_calls(
                     location_agents, 'propose_location',
                     location_source=loc_info['description'],
@@ -4554,14 +4777,14 @@ Theme: {outline.get('theme', '')}
                 )
                 proposals = [p for p in proposals if p is not None]
                 for p in proposals:
-                    print(f"      [{p.agent_name}] proposed: {p.name}")
+                    tprint(f"      [{p.agent_name}] proposed: {p.name}")
 
                 if not proposals:
                     continue
 
                 # Round 2: Cross-critiques (parallel)
-                print(f"    Gathering critiques (parallel)...")
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                tprint(f"    Gathering critiques (parallel)...")
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
                 critiques = []
                 with ThreadPoolExecutor(max_workers=3) as executor:
                     futures = {}
@@ -4573,21 +4796,21 @@ Theme: {outline.get('theme', '')}
                             proposal=proposals[target_idx],
                             setting_prompt=setting_prompt,
                         )] = agent
-                    for future in as_completed(futures):
+                    for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step3/location-critiques"):
                         try:
                             critiques.append(future.result())
                         except Exception:
                             pass
 
                 # Round 3: All 4 agents vote (parallel)
-                print(f"    Collecting votes (parallel)...")
+                tprint(f"    Collecting votes (parallel)...")
                 votes = self._parallel_agent_calls(
                     location_agents, 'vote_for_best',
                     proposals=proposals, setting_prompt=setting_prompt,
                 )
                 votes = [v for v in votes if v is not None]
                 for v in votes:
-                    print(f"      votes for: {v.voted_for_agent}")
+                    tprint(f"      votes for: {v.voted_for_agent}")
 
                 # Tally votes
                 if votes:
@@ -4601,7 +4824,7 @@ Theme: {outline.get('theme', '')}
                     winner_proposal = proposals[0]
                     winner_agent = winner_proposal.agent_name
 
-                print(f"    >>> Winner: {winner_agent}")
+                tprint(f"    >>> Winner: {winner_agent}")
 
                 # Create final LocationSchema
                 final_location = {
@@ -4628,11 +4851,11 @@ Theme: {outline.get('theme', '')}
             # =========================================
             # PART B: WORLD CONTEXT (No Debate - Parallel Generation)
             # =========================================
-            print(f"\n{'='*50}")
-            print("PART B: WORLD CONTEXT GENERATION")
-            print(f"{'='*50}")
-            print(f">>> 4 specialized agents generating world details...")
-            print(f">>> No debate - each agent handles their categories")
+            tprint(f"\n{'='*50}")
+            tprint("PART B: WORLD CONTEXT GENERATION")
+            tprint(f"{'='*50}")
+            tprint(f">>> 4 specialized agents generating world details...")
+            tprint(f">>> No debate - each agent handles their categories")
 
             # Initialize world building agents
             sociologist = WorldSociologistAgent(model=self.model)
@@ -4641,12 +4864,12 @@ Theme: {outline.get('theme', '')}
             culturalist = WorldCulturalistAgent(model=self.model)
 
             # Generate all categories
-            print(f"\n    [SOCIOLOGIST] Generating daily life & social structure...")
+            tprint(f"\n    [SOCIOLOGIST] Generating daily life & social structure...")
             try:
                 daily_life = sociologist.generate_daily_life(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Daily life: {len(daily_life.common_foods)} foods, {daily_life.eating_customs[:30]}...")
+                tprint(f"      >>> Daily life: {len(daily_life.common_foods)} foods, {daily_life.eating_customs[:30]}...")
             except Exception as e:
-                print(f"      >>> Daily life failed: {str(e)[:50]}")
+                tprint(f"      >>> Daily life failed: {str(e)[:50]}")
                 daily_life = DailyLifeSchema(
                     common_foods=["bread", "stew", "fish", "root vegetables", "ale"],
                     eating_customs="Communal meals in taverns and homes",
@@ -4656,9 +4879,9 @@ Theme: {outline.get('theme', '')}
 
             try:
                 social_structure = sociologist.generate_social_structure(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Social structure: {len(social_structure.common_jobs)} common jobs")
+                tprint(f"      >>> Social structure: {len(social_structure.common_jobs)} common jobs")
             except Exception as e:
-                print(f"      >>> Social structure failed: {str(e)[:50]}")
+                tprint(f"      >>> Social structure failed: {str(e)[:50]}")
                 social_structure = SocialStructureSchema(
                     class_system="Wide gap between wealthy and poor, limited mobility",
                     common_jobs=["farmer", "fisherman", "laborer", "servant", "craftsman"],
@@ -4667,12 +4890,12 @@ Theme: {outline.get('theme', '')}
                     guilds_organizations=["Merchants Guild", "Workers Union"],
                 )
 
-            print(f"\n    [ECONOMIST] Generating economy...")
+            tprint(f"\n    [ECONOMIST] Generating economy...")
             try:
                 economy = economist.generate_economy(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Economy: {economy.currency[:30]}...")
+                tprint(f"      >>> Economy: {economy.currency[:30]}...")
             except Exception as e:
-                print(f"      >>> Economy failed: {str(e)[:50]}")
+                tprint(f"      >>> Economy failed: {str(e)[:50]}")
                 economy = EconomySchema(
                     currency="Bronze and silver coins",
                     trade_goods=["fish", "textiles", "iron", "spices"],
@@ -4680,12 +4903,12 @@ Theme: {outline.get('theme', '')}
                     taxation="Heavy taxes collected by the ruling family",
                 )
 
-            print(f"\n    [POLITICIAN] Generating government & law...")
+            tprint(f"\n    [POLITICIAN] Generating government & law...")
             try:
                 government_law = politician.generate_government_law(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Government: {government_law.government_type[:40]}...")
+                tprint(f"      >>> Government: {government_law.government_type[:40]}...")
             except Exception as e:
-                print(f"      >>> Government failed: {str(e)[:50]}")
+                tprint(f"      >>> Government failed: {str(e)[:50]}")
                 government_law = GovernmentLawSchema(
                     government_type="Nominal council, actually controlled by crime family",
                     law_enforcement="Corrupt guards in crime family's pocket",
@@ -4694,12 +4917,12 @@ Theme: {outline.get('theme', '')}
                     military="Small city guard, crime family enforcers",
                 )
 
-            print(f"\n    [CULTURALIST] Generating culture, religion, entertainment...")
+            tprint(f"\n    [CULTURALIST] Generating culture, religion, entertainment...")
             try:
                 education_health = culturalist.generate_education_health(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Education: {education_health.education_system[:40]}...")
+                tprint(f"      >>> Education: {education_health.education_system[:40]}...")
             except Exception as e:
-                print(f"      >>> Education failed: {str(e)[:50]}")
+                tprint(f"      >>> Education failed: {str(e)[:50]}")
                 education_health = EducationHealthSchema(
                     education_system="Limited schooling for wealthy, apprenticeships for trades",
                     medicine="Basic herbal remedies, expensive healers for rich",
@@ -4709,9 +4932,9 @@ Theme: {outline.get('theme', '')}
 
             try:
                 entertainment = culturalist.generate_entertainment(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Entertainment: {len(entertainment.festivals)} festivals")
+                tprint(f"      >>> Entertainment: {len(entertainment.festivals)} festivals")
             except Exception as e:
-                print(f"      >>> Entertainment failed: {str(e)[:50]}")
+                tprint(f"      >>> Entertainment failed: {str(e)[:50]}")
                 entertainment = EntertainmentSchema(
                     poor_entertainment=["tavern games", "storytelling", "gambling", "street performances"],
                     rich_entertainment=["private parties", "theater", "gambling houses", "hunting"],
@@ -4721,9 +4944,9 @@ Theme: {outline.get('theme', '')}
 
             try:
                 religion_beliefs = culturalist.generate_religion_beliefs(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Religion: {religion_beliefs.main_religion[:40]}...")
+                tprint(f"      >>> Religion: {religion_beliefs.main_religion[:40]}...")
             except Exception as e:
-                print(f"      >>> Religion failed: {str(e)[:50]}")
+                tprint(f"      >>> Religion failed: {str(e)[:50]}")
                 religion_beliefs = ReligionBeliefsSchema(
                     main_religion="Worship of nature spirits and ancestors",
                     gods_deities=["The Swamp Mother", "The Forgotten Ones"],
@@ -4734,9 +4957,9 @@ Theme: {outline.get('theme', '')}
 
             try:
                 culture_customs = culturalist.generate_culture_customs(setting_prompt, deck_of_worlds, story_context)
-                print(f"      >>> Culture: {len(culture_customs.social_rules)} social rules")
+                tprint(f"      >>> Culture: {len(culture_customs.social_rules)} social rules")
             except Exception as e:
-                print(f"      >>> Culture failed: {str(e)[:50]}")
+                tprint(f"      >>> Culture failed: {str(e)[:50]}")
                 culture_customs = CultureCustomsSchema(
                     social_rules=["Respect elders", "Pay debts promptly", "Don't cross the family"],
                     gestures_respect="Bowing head, lowered eyes",
@@ -4759,14 +4982,14 @@ Theme: {outline.get('theme', '')}
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print("STEP 3 COMPLETE")
-            print(f"{'='*60}")
-            print(f">>> Duration: {duration:.1f}s")
-            print(f">>> Locations: {len(locations)}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 3 COMPLETE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Duration: {duration:.1f}s")
+            tprint(f">>> Locations: {len(locations)}")
             for loc in locations:
-                print(f"    - {loc['name']} ({loc['type']})")
-            print(f">>> World Categories: {len(world_data)}")
+                tprint(f"    - {loc['name']} ({loc['type']})")
+            tprint(f">>> World Categories: {len(world_data)}")
 
             return Step3Result(
                 locations=locations,
@@ -4946,22 +5169,22 @@ Theme: {outline.get('theme', '')}
                 "location_2": {},
             }
 
-            print(f"\n{'='*60}")
-            print("STEP 4: WORLD BUILDING")
-            print(f"{'='*60}")
-            print(f">>> Theme: {theme_question}")
-            print(f">>> Story Shape: {story_shape}")
-            print(f">>> Genre: {primary_genre}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 4: WORLD BUILDING")
+            tprint(f"{'='*60}")
+            tprint(f">>> Theme: {theme_question}")
+            tprint(f">>> Story Shape: {story_shape}")
+            tprint(f">>> Genre: {primary_genre}")
             if tone_flavor:
-                print(f">>> Tone: {tone_flavor}")
+                tprint(f">>> Tone: {tone_flavor}")
 
             # =========================================================================
             # SUBSTEP 1: WORLD PRESSURE DEBATE (4 agents council)
             # =========================================================================
-            print(f"\n{'='*60}")
-            print("SUBSTEP 1: WORLD PRESSURE DEBATE")
-            print(f"{'='*60}")
-            print(">>> 4-agent council debate on thematic world pressures")
+            tprint(f"\n{'='*60}")
+            tprint("SUBSTEP 1: WORLD PRESSURE DEBATE")
+            tprint(f"{'='*60}")
+            tprint(">>> 4-agent council debate on thematic world pressures")
 
             world_pressure_agents = [
                 WorldPressureSociologistAgent(model=self.model),
@@ -4971,14 +5194,14 @@ Theme: {outline.get('theme', '')}
             ]
 
             # Phase 1: Proposals (parallel)
-            print(f"\n>>> Phase 1: Proposals (4 agents, parallel)")
+            tprint(f"\n>>> Phase 1: Proposals (4 agents, parallel)")
             wp_proposals = self._parallel_agent_calls(
                 world_pressure_agents, 'propose_world_pressure',
                 theme_question=theme_question, story_shape=story_shape, world_context=world_context,
             )
             wp_proposals = [p for p in wp_proposals if p is not None]
             for p in wp_proposals:
-                print(f"      Societal: {p.world_pressure.societal[:80]}...")
+                tprint(f"      Societal: {p.world_pressure.societal[:80]}...")
 
             if not wp_proposals:
                 return Step4Result(
@@ -4990,7 +5213,7 @@ Theme: {outline.get('theme', '')}
                 )
 
             # Phase 2: Critiques (parallel)
-            print(f"\n>>> Phase 2: Critiques (parallel)")
+            tprint(f"\n>>> Phase 2: Critiques (parallel)")
             critique_results = self._parallel_agent_calls(
                 world_pressure_agents, 'critique_world_pressures', wp_proposals, theme_question
             )
@@ -5000,13 +5223,13 @@ Theme: {outline.get('theme', '')}
                     all_wp_critiques.extend(result)
 
             # Phase 3: Voting (parallel)
-            print(f"\n>>> Phase 3: Voting (parallel)")
+            tprint(f"\n>>> Phase 3: Voting (parallel)")
             wp_votes = self._parallel_agent_calls(
                 world_pressure_agents, 'vote', wp_proposals, theme_question
             )
             wp_votes = [v for v in wp_votes if v is not None]
             for v in wp_votes:
-                print(f"    - votes for Proposal {v.chosen_proposal_index}")
+                tprint(f"    - votes for Proposal {v.chosen_proposal_index}")
 
             # Tally votes
             vote_counts = {}
@@ -5018,11 +5241,11 @@ Theme: {outline.get('theme', '')}
                 winner_index = max(vote_counts, key=vote_counts.get)
 
             winning_wp = wp_proposals[winner_index]
-            print(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts.get(winner_index, 0)} votes)")
-            print(f">>> Societal: {winning_wp.world_pressure.societal}")
-            print(f">>> Economic: {winning_wp.world_pressure.economic}")
-            print(f">>> Political: {winning_wp.world_pressure.political}")
-            print(f">>> Cultural: {winning_wp.world_pressure.cultural}")
+            tprint(f"\n>>> WINNER: Proposal {winner_index} ({vote_counts.get(winner_index, 0)} votes)")
+            tprint(f">>> Societal: {winning_wp.world_pressure.societal}")
+            tprint(f">>> Economic: {winning_wp.world_pressure.economic}")
+            tprint(f">>> Political: {winning_wp.world_pressure.political}")
+            tprint(f">>> Cultural: {winning_wp.world_pressure.cultural}")
 
             # Store world pressure in codex and debates
             world_pressure_dict = {
@@ -5057,12 +5280,12 @@ Theme: {outline.get('theme', '')}
             # Use extracted location types if available, otherwise fall back to genre-based defaults
             if location_types_from_beats:
                 location_types = location_types_from_beats
-                print(f"\n>>> Extracted {len(location_types)} unique location types from Step 3 beats")
+                tprint(f"\n>>> Extracted {len(location_types)} unique location types from Step 3 beats")
                 for loc_type in location_types:
-                    print(f"    - {loc_type}")
+                    tprint(f"    - {loc_type}")
             else:
                 # Fallback: use genre-based location types if no beats have location data
-                print("\n>>> WARNING: No location types found in beats, using genre-based defaults")
+                tprint("\n>>> WARNING: No location types found in beats, using genre-based defaults")
                 if "fantasy" in primary_genre.lower() or "magic" in world_context.lower():
                     location_types = ["Sacred Temple or Shrine", "Public Gathering Place"]
                 elif "sci-fi" in primary_genre.lower() or "space" in world_context.lower():
@@ -5089,8 +5312,8 @@ Theme: {outline.get('theme', '')}
             max_workers_locations = parallel_config.get("max_workers_locations", 4)
 
             if parallel_enabled and len(location_types) > 1:
-                print(f"\n>>> Parallel location generation enabled: {len(location_types)} locations with {max_workers_locations} workers")
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                tprint(f"\n>>> Parallel location generation enabled: {len(location_types)} locations with {max_workers_locations} workers")
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 location_results = []
                 with ThreadPoolExecutor(max_workers=max_workers_locations) as executor:
@@ -5107,15 +5330,15 @@ Theme: {outline.get('theme', '')}
                         for i, location_type in enumerate(location_types, start=1)
                     }
 
-                    for future in as_completed(future_to_location):
+                    for future in _safe_as_completed(future_to_location, _AGENT_TIMEOUT, "step4/locations"):
                         location_num, location_type = future_to_location[future]
                         try:
                             location_result = future.result()
                             location_results.append((location_num, location_result))
                             worker_id = self._get_worker_id()
-                            print(f"[Worker-{worker_id}] Location {location_num} ({location_type}) completed")
+                            tprint(f"[Worker-{worker_id}] Location {location_num} ({location_type}) completed")
                         except Exception as e:
-                            print(f"Error generating location {location_num}: {str(e)[:100]}")
+                            tprint(f"Error generating location {location_num}: {str(e)[:100]}")
                             import traceback
                             traceback.print_exc()
 
@@ -5133,14 +5356,14 @@ Theme: {outline.get('theme', '')}
             else:
                 # Sequential location generation (original behavior)
                 if not parallel_enabled:
-                    print(f"\n>>> Sequential location generation (parallel disabled)")
+                    tprint(f"\n>>> Sequential location generation (parallel disabled)")
                 else:
-                    print(f"\n>>> Sequential location generation (only 1 location)")
+                    tprint(f"\n>>> Sequential location generation (only 1 location)")
 
                 for i, location_type in enumerate(location_types, start=1):
-                    print(f"\n{'='*60}")
-                    print(f"SUBSTEP {i+1}: LOCATION {i} DESIGN ({location_type})")
-                    print(f"{'='*60}")
+                    tprint(f"\n{'='*60}")
+                    tprint(f"SUBSTEP {i+1}: LOCATION {i} DESIGN ({location_type})")
+                    tprint(f"{'='*60}")
 
                     location_result = self._debate_location(
                         location_number=i,
@@ -5161,9 +5384,9 @@ Theme: {outline.get('theme', '')}
             # =========================================================================
             # SUBSTEP 3+: GENERATE COMPREHENSIVE WORLD DETAILS
             # =========================================================================
-            print(f"\n{'='*60}")
-            print("GENERATING COMPREHENSIVE WORLD DETAILS")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("GENERATING COMPREHENSIVE WORLD DETAILS")
+            tprint(f"{'='*60}")
 
             from src.world_schemas import (
                 DailyLife, SocialStructure, Economy, GovernmentLaw,
@@ -5190,7 +5413,7 @@ LOCATIONS: {', '.join([loc['name'] for loc in locations])}
             world_dict = {}
 
             # 1. DAILY LIFE
-            print("\n>>> Generating Daily Life...")
+            tprint("\n>>> Generating Daily Life...")
             daily_life_prompt = f"""{world_context_prompt}
 
 Create detailed daily life information for this world.
@@ -5201,10 +5424,10 @@ Provide a DailyLife schema with all required fields."""
 
             daily_life = self.invoke_structured(daily_life_prompt, DailyLife, max_tokens=2500)
             world_dict["daily_life"] = daily_life.model_dump()
-            print(f"    ✓ Foods: {len(daily_life.common_foods)} items")
+            tprint(f"    ✓ Foods: {len(daily_life.common_foods)} items")
 
             # 2. SOCIAL STRUCTURE
-            print("\n>>> Generating Social Structure...")
+            tprint("\n>>> Generating Social Structure...")
             social_prompt = f"""{world_context_prompt}
 
 Create a compelling social hierarchy for this world.
@@ -5215,10 +5438,10 @@ Provide a SocialStructure schema with all required fields."""
 
             social_structure = self.invoke_structured(social_prompt, SocialStructure, max_tokens=2500)
             world_dict["social_structure"] = social_structure.model_dump()
-            print(f"    ✓ Jobs: {len(social_structure.common_jobs)} common, {len(social_structure.desirable_jobs)} desirable")
+            tprint(f"    ✓ Jobs: {len(social_structure.common_jobs)} common, {len(social_structure.desirable_jobs)} desirable")
 
             # 3. ECONOMY
-            print("\n>>> Generating Economy...")
+            tprint("\n>>> Generating Economy...")
             economy_prompt = f"""{world_context_prompt}
 
 Create an economy with meaningful currency and resources.
@@ -5229,10 +5452,10 @@ Provide an Economy schema with all required fields."""
 
             economy = self.invoke_structured(economy_prompt, Economy, max_tokens=get_token_limit("step4_world_building", "economy"))
             world_dict["economy"] = economy.model_dump()
-            print(f"    ✓ Currency: {economy.currency}")
+            tprint(f"    ✓ Currency: {economy.currency}")
 
             # 4. GOVERNMENT & LAW
-            print("\n>>> Generating Government & Law...")
+            tprint("\n>>> Generating Government & Law...")
             gov_prompt = f"""{world_context_prompt}
 
 Create a government and legal system.
@@ -5243,10 +5466,10 @@ Provide a GovernmentLaw schema with all required fields."""
 
             government = self.invoke_structured(gov_prompt, GovernmentLaw, max_tokens=get_token_limit("step4_world_building", "government"))
             world_dict["government_law"] = government.model_dump()
-            print(f"    ✓ Government: {government.government_type}")
+            tprint(f"    ✓ Government: {government.government_type}")
 
             # 5. EDUCATION & HEALTH
-            print("\n>>> Generating Education & Health...")
+            tprint("\n>>> Generating Education & Health...")
             edu_prompt = f"""{world_context_prompt}
 
 Create education and healthcare systems.
@@ -5257,10 +5480,10 @@ Provide an EducationHealth schema with all required fields."""
 
             education = self.invoke_structured(edu_prompt, EducationHealth, max_tokens=2500)
             world_dict["education_health"] = education.model_dump()
-            print(f"    ✓ Ailments: {len(education.common_ailments)} common diseases")
+            tprint(f"    ✓ Ailments: {len(education.common_ailments)} common diseases")
 
             # 6. ENTERTAINMENT
-            print("\n>>> Generating Entertainment...")
+            tprint("\n>>> Generating Entertainment...")
             entertainment_prompt = f"""{world_context_prompt}
 
 Create entertainment and leisure activities.
@@ -5271,10 +5494,10 @@ Provide an Entertainment schema with all required fields."""
 
             entertainment = self.invoke_structured(entertainment_prompt, Entertainment, max_tokens=2500)
             world_dict["entertainment"] = entertainment.model_dump()
-            print(f"    ✓ Festivals: {len(entertainment.festivals)} major celebrations")
+            tprint(f"    ✓ Festivals: {len(entertainment.festivals)} major celebrations")
 
             # 7. RELIGION & BELIEFS
-            print("\n>>> Generating Religion & Beliefs...")
+            tprint("\n>>> Generating Religion & Beliefs...")
             religion_prompt = f"""{world_context_prompt}
 
 Create religious and spiritual beliefs.
@@ -5285,10 +5508,10 @@ Provide a ReligionBeliefs schema with all required fields."""
 
             religion = self.invoke_structured(religion_prompt, ReligionBeliefs, max_tokens=get_token_limit("step4_world_building", "religion"))
             world_dict["religion_beliefs"] = religion.model_dump()
-            print(f"    ✓ Religion: {religion.main_religion}")
+            tprint(f"    ✓ Religion: {religion.main_religion}")
 
             # 8. CULTURE & CUSTOMS
-            print("\n>>> Generating Culture & Customs...")
+            tprint("\n>>> Generating Culture & Customs...")
             culture_prompt = f"""{world_context_prompt}
 
 Create cultural norms and social customs.
@@ -5299,32 +5522,32 @@ Provide a CultureCustoms schema with all required fields."""
 
             culture = self.invoke_structured(culture_prompt, CultureCustoms, max_tokens=2500)
             world_dict["culture_customs"] = culture.model_dump()
-            print(f"    ✓ Social Rules: {len(culture.social_rules)} key rules")
+            tprint(f"    ✓ Social Rules: {len(culture.social_rules)} key rules")
 
             # Store world in codex
             codex["story"]["world"] = world_dict
-            print(f"\n>>> World building complete: 8 components generated")
+            tprint(f"\n>>> World building complete: 8 components generated")
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print(f"STEP 4 COMPLETE ({duration:.1f}s)")
-            print(f"{'='*60}")
-            print(f">>> World Pressure: Defined")
+            tprint(f"\n{'='*60}")
+            tprint(f"STEP 4 COMPLETE ({duration:.1f}s)")
+            tprint(f"{'='*60}")
+            tprint(f">>> World Pressure: Defined")
             for i, loc in enumerate(locations, start=1):
-                print(f">>> Location {i}: {loc['name']} ({loc['type']})")
-            print(f">>> World Details: 8 components (daily_life, social_structure, economy, government_law, education_health, entertainment, religion_beliefs, culture_customs)")
-            print(f">>>   Currency: {world_dict['economy']['currency']}")
-            print(f">>>   Religion: {world_dict['religion_beliefs']['main_religion']}")
-            print(f">>>   Government: {world_dict['government_law']['government_type']}")
+                tprint(f">>> Location {i}: {loc['name']} ({loc['type']})")
+            tprint(f">>> World Details: 8 components (daily_life, social_structure, economy, government_law, education_health, entertainment, religion_beliefs, culture_customs)")
+            tprint(f">>>   Currency: {world_dict['economy']['currency']}")
+            tprint(f">>>   Religion: {world_dict['religion_beliefs']['main_religion']}")
+            tprint(f">>>   Government: {world_dict['government_law']['government_type']}")
 
             # =========================================================
             # COSTUME DESIGN (World-Accurate, Post-World Building)
             # =========================================================
-            print(f"\n{'='*60}")
-            print("COSTUME DESIGN (World-Accurate)")
-            print(f"{'='*60}")
-            print(">>> Designing costumes with full world context...")
+            tprint(f"\n{'='*60}")
+            tprint("COSTUME DESIGN (World-Accurate)")
+            tprint(f"{'='*60}")
+            tprint(">>> Designing costumes with full world context...")
 
             # Get characters from Step 1
             characters = codex.get("story", {}).get("characters", [])
@@ -5346,15 +5569,15 @@ Provide a CultureCustoms schema with all required fields."""
                     "secondary_genre": secondary_genre,
                 }
 
-                print(f">>> Genre: {primary_genre} / {secondary_genre}")
-                print(f">>> Time Period Hint: {time_period_hint}")
-                print(f">>> Economy: {world_pressure_dict.get('economic', 'N/A')[:60]}...")
+                tprint(f">>> Genre: {primary_genre} / {secondary_genre}")
+                tprint(f">>> Time Period Hint: {time_period_hint}")
+                tprint(f">>> Economy: {world_pressure_dict.get('economic', 'N/A')[:60]}...")
 
                 # Design costume for each character
                 costume_debates = {}
                 for i, character in enumerate(characters):
                     char_name = character.get('name', f'Character {i+1}')
-                    print(f"\n>>> Designing costume for {char_name}...")
+                    tprint(f"\n>>> Designing costume for {char_name}...")
 
                     try:
                         costume_result = self._run_costume_debate(
@@ -5372,20 +5595,20 @@ Provide a CultureCustoms schema with all required fields."""
                             # Store debate metadata
                             costume_debates[f"character_{i+1}_{char_name}"] = costume_result
 
-                            print(f"    ✓ Costume: {costume_result['winning_costume']['primary_color']} {costume_result['winning_costume']['garment_type']}")
+                            tprint(f"    ✓ Costume: {costume_result['winning_costume']['primary_color']} {costume_result['winning_costume']['garment_type']}")
                         else:
-                            print(f"    ✗ Costume debate failed for {char_name}")
+                            tprint(f"    ✗ Costume debate failed for {char_name}")
 
                     except Exception as e:
-                        print(f"    ✗ Error designing costume for {char_name}: {str(e)[:50]}")
+                        tprint(f"    ✗ Error designing costume for {char_name}: {str(e)[:50]}")
 
                 # Add costume debates to step4_debates
                 step4_debates["costume_debates"] = costume_debates
 
-                print(f"\n>>> Costume design complete for {len(characters)} characters")
+                tprint(f"\n>>> Costume design complete for {len(characters)} characters")
 
             else:
-                print(">>> No characters found (Step 1 not run yet) - skipping costume design")
+                tprint(">>> No characters found (Step 1 not run yet) - skipping costume design")
 
             return Step4Result(
                 world_pressure=world_pressure_dict,
@@ -5397,7 +5620,7 @@ Provide a CultureCustoms schema with all required fields."""
 
         except Exception as e:
             duration = time.time() - start_time
-            print(f"\nError in step4_world_building: {str(e)}")
+            tprint(f"\nError in step4_world_building: {str(e)}")
             import traceback
             traceback.print_exc()
             return Step4Result(
@@ -5434,9 +5657,9 @@ Provide a CultureCustoms schema with all required fields."""
             dict with "location" (final location dict) and "debates" (all debate metadata)
         """
         worker_id = self._get_worker_id()
-        print(f"\n[Worker-{worker_id}] {'='*60}")
-        print(f"[Worker-{worker_id}] LOCATION {location_number} DESIGN ({location_type})")
-        print(f"[Worker-{worker_id}] {'='*60}")
+        tprint(f"\n[Worker-{worker_id}] {'='*60}")
+        tprint(f"[Worker-{worker_id}] LOCATION {location_number} DESIGN ({location_type})")
+        tprint(f"[Worker-{worker_id}] {'='*60}")
 
         # Call the existing _debate_location method
         return self._debate_location(
@@ -5472,17 +5695,17 @@ Provide a CultureCustoms schema with all required fields."""
         # -------------------------------------------------------------------------
         # DEBATE 1: NAME (3 agents)
         # -------------------------------------------------------------------------
-        print(f"\n>>> DEBATE 1: NAME")
+        tprint(f"\n>>> DEBATE 1: NAME")
         name_agents = [
             LocationNameCreativeAgent(model=self.model),
             LocationNameAuthenticAgent(model=self.model),
             LocationNameThematicAgent(model=self.model),
         ]
 
-        print(f"    Phase 1: Proposals (3 agents)")
+        tprint(f"    Phase 1: Proposals (3 agents)")
         name_proposals = []
         for agent in name_agents:
-            print(f"      - {agent.name} proposing...")
+            tprint(f"      - {agent.name} proposing...")
             try:
                 proposal = agent.propose_name(
                     location_type=location_type,
@@ -5491,18 +5714,18 @@ Provide a CultureCustoms schema with all required fields."""
                     thematic_question=thematic_question,
                 )
                 name_proposals.append(proposal)
-                print(f"        Name: {proposal.location_name}")
+                tprint(f"        Name: {proposal.location_name}")
             except Exception as e:
-                print(f"        Error: {str(e)[:100]}")
+                tprint(f"        Error: {str(e)[:100]}")
                 continue
 
         if not name_proposals:
             # Fallback name
             winning_name = f"Location_{location_number}"
-            print(f"    WARNING: No name proposals, using fallback: {winning_name}")
+            tprint(f"    WARNING: No name proposals, using fallback: {winning_name}")
         else:
             # Critiques
-            print(f"    Phase 2: Critiques")
+            tprint(f"    Phase 2: Critiques")
             name_critiques = []
             for agent in name_agents:
                 for proposal in name_proposals:
@@ -5519,13 +5742,13 @@ Provide a CultureCustoms schema with all required fields."""
 
                         if critique:
                             name_critiques.append(critique)
-                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                            tprint(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
                     except Exception as e:
-                        print(f"      Error: {str(e)[:50]}")
+                        tprint(f"      Error: {str(e)[:50]}")
                         continue
 
             # Votes
-            print(f"    Phase 3: Voting")
+            tprint(f"    Phase 3: Voting")
             name_votes = []
             for agent in name_agents:
                 try:
@@ -5541,9 +5764,9 @@ Provide a CultureCustoms schema with all required fields."""
 
                     name_votes.append(vote)
                     voted_name = name_proposals[vote.chosen_proposal_index].location_name if vote.chosen_proposal_index < len(name_proposals) else "invalid"
-                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_name})")
+                    tprint(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_name})")
                 except Exception as e:
-                    print(f"      Error: {str(e)[:50]}")
+                    tprint(f"      Error: {str(e)[:50]}")
                     continue
 
             # Tally
@@ -5557,10 +5780,10 @@ Provide a CultureCustoms schema with all required fields."""
                 winner_agent = max(vote_counts, key=vote_counts.get)
                 winning_proposal = next((p for p in name_proposals if p.agent_name == winner_agent), name_proposals[0])
                 winning_name = winning_proposal.location_name
-                print(f"    WINNER: {winning_name} (by {winner_agent})")
+                tprint(f"    WINNER: {winning_name} (by {winner_agent})")
             else:
                 winning_name = name_proposals[0].location_name
-                print(f"    WINNER (default): {winning_name}")
+                tprint(f"    WINNER (default): {winning_name}")
 
         debates["name"] = {
             "proposals": [p.model_dump() for p in name_proposals] if name_proposals else [],
@@ -5572,17 +5795,17 @@ Provide a CultureCustoms schema with all required fields."""
         # -------------------------------------------------------------------------
         # DEBATE 2: PHYSICAL DESCRIPTION (3 agents)
         # -------------------------------------------------------------------------
-        print(f"\n>>> DEBATE 2: PHYSICAL DESCRIPTION")
+        tprint(f"\n>>> DEBATE 2: PHYSICAL DESCRIPTION")
         physical_agents = [
             LocationPhysicalSensoryAgent(model=self.model),
             LocationPhysicalFunctionalAgent(model=self.model),
             LocationPhysicalSymbolicAgent(model=self.model),
         ]
 
-        print(f"    Phase 1: Proposals (3 agents)")
+        tprint(f"    Phase 1: Proposals (3 agents)")
         physical_proposals = []
         for agent in physical_agents:
-            print(f"      - {agent.name} proposing...")
+            tprint(f"      - {agent.name} proposing...")
             try:
                 proposal = agent.propose_physical(
                     location_name=winning_name,
@@ -5591,17 +5814,17 @@ Provide a CultureCustoms schema with all required fields."""
                     thematic_question=thematic_question,
                 )
                 physical_proposals.append(proposal)
-                print(f"        {proposal.physical_description[:60]}...")
+                tprint(f"        {proposal.physical_description[:60]}...")
             except Exception as e:
-                print(f"        Error: {str(e)[:100]}")
+                tprint(f"        Error: {str(e)[:100]}")
                 continue
 
         if not physical_proposals:
             winning_physical = f"A {location_type.lower()} called {winning_name}"
-            print(f"    WARNING: No physical proposals, using fallback")
+            tprint(f"    WARNING: No physical proposals, using fallback")
         else:
             # Critiques
-            print(f"    Phase 2: Critiques")
+            tprint(f"    Phase 2: Critiques")
             physical_critiques = []
             for agent in physical_agents:
                 for proposal in physical_proposals:
@@ -5614,13 +5837,13 @@ Provide a CultureCustoms schema with all required fields."""
 
                         if critique:
                             physical_critiques.append(critique)
-                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                            tprint(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
                     except Exception as e:
-                        print(f"      Error: {str(e)[:50]}")
+                        tprint(f"      Error: {str(e)[:50]}")
                         continue
 
             # Votes
-            print(f"    Phase 3: Voting")
+            tprint(f"    Phase 3: Voting")
             physical_votes = []
             for agent in physical_agents:
                 try:
@@ -5632,9 +5855,9 @@ Provide a CultureCustoms schema with all required fields."""
 
                     physical_votes.append(vote)
                     voted_desc = physical_proposals[vote.chosen_proposal_index].physical_description[:40] if vote.chosen_proposal_index < len(physical_proposals) else "invalid"
-                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_desc}...)")
+                    tprint(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_desc}...)")
                 except Exception as e:
-                    print(f"      Error: {str(e)[:50]}")
+                    tprint(f"      Error: {str(e)[:50]}")
                     continue
 
             # Tally
@@ -5648,10 +5871,10 @@ Provide a CultureCustoms schema with all required fields."""
                 winner_agent = max(vote_counts, key=vote_counts.get)
                 winning_proposal = next((p for p in physical_proposals if p.agent_name == winner_agent), physical_proposals[0])
                 winning_physical = winning_proposal.physical_description
-                print(f"    WINNER: {winning_physical[:60]}... (by {winner_agent})")
+                tprint(f"    WINNER: {winning_physical[:60]}... (by {winner_agent})")
             else:
                 winning_physical = physical_proposals[0].physical_description
-                print(f"    WINNER (default): {winning_physical[:60]}...")
+                tprint(f"    WINNER (default): {winning_physical[:60]}...")
 
         debates["physical"] = {
             "proposals": [p.model_dump() for p in physical_proposals] if physical_proposals else [],
@@ -5663,17 +5886,17 @@ Provide a CultureCustoms schema with all required fields."""
         # -------------------------------------------------------------------------
         # DEBATE 3: ATMOSPHERE (3 agents)
         # -------------------------------------------------------------------------
-        print(f"\n>>> DEBATE 3: ATMOSPHERE")
+        tprint(f"\n>>> DEBATE 3: ATMOSPHERE")
         atmosphere_agents = [
             LocationAtmosphereMoodAgent(model=self.model),
             LocationAtmosphereConflictAgent(model=self.model),
             LocationAtmosphereCharacterAgent(model=self.model),
         ]
 
-        print(f"    Phase 1: Proposals (3 agents)")
+        tprint(f"    Phase 1: Proposals (3 agents)")
         atmosphere_proposals = []
         for agent in atmosphere_agents:
-            print(f"      - {agent.name} proposing...")
+            tprint(f"      - {agent.name} proposing...")
             try:
                 proposal = agent.propose_atmosphere(
                     location_name=winning_name,
@@ -5682,17 +5905,17 @@ Provide a CultureCustoms schema with all required fields."""
                     thematic_question=thematic_question,
                 )
                 atmosphere_proposals.append(proposal)
-                print(f"        {proposal.atmosphere[:60]}...")
+                tprint(f"        {proposal.atmosphere[:60]}...")
             except Exception as e:
-                print(f"        Error: {str(e)[:100]}")
+                tprint(f"        Error: {str(e)[:100]}")
                 continue
 
         if not atmosphere_proposals:
             winning_atmosphere = "A place of significance and meaning."
-            print(f"    WARNING: No atmosphere proposals, using fallback")
+            tprint(f"    WARNING: No atmosphere proposals, using fallback")
         else:
             # Critiques
-            print(f"    Phase 2: Critiques")
+            tprint(f"    Phase 2: Critiques")
             atmosphere_critiques = []
             for agent in atmosphere_agents:
                 for proposal in atmosphere_proposals:
@@ -5705,22 +5928,22 @@ Provide a CultureCustoms schema with all required fields."""
 
                         if critique:
                             atmosphere_critiques.append(critique)
-                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                            tprint(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
                     except Exception as e:
-                        print(f"      Error: {str(e)[:50]}")
+                        tprint(f"      Error: {str(e)[:50]}")
                         continue
 
             # Votes
-            print(f"    Phase 3: Voting")
+            tprint(f"    Phase 3: Voting")
             atmosphere_votes = []
             for agent in atmosphere_agents:
                 try:
                     vote = agent.vote(atmosphere_proposals, location_type)
                     atmosphere_votes.append(vote)
                     voted_atmos = atmosphere_proposals[vote.chosen_proposal_index].atmosphere[:40] if vote.chosen_proposal_index < len(atmosphere_proposals) else "invalid"
-                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_atmos}...)")
+                    tprint(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_atmos}...)")
                 except Exception as e:
-                    print(f"      Error: {str(e)[:50]}")
+                    tprint(f"      Error: {str(e)[:50]}")
                     continue
 
             # Tally
@@ -5734,10 +5957,10 @@ Provide a CultureCustoms schema with all required fields."""
                 winner_agent = max(vote_counts, key=vote_counts.get)
                 winning_proposal = next((p for p in atmosphere_proposals if p.agent_name == winner_agent), atmosphere_proposals[0])
                 winning_atmosphere = winning_proposal.atmosphere
-                print(f"    WINNER: {winning_atmosphere[:60]}... (by {winner_agent})")
+                tprint(f"    WINNER: {winning_atmosphere[:60]}... (by {winner_agent})")
             else:
                 winning_atmosphere = atmosphere_proposals[0].atmosphere
-                print(f"    WINNER (default): {winning_atmosphere[:60]}...")
+                tprint(f"    WINNER (default): {winning_atmosphere[:60]}...")
 
         debates["atmosphere"] = {
             "proposals": [p.model_dump() for p in atmosphere_proposals] if atmosphere_proposals else [],
@@ -5749,17 +5972,17 @@ Provide a CultureCustoms schema with all required fields."""
         # -------------------------------------------------------------------------
         # DEBATE 4: THEMATIC SIGNIFICANCE (3 agents)
         # -------------------------------------------------------------------------
-        print(f"\n>>> DEBATE 4: THEMATIC SIGNIFICANCE")
+        tprint(f"\n>>> DEBATE 4: THEMATIC SIGNIFICANCE")
         thematic_agents = [
             LocationThematicResonanceAgent(model=self.model),
             LocationThematicContrastAgent(model=self.model),
             LocationThematicEvolutionAgent(model=self.model),
         ]
 
-        print(f"    Phase 1: Proposals (3 agents)")
+        tprint(f"    Phase 1: Proposals (3 agents)")
         thematic_proposals = []
         for agent in thematic_agents:
-            print(f"      - {agent.name} proposing...")
+            tprint(f"      - {agent.name} proposing...")
             try:
                 proposal = agent.propose_thematic(
                     location_name=winning_name,
@@ -5770,17 +5993,17 @@ Provide a CultureCustoms schema with all required fields."""
                     key_scenes=key_scenes,
                 )
                 thematic_proposals.append(proposal)
-                print(f"        {proposal.thematic_significance[:60]}...")
+                tprint(f"        {proposal.thematic_significance[:60]}...")
             except Exception as e:
-                print(f"        Error: {str(e)[:100]}")
+                tprint(f"        Error: {str(e)[:100]}")
                 continue
 
         if not thematic_proposals:
             winning_thematic = f"This location embodies aspects of the theme: {thematic_question}"
-            print(f"    WARNING: No thematic proposals, using fallback")
+            tprint(f"    WARNING: No thematic proposals, using fallback")
         else:
             # Critiques
-            print(f"    Phase 2: Critiques")
+            tprint(f"    Phase 2: Critiques")
             thematic_critiques = []
             for agent in thematic_agents:
                 for proposal in thematic_proposals:
@@ -5789,22 +6012,22 @@ Provide a CultureCustoms schema with all required fields."""
                         critique = agent.critique_thematic(proposal, location_type, thematic_question)
                         if critique:
                             thematic_critiques.append(critique)
-                            print(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
+                            tprint(f"      {agent.name} -> {proposal.agent_name}: {critique.score}/10")
                     except Exception as e:
-                        print(f"      Error: {str(e)[:50]}")
+                        tprint(f"      Error: {str(e)[:50]}")
                         continue
 
             # Votes
-            print(f"    Phase 3: Voting")
+            tprint(f"    Phase 3: Voting")
             thematic_votes = []
             for agent in thematic_agents:
                 try:
                     vote = agent.vote(thematic_proposals, location_type, thematic_question)
                     thematic_votes.append(vote)
                     voted_them = thematic_proposals[vote.chosen_proposal_index].thematic_significance[:40] if vote.chosen_proposal_index < len(thematic_proposals) else "invalid"
-                    print(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_them}...)")
+                    tprint(f"      {agent.name} votes for Proposal {vote.chosen_proposal_index} ({voted_them}...)")
                 except Exception as e:
-                    print(f"      Error: {str(e)[:50]}")
+                    tprint(f"      Error: {str(e)[:50]}")
                     continue
 
             # Tally
@@ -5819,11 +6042,11 @@ Provide a CultureCustoms schema with all required fields."""
                 winning_proposal = next((p for p in thematic_proposals if p.agent_name == winner_agent), thematic_proposals[0])
                 winning_thematic = winning_proposal.thematic_significance
                 winning_scenes = winning_proposal.key_scenes
-                print(f"    WINNER: {winning_thematic[:60]}... (by {winner_agent})")
+                tprint(f"    WINNER: {winning_thematic[:60]}... (by {winner_agent})")
             else:
                 winning_thematic = thematic_proposals[0].thematic_significance
                 winning_scenes = thematic_proposals[0].key_scenes
-                print(f"    WINNER (default): {winning_thematic[:60]}...")
+                tprint(f"    WINNER (default): {winning_thematic[:60]}...")
 
         debates["thematic"] = {
             "proposals": [p.model_dump() for p in thematic_proposals] if thematic_proposals else [],
@@ -5904,14 +6127,14 @@ Provide a CultureCustoms schema with all required fields."""
             "location_prompt": {},  # NEW: Empty dict for now (image generation added later)
         }
 
-        print(f"\n>>> LOCATION {location_number} COMPLETE")
-        print(f"    ID: {location['id']}")
-        print(f"    Name: {winning_name}")
-        print(f"    Type: {location_type}")
-        print(f"    Description: {winning_physical[:60]}...")
-        print(f"    Atmosphere: {winning_atmosphere[:60]}...")
-        print(f"    Key Features: {len(key_features)} features")
-        print(f"    Thematic: {winning_thematic[:60]}...")
+        tprint(f"\n>>> LOCATION {location_number} COMPLETE")
+        tprint(f"    ID: {location['id']}")
+        tprint(f"    Name: {winning_name}")
+        tprint(f"    Type: {location_type}")
+        tprint(f"    Description: {winning_physical[:60]}...")
+        tprint(f"    Atmosphere: {winning_atmosphere[:60]}...")
+        tprint(f"    Key Features: {len(key_features)} features")
+        tprint(f"    Thematic: {winning_thematic[:60]}...")
 
         return {
             "location": location,
@@ -5973,12 +6196,12 @@ Provide a CultureCustoms schema with all required fields."""
 
             story_prompt, setting_prompt = self.extract_prompts(codex)
 
-            print(f"\n{'='*60}")
-            print("STEP 4: CHAPTER/SCENE OUTLINE (Multi-Agent Debate)")
-            print(f"{'='*60}")
-            print(f">>> Agents: 4 scene debate agents")
-            print(f">>> Method: Propose -> Critique -> Vote per scene")
-            print(f">>> Structure: 7 chapters, ~5 scenes each")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 4: CHAPTER/SCENE OUTLINE (Multi-Agent Debate)")
+            tprint(f"{'='*60}")
+            tprint(f">>> Agents: 4 scene debate agents")
+            tprint(f">>> Method: Propose -> Critique -> Vote per scene")
+            tprint(f">>> Structure: 7 chapters, ~5 scenes each")
 
             # Initialize scene debate agents
             plot_agent = ScenePlotAgent(model=self.model)
@@ -5989,26 +6212,26 @@ Provide a CultureCustoms schema with all required fields."""
 
             # Plan chapters
             chapter_plans = self._plan_chapters(structure_beats)
-            print(f">>> Planned {len(chapter_plans)} chapters")
+            tprint(f">>> Planned {len(chapter_plans)} chapters")
 
             # Generate ticking clock
             ticking_clock = self._generate_ticking_clock(codex)
-            print(f">>> Ticking Clock: {ticking_clock['ticking_clock'][:50]}...")
+            tprint(f">>> Ticking Clock: {ticking_clock['ticking_clock'][:50]}...")
 
             # Process each chapter
             for chapter_plan in chapter_plans:
                 chapter_num = chapter_plan["chapter_number"]
-                print(f"\n{'='*50}")
-                print(f"CHAPTER {chapter_num}: Act {chapter_plan['act']}")
-                print(f"{'='*50}")
-                print(f">>> Beats: {', '.join(chapter_plan['beats'])}")
-                print(f">>> Focus: {chapter_plan['focus']}")
+                tprint(f"\n{'='*50}")
+                tprint(f"CHAPTER {chapter_num}: Act {chapter_plan['act']}")
+                tprint(f"{'='*50}")
+                tprint(f">>> Beats: {', '.join(chapter_plan['beats'])}")
+                tprint(f">>> Focus: {chapter_plan['focus']}")
 
                 chapter_scenes = []
 
                 # Generate 5 scenes per chapter
                 for scene_num in range(1, chapter_plan["scenes_target"] + 1):
-                    print(f"\n    --- SCENE {scene_num} ---")
+                    tprint(f"\n    --- SCENE {scene_num} ---")
 
                     # Build context for scene
                     scene_context = {
@@ -6019,7 +6242,7 @@ Provide a CultureCustoms schema with all required fields."""
 
                     # Round 1: All 4 agents propose
                     proposals = []
-                    print(f"    Generating proposals...")
+                    tprint(f"    Generating proposals...")
                     for agent in agents:
                         try:
                             proposal = agent.propose_scene(
@@ -6032,13 +6255,13 @@ Provide a CultureCustoms schema with all required fields."""
                                 setting_prompt=setting_prompt,
                             )
                             proposals.append(proposal)
-                            print(f"      [{agent.name}] proposed: {proposal.scene.goal[:40]}...")
+                            tprint(f"      [{agent.name}] proposed: {proposal.scene.goal[:40]}...")
                         except Exception as e:
-                            print(f"      [{agent.name}] failed: {str(e)[:40]}")
+                            tprint(f"      [{agent.name}] failed: {str(e)[:40]}")
 
                     if not proposals:
                         # Fallback: create minimal scene
-                        print(f"      All agents failed - creating fallback scene")
+                        tprint(f"      All agents failed - creating fallback scene")
                         fallback_scene = {
                             "scene_number": scene_num,
                             "scene_type": "scene",
@@ -6061,7 +6284,7 @@ Provide a CultureCustoms schema with all required fields."""
 
                     # Round 2: Cross-critiques (each agent critiques one other)
                     critiques = []
-                    print(f"    Gathering critiques...")
+                    tprint(f"    Gathering critiques...")
                     for i, agent in enumerate(agents[:3]):
                         target_idx = (i + 1) % len(proposals)
                         try:
@@ -6072,11 +6295,11 @@ Provide a CultureCustoms schema with all required fields."""
                             )
                             critiques.append(critique)
                         except Exception as e:
-                            print(f"      [{agent.name}] critique failed: {str(e)[:30]}")
+                            tprint(f"      [{agent.name}] critique failed: {str(e)[:30]}")
 
                     # Round 3: All 4 agents vote
                     votes = []
-                    print(f"    Collecting votes...")
+                    tprint(f"    Collecting votes...")
                     for agent in agents:
                         try:
                             vote = agent.vote_for_best(
@@ -6084,9 +6307,9 @@ Provide a CultureCustoms schema with all required fields."""
                                 chapter_context=chapter_plan,
                             )
                             votes.append(vote)
-                            print(f"      [{agent.name}] votes for: {vote.voted_for_agent}")
+                            tprint(f"      [{agent.name}] votes for: {vote.voted_for_agent}")
                         except Exception as e:
-                            print(f"      [{agent.name}] vote failed: {str(e)[:30]}")
+                            tprint(f"      [{agent.name}] vote failed: {str(e)[:30]}")
 
                     # Tally votes
                     agent_names = [p.agent_name for p in proposals]
@@ -6095,7 +6318,7 @@ Provide a CultureCustoms schema with all required fields."""
                         (p for p in proposals if p.agent_name == winner_agent),
                         proposals[0]
                     )
-                    print(f"    >>> Winner: {winner_agent}")
+                    tprint(f"    >>> Winner: {winner_agent}")
 
                     # Extract scene data
                     scene_data = winner_proposal.scene.model_dump()
@@ -6125,7 +6348,7 @@ Provide a CultureCustoms schema with all required fields."""
                     "scenes": chapter_scenes,
                 })
 
-                print(f"\n    >>> Chapter {chapter_num} complete: {len(chapter_scenes)} scenes")
+                tprint(f"\n    >>> Chapter {chapter_num} complete: {len(chapter_scenes)} scenes")
 
             # Assemble chapter outline
             chapter_outline = {
@@ -6139,15 +6362,15 @@ Provide a CultureCustoms schema with all required fields."""
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print("STEP 4 COMPLETE")
-            print(f"{'='*60}")
-            print(f">>> Duration: {duration:.1f}s")
-            print(f">>> Chapters: {len(chapters)}")
-            print(f">>> Total Scenes: {total_scenes}")
-            print(f">>> Ticking Clock: {ticking_clock['ticking_clock'][:60]}...")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 4 COMPLETE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Duration: {duration:.1f}s")
+            tprint(f">>> Chapters: {len(chapters)}")
+            tprint(f">>> Total Scenes: {total_scenes}")
+            tprint(f">>> Ticking Clock: {ticking_clock['ticking_clock'][:60]}...")
             for ch in chapters:
-                print(f"    - Ch{ch['chapter_number']} (Act {ch['act']}): {len(ch['scenes'])} scenes - {ch['structure_beats_covered']}")
+                tprint(f"    - Ch{ch['chapter_number']} (Act {ch['act']}): {len(ch['scenes'])} scenes - {ch['structure_beats_covered']}")
 
             return Step4Result(
                 chapter_outline=chapter_outline,
@@ -6301,7 +6524,7 @@ RELIGION:
                 if has_loc and has_chars and has_pov:
                     resolved_count += 1
 
-        print(f"  Scene ID population: {resolved_count}/{total_scenes} scenes fully resolved")
+        tprint(f"  Scene ID population: {resolved_count}/{total_scenes} scenes fully resolved")
 
     def _resolve_character_id(self, name: str, char_map: dict, characters: list) -> str:
         """Resolve a character name to its canonical char_XXX ID."""
@@ -6341,7 +6564,7 @@ RELIGION:
         if best_id:
             return best_id
 
-        print(f"    WARNING: Could not resolve character '{name}' to any known character ID")
+        tprint(f"    WARNING: Could not resolve character '{name}' to any known character ID")
         return ''
 
     def _resolve_location_id(self, name: str, loc_map: dict, locations: list) -> str:
@@ -6403,7 +6626,7 @@ RELIGION:
                 if loc_type.lower() in name_lower or name_lower in loc_type.lower():
                     return loc_id
 
-        print(f"    WARNING: Could not resolve location '{name}' to any known location ID")
+        tprint(f"    WARNING: Could not resolve location '{name}' to any known location ID")
         return ''
 
     def _validate_scene_ids(self, chapter_outline: dict, codex: dict) -> None:
@@ -6462,12 +6685,12 @@ RELIGION:
                 if scene_valid:
                     valid += 1
 
-        print(f"  Scene ID Validation: {valid}/{total} scenes valid ({100*valid//total if total else 0}%)")
+        tprint(f"  Scene ID Validation: {valid}/{total} scenes valid ({100*valid//total if total else 0}%)")
         if issues:
             for issue in issues[:10]:  # Show first 10 issues
-                print(issue)
+                tprint(issue)
             if len(issues) > 10:
-                print(f"  ... and {len(issues) - 10} more issues")
+                tprint(f"  ... and {len(issues) - 10} more issues")
 
     def _validate_tracking_completeness(self, chapter_outline: dict) -> dict:
         """Validate tracking chains are complete and return incomplete chain data."""
@@ -6492,7 +6715,7 @@ RELIGION:
                             'chapter_num': chapter['chapter_number']
                         })
 
-        print(f"\n  Validating {len(tracking_chains)} tracking chains...")
+        tprint(f"\n  Validating {len(tracking_chains)} tracking chains...")
         incomplete_chains = {}
 
         for tid, chain_data in tracking_chains.items():
@@ -6514,12 +6737,12 @@ RELIGION:
 
         if incomplete_chains:
             total_missing = sum(len(c['missing']) for c in incomplete_chains.values())
-            print(f"  ⚠️  {total_missing} incomplete chains")
+            tprint(f"  ⚠️  {total_missing} incomplete chains")
             for tid, data in list(incomplete_chains.items())[:3]:
                 for pos in data['missing']:
-                    print(f"     - {tid}: missing {pos}")
+                    tprint(f"     - {tid}: missing {pos}")
         else:
-            print(f"  ✓ All tracking chains complete!")
+            tprint(f"  ✓ All tracking chains complete!")
 
         return incomplete_chains
 
@@ -6528,7 +6751,7 @@ RELIGION:
         if not incomplete_chains:
             return
 
-        print(f"\n  Auto-completing incomplete chains...")
+        tprint(f"\n  Auto-completing incomplete chains...")
 
         for tid, chain_data in incomplete_chains.items():
             # Get last existing entry to find where to continue
@@ -6549,7 +6772,7 @@ RELIGION:
                         })
 
             if not candidate_scenes:
-                print(f"     ⚠️  {tid}: No scenes available to complete chain")
+                tprint(f"     ⚠️  {tid}: No scenes available to complete chain")
                 continue
 
             # Determine missing positions and escalation
@@ -6583,9 +6806,9 @@ RELIGION:
                     selected['scene']['setup_payoff_tracking'] = []
                 selected['scene']['setup_payoff_tracking'].append(new_tracking)
 
-                print(f"     ✓ {tid}: Added {position} to {selected['scene_ref']}")
+                tprint(f"     ✓ {tid}: Added {position} to {selected['scene_ref']}")
 
-        print(f"  ✓ All tracking chains now complete!")
+        tprint(f"  ✓ All tracking chains now complete!")
 
     def _generate_scenes_for_chapter_parallel(
         self,
@@ -6621,7 +6844,7 @@ RELIGION:
         chapter_num = chapter_skeleton['chapter_number']
         chapter_title = chapter_skeleton['chapter_title']
 
-        print(f"[Worker-{worker_id}] Starting Chapter {chapter_num}: {chapter_title}")
+        tprint(f"[Worker-{worker_id}] Starting Chapter {chapter_num}: {chapter_title}")
 
         # Each agent proposes scenes for this chapter (parallel)
         raw_scene_proposals = self._parallel_agent_calls(
@@ -6634,13 +6857,13 @@ RELIGION:
             if scene_proposal is not None:
                 scene_proposals.append(scene_proposal.dict() if hasattr(scene_proposal, 'dict') else scene_proposal)
                 num_scenes = len(scene_proposal.scenes if hasattr(scene_proposal, 'scenes') else scene_proposal.get('scenes', []))
-                print(f"[Worker-{worker_id}]   ✓ {agents[i].name} proposed {num_scenes} scenes")
+                tprint(f"[Worker-{worker_id}]   ✓ {agents[i].name} proposed {num_scenes} scenes")
             else:
-                print(f"[Worker-{worker_id}]   ✗ {agents[i].name} returned None")
+                tprint(f"[Worker-{worker_id}]   ✗ {agents[i].name} returned None")
 
         if not scene_proposals:
             # Return empty chapter
-            print(f"[Worker-{worker_id}] ✗ Chapter {chapter_num}: No scene proposals")
+            tprint(f"[Worker-{worker_id}] ✗ Chapter {chapter_num}: No scene proposals")
             return {
                 'chapter_data': None,
                 'new_scene_counter': scene_counter_start,
@@ -6648,7 +6871,7 @@ RELIGION:
             }
 
         # Simple voting: Pick the scene proposal with most votes
-        print(f"[Worker-{worker_id}]   Voting for best scenes...")
+        tprint(f"[Worker-{worker_id}]   Voting for best scenes...")
         scene_votes = []
         for agent in agents:
             # Pick the proposal from the skeleton winner if available
@@ -6665,7 +6888,7 @@ RELIGION:
             scene_proposals[0]
         )
 
-        print(f"[Worker-{worker_id}]   Winner: {scene_winner_name}")
+        tprint(f"[Worker-{worker_id}]   Winner: {scene_winner_name}")
 
         # Combine chapter skeleton + winning scenes
         # Assign sequential scene numbers (will be renumbered later)
@@ -6684,7 +6907,7 @@ RELIGION:
             'scenes': scenes_with_numbers
         }
 
-        print(f"[Worker-{worker_id}] ✓ Completed Chapter {chapter_num}: {len(scenes_with_numbers)} scenes")
+        tprint(f"[Worker-{worker_id}] ✓ Completed Chapter {chapter_num}: {len(scenes_with_numbers)} scenes")
 
         return {
             'chapter_data': final_chapter,
@@ -6751,11 +6974,11 @@ RELIGION:
             tropes = codex["story"].get("tropes", [])
             pacing = codex.get("author", {}).get("plotting_style", {}).get("pacing", "medium")
 
-            print(f"\n{'='*60}")
-            print(f"CHAPTER/SCENE BREAKDOWN DEBATE (TWO-STAGE)")
-            print(f"  Target: {num_chapters} chapters")
-            print(f"  Using: {len(integrated_beats)} beats, {len(characters)} characters, {len(locations)} locations")
-            print(f"{'='*60}\n")
+            tprint(f"\n{'='*60}")
+            tprint(f"CHAPTER/SCENE BREAKDOWN DEBATE (TWO-STAGE)")
+            tprint(f"  Target: {num_chapters} chapters")
+            tprint(f"  Using: {len(integrated_beats)} beats, {len(characters)} characters, {len(locations)} locations")
+            tprint(f"{'='*60}\n")
 
             # Initialize 3 agents (use model pattern, not llm)
             agent1 = ChapterSceneStructureAgent(model=self.model)
@@ -6781,14 +7004,14 @@ RELIGION:
             # STAGE 1: CHAPTER SKELETON (NO SCENES)
             # ================================================================
             stage1_start = time.time()
-            print("\n" + "="*60)
-            print("STAGE 1: CHAPTER STRUCTURE (NO SCENES)")
-            print("="*60)
+            tprint("\n" + "="*60)
+            tprint("STAGE 1: CHAPTER STRUCTURE (NO SCENES)")
+            tprint("="*60)
 
             # Round 1: Skeleton Proposals (parallel)
-            print("\nROUND 1: SKELETON PROPOSALS (parallel)")
-            print("-" * 60)
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            tprint("\nROUND 1: SKELETON PROPOSALS (parallel)")
+            tprint("-" * 60)
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
             raw_skeleton_proposals = self._parallel_agent_calls(
                 agents, 'propose_chapter_skeleton',
@@ -6799,16 +7022,16 @@ RELIGION:
             for i, proposal in enumerate(raw_skeleton_proposals):
                 if proposal is not None:
                     skeleton_proposals.append(proposal.dict() if hasattr(proposal, 'dict') else proposal)
-                    print(f"  ✓ {agents[i].name}: Proposed {proposal.num_chapters} chapters (skeletons only)")
+                    tprint(f"  ✓ {agents[i].name}: Proposed {proposal.num_chapters} chapters (skeletons only)")
                 else:
-                    print(f"  ✗ {agents[i].name}: No proposal (LLM returned None)")
+                    tprint(f"  ✗ {agents[i].name}: No proposal (LLM returned None)")
 
             if not skeleton_proposals:
                 raise ValueError("All agents failed to propose chapter skeletons")
 
             # Round 2: Simple voting for best skeleton (parallel)
-            print(f"\nROUND 2: VOTING FOR BEST CHAPTER STRUCTURE (parallel)")
-            print("-" * 60)
+            tprint(f"\nROUND 2: VOTING FOR BEST CHAPTER STRUCTURE (parallel)")
+            tprint("-" * 60)
             empty_critiques = [[] for _ in skeleton_proposals]
             raw_votes = self._parallel_agent_calls(
                 agents, 'vote', skeleton_proposals, empty_critiques, metadata
@@ -6817,14 +7040,14 @@ RELIGION:
             for i, vote in enumerate(raw_votes):
                 if vote is not None:
                     skeleton_votes.append(vote.dict() if hasattr(vote, 'dict') else vote)
-                    print(f"  {agents[i].name} → Chose: {vote.chosen_agent}")
+                    tprint(f"  {agents[i].name} → Chose: {vote.chosen_agent}")
 
             # Tally votes for skeleton
             skeleton_vote_counts = Counter(v['chosen_agent'] for v in skeleton_votes)
             skeleton_winner_name = max(skeleton_vote_counts, key=skeleton_vote_counts.get) if skeleton_vote_counts else skeleton_proposals[0]['agent_name']
 
-            print(f"\nWINNER (STAGE 1): {skeleton_winner_name}")
-            print(f"   Vote counts: {dict(skeleton_vote_counts)}")
+            tprint(f"\nWINNER (STAGE 1): {skeleton_winner_name}")
+            tprint(f"   Vote counts: {dict(skeleton_vote_counts)}")
 
             # Get winning skeleton
             winning_skeleton = next((p for p in skeleton_proposals if p['agent_name'] == skeleton_winner_name), skeleton_proposals[0])
@@ -6837,9 +7060,9 @@ RELIGION:
             # STAGE 2: GENERATE SCENES FOR EACH CHAPTER
             # ================================================================
             stage2_start = time.time()
-            print("\n" + "="*60)
-            print("STAGE 2: SCENE GENERATION (PER CHAPTER)")
-            print("="*60)
+            tprint("\n" + "="*60)
+            tprint("STAGE 2: SCENE GENERATION (PER CHAPTER)")
+            tprint("="*60)
 
             # Load parallel config
             step5_config = get_step_config("step5_scene_breakdown")
@@ -6851,10 +7074,10 @@ RELIGION:
             scene_counter = 1
 
             if parallel_enabled and chapter_level:
-                print(f"\n  Processing {len(winning_skeleton['chapters'])} chapters in parallel with {max_workers_chapters} workers...")
+                tprint(f"\n  Processing {len(winning_skeleton['chapters'])} chapters in parallel with {max_workers_chapters} workers...")
 
                 # Prepare chapter generation tasks
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 # We need to handle scene counter sequentially, so we'll:
                 # 1. Generate scenes for all chapters in parallel (without final scene numbers)
@@ -6890,7 +7113,7 @@ RELIGION:
                         future_to_chapter[future] = chapter_skeleton
 
                     # Collect results as they complete
-                    for future in as_completed(future_to_chapter):
+                    for future in _safe_as_completed(future_to_chapter, _AGENT_TIMEOUT, "step5/scene-breakdown"):
                         chapter_skeleton = future_to_chapter[future]
                         try:
                             result = future.result()
@@ -6899,11 +7122,11 @@ RELIGION:
                             if result['chapter_data']:
                                 num_scenes = result['num_scenes']
                                 winner = result['winner_name']
-                                print(f"  ✓ Chapter {chapter_num}: {winner} ({num_scenes} scenes)")
+                                tprint(f"  ✓ Chapter {chapter_num}: {winner} ({num_scenes} scenes)")
                             else:
-                                print(f"  ⚠️  Chapter {chapter_num}: No scenes generated")
+                                tprint(f"  ⚠️  Chapter {chapter_num}: No scenes generated")
                         except Exception as e:
-                            print(f"  ✗ Chapter {chapter_skeleton['chapter_number']}: {str(e)[:50]}")
+                            tprint(f"  ✗ Chapter {chapter_skeleton['chapter_number']}: {str(e)[:50]}")
 
                 # Sort results by chapter number and renumber scenes sequentially
                 chapter_results.sort(key=lambda x: x['chapter_num'])
@@ -6920,11 +7143,11 @@ RELIGION:
 
             else:
                 # Sequential processing (original code)
-                print(f"\n  Processing {len(winning_skeleton['chapters'])} chapters sequentially...")
+                tprint(f"\n  Processing {len(winning_skeleton['chapters'])} chapters sequentially...")
 
                 for chapter_skeleton in winning_skeleton['chapters']:
                     chapter_num = chapter_skeleton['chapter_number']
-                    print(f"\n--- CHAPTER {chapter_num}: {chapter_skeleton['chapter_title']} ---")
+                    tprint(f"\n--- CHAPTER {chapter_num}: {chapter_skeleton['chapter_title']} ---")
 
                     # Each agent proposes scenes for this chapter (parallel)
                     raw_scene_proposals = self._parallel_agent_calls(
@@ -6936,14 +7159,14 @@ RELIGION:
                     for i, scene_proposal in enumerate(raw_scene_proposals):
                         if scene_proposal is not None:
                             scene_proposals.append(scene_proposal.dict() if hasattr(scene_proposal, 'dict') else scene_proposal)
-                            print(f"  {agents[i].name} proposed scenes")
+                            tprint(f"  {agents[i].name} proposed scenes")
 
                     if not scene_proposals:
-                        print(f"  ⚠️  No scene proposals for chapter {chapter_num}, skipping")
+                        tprint(f"  ⚠️  No scene proposals for chapter {chapter_num}, skipping")
                         continue
 
                     # Simple voting: Pick the scene proposal with most votes
-                    print(f"  Voting for best scenes...")
+                    tprint(f"  Voting for best scenes...")
                     scene_votes = []
                     for agent in agents:
                         # Simple vote: each agent picks their favorite scene proposal
@@ -6963,7 +7186,7 @@ RELIGION:
                         scene_proposals[0]
                     )
 
-                    print(f"  ✓ Winner: {scene_winner_name} ({len(winning_scenes_proposal['scenes'])} scenes)")
+                    tprint(f"  ✓ Winner: {scene_winner_name} ({len(winning_scenes_proposal['scenes'])} scenes)")
 
                     # Combine chapter skeleton + winning scenes
                     # Assign sequential scene numbers
@@ -7019,13 +7242,13 @@ RELIGION:
                 'call_count': total_calls,
             }
 
-            print(f"\n{'='*60}")
-            print(f"STEP 5 COMPLETE")
-            print(f"  Chapters: {chapter_outline['num_chapters']}")
-            print(f"  Total Scenes: {total_scenes}")
-            print(f"  Duration: {duration:.1f}s")
-            print(f"  Tokens used: {total_tokens_used:,} ({total_calls} LLM calls)")
-            print(f"{'='*60}\n")
+            tprint(f"\n{'='*60}")
+            tprint(f"STEP 5 COMPLETE")
+            tprint(f"  Chapters: {chapter_outline['num_chapters']}")
+            tprint(f"  Total Scenes: {total_scenes}")
+            tprint(f"  Duration: {duration:.1f}s")
+            tprint(f"  Tokens used: {total_tokens_used:,} ({total_calls} LLM calls)")
+            tprint(f"{'='*60}\n")
 
             return Step5Result(
                 chapter_outline=chapter_outline,
@@ -7046,7 +7269,7 @@ RELIGION:
 
         except Exception as e:
             duration = time.time() - start_time
-            print(f"\n❌ STEP 5 FAILED: {str(e)}")
+            tprint(f"\n❌ STEP 5 FAILED: {str(e)}")
             import traceback
             traceback.print_exc()
             return Step5Result(
@@ -7085,11 +7308,11 @@ RELIGION:
             integrated_beats = codex["story"]["integrated_beats"]
             tropes = codex["story"].get("tropes", [])
 
-            print(f"\n{'='*60}")
-            print("STEP 5B: FORESHADOWING & SETUP/PAYOFF ANALYSIS")
-            print(f"  Chapters: {chapter_outline['num_chapters']}")
-            print(f"  Total Scenes: {sum(len(ch['scenes']) for ch in chapter_outline['chapters'])}")
-            print(f"{'='*60}\n")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 5B: FORESHADOWING & SETUP/PAYOFF ANALYSIS")
+            tprint(f"  Chapters: {chapter_outline['num_chapters']}")
+            tprint(f"  Total Scenes: {sum(len(ch['scenes']) for ch in chapter_outline['chapters'])}")
+            tprint(f"{'='*60}\n")
 
             # Initialize agents
             agents = [
@@ -7099,8 +7322,8 @@ RELIGION:
             ]
 
             # ROUND 1: Analysis (parallel)
-            print("ROUND 1: FORESHADOWING ANALYSIS (parallel)")
-            print("-" * 60)
+            tprint("ROUND 1: FORESHADOWING ANALYSIS (parallel)")
+            tprint("-" * 60)
             raw_analyses = self._parallel_agent_calls(
                 agents, 'analyze_foreshadowing',
                 chapter_outline, characters, integrated_beats, tropes
@@ -7109,15 +7332,15 @@ RELIGION:
             for i, analysis in enumerate(raw_analyses):
                 if analysis is not None:
                     analyses.append(analysis.dict() if hasattr(analysis, 'dict') else analysis)
-                    print(f"  ✓ {agents[i].name}: Payoffs: {len(analysis.payoff_items)}, Existing annotations: {len(analysis.existing_scene_annotations)}")
+                    tprint(f"  ✓ {agents[i].name}: Payoffs: {len(analysis.payoff_items)}, Existing annotations: {len(analysis.existing_scene_annotations)}")
 
             if not analyses:
                 raise ValueError("All agents failed")
 
             # ROUND 2: Critiques (parallel)
-            print(f"\nROUND 2: CRITIQUES (parallel)")
-            print("-" * 60)
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            tprint(f"\nROUND 2: CRITIQUES (parallel)")
+            tprint("-" * 60)
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
             def _foreshadow_critique(agent, analysis):
                 return agent.critique_foreshadowing(analysis, {"chapter_outline": chapter_outline})
@@ -7131,28 +7354,28 @@ RELIGION:
 
             with ThreadPoolExecutor(max_workers=len(critique_tasks)) as executor:
                 futures = {executor.submit(_foreshadow_critique, a, an): (a, an) for a, an in critique_tasks}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step5b/foreshadowing-critiques"):
                     agent, analysis = futures[future]
                     try:
                         critique = future.result()
                         if critique:
                             critiques.append(critique.dict() if hasattr(critique, 'dict') else critique)
-                            print(f"  {agent.name} → {analysis['agent_name']}")
+                            tprint(f"  {agent.name} → {analysis['agent_name']}")
                     except Exception:
                         pass
 
             # ROUND 3: Voting (parallel)
-            print(f"\nROUND 3: VOTING (parallel)")
-            print("-" * 60)
+            tprint(f"\nROUND 3: VOTING (parallel)")
+            tprint("-" * 60)
             raw_votes = self._parallel_agent_calls(agents, 'vote_on_priorities', analyses, critiques)
             votes = []
             for i, vote in enumerate(raw_votes):
                 if vote is not None:
                     votes.append(vote.dict() if hasattr(vote, 'dict') else vote)
-                    print(f"  {agents[i].name} → {len(vote.essential_payoffs)} essential")
+                    tprint(f"  {agents[i].name} → {len(vote.essential_payoffs)} essential")
 
             # SYNTHESIS: Apply annotations and insert new scenes
-            print(f"\nSYNTHESIZING & APPLYING CHANGES...")
+            tprint(f"\nSYNTHESIZING & APPLYING CHANGES...")
 
             # Get priority payoffs (2+ votes)
             essential_counter = Counter()
@@ -7198,7 +7421,7 @@ RELIGION:
                             if 'setup_payoff_tracking' not in scene:
                                 scene['setup_payoff_tracking'] = []
                             scene['setup_payoff_tracking'].extend(ann['add_tracking'])
-                            print(f"  ✓ Annotated {scene_ref}")
+                            tprint(f"  ✓ Annotated {scene_ref}")
 
             # Step 2: Insert new scenes
             for chapter in chapter_outline['chapters']:
@@ -7234,7 +7457,7 @@ RELIGION:
                         }
                         chapter['scenes'].insert(insert_pos, new_scene)
                         scene_ref = f"Ch{ch_num}, after Scene {after_scene_num}"
-                        print(f"  ✓ Inserted scene after Scene {after_scene_num}")
+                        tprint(f"  ✓ Inserted scene after Scene {after_scene_num}")
 
             # Step 3: Renumber ALL scenes sequentially
             scene_counter = 1
@@ -7244,7 +7467,7 @@ RELIGION:
                     scene_counter += 1
 
             total_scenes = scene_counter - 1
-            print(f"✓ Renumbered {total_scenes} scenes\n")
+            tprint(f"✓ Renumbered {total_scenes} scenes\n")
 
             # Validate tracking completeness and auto-complete if needed
             incomplete_chains = self._validate_tracking_completeness(chapter_outline)
@@ -7267,13 +7490,13 @@ RELIGION:
             self._validate_scene_ids(chapter_outline, codex)
 
             duration = time.time() - start_time
-            print("="*60)
-            print(f"STEP 5B COMPLETE")
-            print(f"  New Scenes: {len(unique_setups)}")
-            print(f"  Annotated Scenes: {len(unique_annotations)}")
-            print(f"  Total Scenes Now: {total_scenes}")
-            print(f"  Duration: {duration:.1f}s")
-            print("="*60 + "\n")
+            tprint("="*60)
+            tprint(f"STEP 5B COMPLETE")
+            tprint(f"  New Scenes: {len(unique_setups)}")
+            tprint(f"  Annotated Scenes: {len(unique_annotations)}")
+            tprint(f"  Total Scenes Now: {total_scenes}")
+            tprint(f"  Duration: {duration:.1f}s")
+            tprint("="*60 + "\n")
 
             return {
                 "success": True,
@@ -7288,7 +7511,7 @@ RELIGION:
 
         except Exception as e:
             import traceback
-            print(f"\n❌ STEP 5B FAILED: {str(e)}")
+            tprint(f"\n❌ STEP 5B FAILED: {str(e)}")
             traceback.print_exc()
             return {
                 "success": False,
@@ -7317,7 +7540,7 @@ RELIGION:
                     if result['scene_ref'] == scene_ref:
                         if result['causality'].get('causal_strength') == 'Weak':
                             result['causality']['causal_strength'] = 'Indirect'
-                            print(f"[Worker-{worker_id}] ✓ {scene_ref}: Upgraded Weak → Indirect causality")
+                            tprint(f"[Worker-{worker_id}] ✓ {scene_ref}: Upgraded Weak → Indirect causality")
                             return {
                                 'success': True,
                                 'scene_ref': scene_ref,
@@ -7336,7 +7559,7 @@ RELIGION:
                             func['plot_function'] = "Advances story through action or discovery"
                             func['function_count'] = 1
                             func['recommendation'] = "Enhance"
-                            print(f"[Worker-{worker_id}] ✓ {scene_ref}: Added plot function")
+                            tprint(f"[Worker-{worker_id}] ✓ {scene_ref}: Added plot function")
                             return {
                                 'success': True,
                                 'scene_ref': scene_ref,
@@ -7348,7 +7571,7 @@ RELIGION:
             return {'success': False, 'scene_ref': scene_ref, 'fix_type': fix_type, 'message': 'No fix needed'}
 
         except Exception as e:
-            print(f"[Worker-{worker_id}] ❌ {scene_ref}: Fix failed - {str(e)}")
+            tprint(f"[Worker-{worker_id}] ❌ {scene_ref}: Fix failed - {str(e)}")
             return {'success': False, 'scene_ref': scene_ref, 'fix_type': fix_type, 'message': str(e)}
 
     def step5c_interconnection_analysis(self, codex: dict) -> dict:
@@ -7393,15 +7616,15 @@ RELIGION:
             max_workers_analysis = parallel_config.get('max_workers_analysis', 3)
             max_workers_scenes = parallel_config.get('max_workers_scenes', 4)
 
-            print(f"\n{'='*60}")
-            print("STEP 5C: Complete Scene Interconnection Analysis")
-            print(f"{'='*60}")
-            print(f">>> Analyzing {total_scenes} scenes across {len(chapter_outline['chapters'])} chapters")
-            print(f">>> Method: 6 agents {'parallel' if analysis_parallel else 'sequential'} → Synthesis → Auto-fix {'parallel' if scene_parallel else 'sequential'}")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 5C: Complete Scene Interconnection Analysis")
+            tprint(f"{'='*60}")
+            tprint(f">>> Analyzing {total_scenes} scenes across {len(chapter_outline['chapters'])} chapters")
+            tprint(f">>> Method: 6 agents {'parallel' if analysis_parallel else 'sequential'} → Synthesis → Auto-fix {'parallel' if scene_parallel else 'sequential'}")
             if analysis_parallel:
-                print(f">>> Analysis workers: {max_workers_analysis}")
+                tprint(f">>> Analysis workers: {max_workers_analysis}")
             if scene_parallel:
-                print(f">>> Scene fix workers: {max_workers_scenes}")
+                tprint(f">>> Scene fix workers: {max_workers_scenes}")
 
             # =========================================
             # INITIALIZE ALL 7 AGENTS
@@ -7427,9 +7650,9 @@ RELIGION:
             # =========================================
             # ROUND 1: PARALLEL ANALYSIS (6 Agents)
             # =========================================
-            print(f"\n{'='*60}")
-            print("ROUND 1: INTERCONNECTION ANALYSIS (6 Agents)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("ROUND 1: INTERCONNECTION ANALYSIS (6 Agents)")
+            tprint(f"{'='*60}")
 
             causality_results = []
             thread_analysis = {}
@@ -7447,60 +7670,60 @@ RELIGION:
                     # Submit all 6 agent tasks
                     def run_causality():
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {causality_agent.name} analyzing causality...")
+                        tprint(f"[Worker-{worker_id}] {causality_agent.name} analyzing causality...")
                         result = causality_agent.analyze_causality(chapter_outline, characters)
                         weak_count = sum(1 for r in result if r['causality'].get('causal_strength') == 'Weak')
-                        print(f"[Worker-{worker_id}] ✓ Causality mapped: {len(result)} scenes, {weak_count} weak connections")
+                        tprint(f"[Worker-{worker_id}] ✓ Causality mapped: {len(result)} scenes, {weak_count} weak connections")
                         return result
 
                     def run_thread():
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {plot_thread_agent.name} analyzing plot structure...")
+                        tprint(f"[Worker-{worker_id}] {plot_thread_agent.name} analyzing plot structure...")
                         result = plot_thread_agent.analyze_threads(chapter_outline, characters, integrated_beats or [])
                         total_threads = result.get('total_threads', 0)
                         dangling = result.get('dangling_threads', [])
-                        print(f"[Worker-{worker_id}] ✓ Identified {total_threads} plot threads")
+                        tprint(f"[Worker-{worker_id}] ✓ Identified {total_threads} plot threads")
                         if dangling:
-                            print(f"[Worker-{worker_id}] ⚠️  {len(dangling)} dangling threads: {', '.join(dangling[:3])}")
+                            tprint(f"[Worker-{worker_id}] ⚠️  {len(dangling)} dangling threads: {', '.join(dangling[:3])}")
                         return result
 
                     def run_character_arc():
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {character_arc_agent.name} analyzing character arcs...")
+                        tprint(f"[Worker-{worker_id}] {character_arc_agent.name} analyzing character arcs...")
                         result = character_arc_agent.analyze_character_arcs(chapter_outline, characters)
                         unique_chars = len(set(r['arc'].get('character_name', '') for r in result))
-                        print(f"[Worker-{worker_id}] ✓ Emotional arcs tracked: {unique_chars} major characters across {len(result)} arc beats")
+                        tprint(f"[Worker-{worker_id}] ✓ Emotional arcs tracked: {unique_chars} major characters across {len(result)} arc beats")
                         return result
 
                     def run_thematic():
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {thematic_beat_agent.name} analyzing thematic coherence...")
+                        tprint(f"[Worker-{worker_id}] {thematic_beat_agent.name} analyzing thematic coherence...")
                         result = thematic_beat_agent.analyze_thematic_beats(chapter_outline, characters)
                         coverage = sum(1 for r in result if 'No clear thematic connection' not in r['thematic_beat'].get('how_scene_tests_theme', ''))
                         pct = int((coverage / max(total_scenes, 1)) * 100)
-                        print(f"[Worker-{worker_id}] ✓ Thematic coverage: {coverage}/{total_scenes} scenes ({pct}%)")
+                        tprint(f"[Worker-{worker_id}] ✓ Thematic coverage: {coverage}/{total_scenes} scenes ({pct}%)")
                         if pct < 90:
-                            print(f"[Worker-{worker_id}] ⚠️  {total_scenes - coverage} scenes lack thematic connection")
+                            tprint(f"[Worker-{worker_id}] ⚠️  {total_scenes - coverage} scenes lack thematic connection")
                         return result
 
                     def run_function():
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {scene_function_agent.name} validating scene functions...")
+                        tprint(f"[Worker-{worker_id}] {scene_function_agent.name} validating scene functions...")
                         result = scene_function_agent.analyze_scene_functions(chapter_outline, characters)
                         high_func = sum(1 for r in result if r['scene_function'].get('function_count', 0) >= 2)
                         weak_func = sum(1 for r in result if r['scene_function'].get('function_count', 0) < 1)
-                        print(f"[Worker-{worker_id}] ✓ Scene functions: {high_func}/{total_scenes} serve 2+ functions")
+                        tprint(f"[Worker-{worker_id}] ✓ Scene functions: {high_func}/{total_scenes} serve 2+ functions")
                         if weak_func > 0:
-                            print(f"[Worker-{worker_id}] ⚠️  {weak_func} scenes serve < 1 function")
+                            tprint(f"[Worker-{worker_id}] ⚠️  {weak_func} scenes serve < 1 function")
                         return result
 
                     def run_convergence(thread_data):
                         worker_id = self._get_worker_id()
-                        print(f"[Worker-{worker_id}] {narrative_rope_agent.name} analyzing thread convergence...")
+                        tprint(f"[Worker-{worker_id}] {narrative_rope_agent.name} analyzing thread convergence...")
                         result = narrative_rope_agent.analyze_thread_convergence(chapter_outline, thread_data.get('threads', []))
                         avg_count = sum(r['narrative_rope'].get('thread_count', 0) for r in result) / max(len(result), 1)
                         max_conv = max((r['narrative_rope'].get('thread_count', 0) for r in result), default=0)
-                        print(f"[Worker-{worker_id}] ✓ Thread convergence: Avg {avg_count:.1f} threads/scene, Max {max_conv} threads")
+                        tprint(f"[Worker-{worker_id}] ✓ Thread convergence: Avg {avg_count:.1f} threads/scene, Max {max_conv} threads")
                         return result
 
                     # Submit first 5 agents in parallel
@@ -7528,51 +7751,51 @@ RELIGION:
             else:
                 # Sequential execution (original)
                 # Agent 1: Scene Causality
-                print(f"\n  {causality_agent.name} analyzing causality...")
+                tprint(f"\n  {causality_agent.name} analyzing causality...")
                 causality_results = causality_agent.analyze_causality(chapter_outline, characters)
                 weak_causality_count = sum(1 for r in causality_results if r['causality'].get('causal_strength') == 'Weak')
-                print(f"    ✓ Causality mapped: {len(causality_results)} scenes, {weak_causality_count} weak connections")
+                tprint(f"    ✓ Causality mapped: {len(causality_results)} scenes, {weak_causality_count} weak connections")
 
                 # Agent 2: Plot Thread Analysis
-                print(f"\n  {plot_thread_agent.name} analyzing plot structure...")
+                tprint(f"\n  {plot_thread_agent.name} analyzing plot structure...")
                 thread_analysis = plot_thread_agent.analyze_threads(chapter_outline, characters, integrated_beats or [])
                 total_threads = thread_analysis.get('total_threads', 0)
                 dangling_threads = thread_analysis.get('dangling_threads', [])
-                print(f"    ✓ Identified {total_threads} plot threads")
+                tprint(f"    ✓ Identified {total_threads} plot threads")
                 if dangling_threads:
-                    print(f"    ⚠️  {len(dangling_threads)} dangling threads: {', '.join(dangling_threads[:3])}")
+                    tprint(f"    ⚠️  {len(dangling_threads)} dangling threads: {', '.join(dangling_threads[:3])}")
 
                 # Agent 3: Character Arc Analysis
-                print(f"\n  {character_arc_agent.name} analyzing character arcs...")
+                tprint(f"\n  {character_arc_agent.name} analyzing character arcs...")
                 character_arc_results = character_arc_agent.analyze_character_arcs(chapter_outline, characters)
                 unique_chars = len(set(r['arc'].get('character_name', '') for r in character_arc_results))
-                print(f"    ✓ Emotional arcs tracked: {unique_chars} major characters across {len(character_arc_results)} arc beats")
+                tprint(f"    ✓ Emotional arcs tracked: {unique_chars} major characters across {len(character_arc_results)} arc beats")
 
                 # Agent 4: Thematic Beat Analysis
-                print(f"\n  {thematic_beat_agent.name} analyzing thematic coherence...")
+                tprint(f"\n  {thematic_beat_agent.name} analyzing thematic coherence...")
                 thematic_results = thematic_beat_agent.analyze_thematic_beats(chapter_outline, characters)
                 thematic_coverage = sum(1 for r in thematic_results
                                         if 'No clear thematic connection' not in r['thematic_beat'].get('how_scene_tests_theme', ''))
                 thematic_pct = int((thematic_coverage / max(total_scenes, 1)) * 100)
-                print(f"    ✓ Thematic coverage: {thematic_coverage}/{total_scenes} scenes ({thematic_pct}%)")
+                tprint(f"    ✓ Thematic coverage: {thematic_coverage}/{total_scenes} scenes ({thematic_pct}%)")
                 if thematic_pct < 90:
-                    print(f"    ⚠️  {total_scenes - thematic_coverage} scenes lack thematic connection")
+                    tprint(f"    ⚠️  {total_scenes - thematic_coverage} scenes lack thematic connection")
 
                 # Agent 5: Scene Function Validation
-                print(f"\n  {scene_function_agent.name} validating scene functions...")
+                tprint(f"\n  {scene_function_agent.name} validating scene functions...")
                 function_results = scene_function_agent.analyze_scene_functions(chapter_outline, characters)
                 high_function_scenes = sum(1 for r in function_results if r['scene_function'].get('function_count', 0) >= 2)
                 weak_function_scenes = sum(1 for r in function_results if r['scene_function'].get('function_count', 0) < 1)
-                print(f"    ✓ Scene functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
+                tprint(f"    ✓ Scene functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
                 if weak_function_scenes > 0:
-                    print(f"    ⚠️  {weak_function_scenes} scenes serve < 1 function")
+                    tprint(f"    ⚠️  {weak_function_scenes} scenes serve < 1 function")
 
                 # Agent 6: Narrative Rope (Thread Convergence)
-                print(f"\n  {narrative_rope_agent.name} analyzing thread convergence...")
+                tprint(f"\n  {narrative_rope_agent.name} analyzing thread convergence...")
                 convergence_results = narrative_rope_agent.analyze_thread_convergence(chapter_outline, thread_analysis.get('threads', []))
                 avg_thread_count = sum(r['narrative_rope'].get('thread_count', 0) for r in convergence_results) / max(len(convergence_results), 1)
                 max_convergence = max((r['narrative_rope'].get('thread_count', 0) for r in convergence_results), default=0)
-                print(f"    ✓ Thread convergence: Avg {avg_thread_count:.1f} threads/scene, Max {max_convergence} threads")
+                tprint(f"    ✓ Thread convergence: Avg {avg_thread_count:.1f} threads/scene, Max {max_convergence} threads")
 
             # Calculate summary metrics for reporting
             total_threads = thread_analysis.get('total_threads', 0)
@@ -7586,11 +7809,11 @@ RELIGION:
             # =========================================
             # ROUND 2: SYNTHESIS & VALIDATION
             # =========================================
-            print(f"\n{'='*60}")
-            print("ROUND 2: SYNTHESIS & VALIDATION")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("ROUND 2: SYNTHESIS & VALIDATION")
+            tprint(f"{'='*60}")
 
-            print(f"\n  Building dependency graph...")
+            tprint(f"\n  Building dependency graph...")
             validation_report = synthesis_validator.synthesize_and_validate(
                 causality_results=causality_results,
                 thread_analysis=thread_analysis,
@@ -7600,35 +7823,35 @@ RELIGION:
                 convergence_results=convergence_results,
                 chapter_outline=chapter_outline
             )
-            print(f"    ✓ Validation complete")
+            tprint(f"    ✓ Validation complete")
 
             isolated_scenes = validation_report.get('isolated_scenes', [])
             dangling_threads = validation_report.get('dangling_threads', [])
             weak_function_scenes = validation_report.get('weak_function_scenes', [])
 
             if isolated_scenes or dangling_threads or weak_function_scenes:
-                print(f"\n  ⚠️  Issues found:")
+                tprint(f"\n  ⚠️  Issues found:")
                 if isolated_scenes:
-                    print(f"     - {len(isolated_scenes)} scenes with weak causality")
+                    tprint(f"     - {len(isolated_scenes)} scenes with weak causality")
                 if dangling_threads:
-                    print(f"     - {len(dangling_threads)} dangling threads")
+                    tprint(f"     - {len(dangling_threads)} dangling threads")
                 if weak_function_scenes:
-                    print(f"     - {len(weak_function_scenes)} weak-function scenes")
+                    tprint(f"     - {len(weak_function_scenes)} weak-function scenes")
             else:
-                print(f"\n  ✓ No issues found - excellent interconnection!")
+                tprint(f"\n  ✓ No issues found - excellent interconnection!")
 
             # =========================================
             # ROUND 3: AUTO-FIX (Parallel)
             # =========================================
-            print(f"\n{'='*60}")
-            print("ROUND 3: AUTO-FIX")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("ROUND 3: AUTO-FIX")
+            tprint(f"{'='*60}")
 
             fixes_applied = 0
 
             if scene_parallel and (isolated_scenes or weak_function_scenes):
                 # Parallel scene fixes
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 fix_tasks = []
                 # Add causality fixes
@@ -7639,7 +7862,7 @@ RELIGION:
                     fix_tasks.append(('function', scene_ref))
 
                 if fix_tasks:
-                    print(f"\n  Fixing {len(fix_tasks)} scenes in parallel ({max_workers_scenes} workers)...")
+                    tprint(f"\n  Fixing {len(fix_tasks)} scenes in parallel ({max_workers_scenes} workers)...")
                     with ThreadPoolExecutor(max_workers=max_workers_scenes) as executor:
                         futures = []
                         for fix_type, scene_ref in fix_tasks:
@@ -7650,7 +7873,7 @@ RELIGION:
                             futures.append(future)
 
                         # Collect results
-                        for future in as_completed(futures):
+                        for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step5c/scene-fixes"):
                             result = future.result()
                             if result['success']:
                                 fixes_applied += 1
@@ -7658,7 +7881,7 @@ RELIGION:
                 # Sequential execution (original)
                 # Fix 1: Strengthen weak causality
                 if isolated_scenes:
-                    print(f"\n  Strengthening weak causality...")
+                    tprint(f"\n  Strengthening weak causality...")
                     for scene_ref in isolated_scenes[:5]:  # Limit fixes to avoid timeout
                         # Find the result and upgrade causal_strength
                         for result in causality_results:
@@ -7666,12 +7889,12 @@ RELIGION:
                                 if result['causality'].get('causal_strength') == 'Weak':
                                     result['causality']['causal_strength'] = 'Indirect'
                                     fixes_applied += 1
-                                    print(f"    ✓ {scene_ref}: Upgraded Weak → Indirect causality")
+                                    tprint(f"    ✓ {scene_ref}: Upgraded Weak → Indirect causality")
                                     break
 
                 # Fix 3: Enhance weak-function scenes
                 if weak_function_scenes:
-                    print(f"\n  Enhancing weak-function scenes...")
+                    tprint(f"\n  Enhancing weak-function scenes...")
                     for scene_ref in weak_function_scenes[:5]:  # Limit fixes
                         for result in function_results:
                             if result['scene_ref'] == scene_ref:
@@ -7683,26 +7906,26 @@ RELIGION:
                                     func['function_count'] = 1
                                     func['recommendation'] = "Enhance"
                                     fixes_applied += 1
-                                    print(f"    ✓ {scene_ref}: Added plot function")
+                                    tprint(f"    ✓ {scene_ref}: Added plot function")
                                     break
 
             # Fix 2: Mark dangling threads for manual review (can't auto-resolve without context)
             if dangling_threads:
-                print(f"\n  ⚠️  Dangling threads require manual resolution:")
+                tprint(f"\n  ⚠️  Dangling threads require manual resolution:")
                 for thread_id in dangling_threads[:3]:
-                    print(f"     - {thread_id}")
+                    tprint(f"     - {thread_id}")
 
             if fixes_applied > 0:
-                print(f"\n  ✓ Applied {fixes_applied} auto-fixes")
+                tprint(f"\n  ✓ Applied {fixes_applied} auto-fixes")
             else:
-                print(f"\n  ✓ No fixes needed")
+                tprint(f"\n  ✓ No fixes needed")
 
             # =========================================
             # UPDATE SCENES WITH INTERCONNECTION DATA
             # =========================================
-            print(f"\n{'='*60}")
-            print("UPDATING SCENE DATA")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint("UPDATING SCENE DATA")
+            tprint(f"{'='*60}")
 
             # Build lookup dictionaries by scene_num
             causality_by_scene = {r['scene_num']: r['causality'] for r in causality_results}
@@ -7778,11 +8001,11 @@ RELIGION:
 
                     scenes_updated += 1
 
-            print(f"  ✓ Updated {scenes_updated} scenes with interconnection data")
+            tprint(f"  ✓ Updated {scenes_updated} scenes with interconnection data")
 
             # Add plot_threads to chapters level
             chapter_outline['plot_threads'] = thread_analysis.get('threads', [])
-            print(f"  ✓ Added {len(chapter_outline['plot_threads'])} plot threads to chapter_outline")
+            tprint(f"  ✓ Added {len(chapter_outline['plot_threads'])} plot threads to chapter_outline")
 
             # Save back to codex
             codex["story"]["chapters"] = chapter_outline
@@ -7793,19 +8016,19 @@ RELIGION:
             overall_score = validation_report.get('overall_interconnection_score', 0.0)
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print(f"OVERALL INTERCONNECTION SCORE: {overall_score:.2f} / 1.0 "
+            tprint(f"\n{'='*60}")
+            tprint(f"OVERALL INTERCONNECTION SCORE: {overall_score:.2f} / 1.0 "
                   f"({'Excellent' if overall_score >= 0.9 else 'Good' if overall_score >= 0.75 else 'Needs Improvement'})")
-            print(f"{'='*60}")
-            print(f"STEP 5C COMPLETE")
-            print(f"  Scenes Analyzed: {total_scenes}")
-            print(f"  Plot Threads Tracked: {total_threads} ({'all resolved' if not dangling_threads else f'{len(dangling_threads)} dangling'})")
-            print(f"  Character Arcs: {unique_chars} major characters")
-            print(f"  Thematic Coverage: {thematic_pct}% ({thematic_coverage}/{total_scenes} scenes)")
-            print(f"  Scene Functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
-            print(f"  Auto-Fixes Applied: {fixes_applied}")
-            print(f"  Duration: {duration:.1f}s")
-            print(f"{'='*60}\n")
+            tprint(f"{'='*60}")
+            tprint(f"STEP 5C COMPLETE")
+            tprint(f"  Scenes Analyzed: {total_scenes}")
+            tprint(f"  Plot Threads Tracked: {total_threads} ({'all resolved' if not dangling_threads else f'{len(dangling_threads)} dangling'})")
+            tprint(f"  Character Arcs: {unique_chars} major characters")
+            tprint(f"  Thematic Coverage: {thematic_pct}% ({thematic_coverage}/{total_scenes} scenes)")
+            tprint(f"  Scene Functions: {high_function_scenes}/{total_scenes} serve 2+ functions")
+            tprint(f"  Auto-Fixes Applied: {fixes_applied}")
+            tprint(f"  Duration: {duration:.1f}s")
+            tprint(f"{'='*60}\n")
 
             return {
                 "success": True,
@@ -7824,7 +8047,7 @@ RELIGION:
 
         except Exception as e:
             import traceback
-            print(f"\n❌ STEP 5C FAILED: {str(e)}")
+            tprint(f"\n❌ STEP 5C FAILED: {str(e)}")
             traceback.print_exc()
             return {
                 "success": False,
@@ -7861,7 +8084,7 @@ RELIGION:
         Returns:
             dict with chapter_narrative, scene_debates, word_count, codex_updates
         """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
         from src.story_agents.narrative_writing_agents import (
             CharacterContinuityAgent, LocationAtmosphereAgent,
             WorldBuildingIntegrationAgent, PlotTickingClockAgent,
@@ -7911,20 +8134,20 @@ RELIGION:
 
         chapter_start = time.time()
 
-        print(f"\n[Worker-{worker_id}] {'='*50}")
-        print(f"[Worker-{worker_id}] {self._elapsed(chapter_start)} CHAPTER {chapter_num}: Writing {len(chapter['scenes'])} scenes")
-        print(f"[Worker-{worker_id}] {'='*50}")
+        tprint(f"\n[Worker-{worker_id}] {'='*50}")
+        tprint(f"[Worker-{worker_id}] {self._elapsed(chapter_start)} CHAPTER {chapter_num}: Writing {len(chapter['scenes'])} scenes")
+        tprint(f"[Worker-{worker_id}] {'='*50}")
 
         for scene_data in chapter["scenes"]:
             scene_num = scene_data["scene_number"]
             scene_id = f"ch{chapter_num}_scene{scene_num}"
             scene_start = time.time()
 
-            print(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
+            tprint(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
 
             # Select opening type for variety
             selected_opening = _select_opening_type(previous_opening_types)
-            print(f"[Worker-{worker_id}]     Opening type: {selected_opening['label']}")
+            tprint(f"[Worker-{worker_id}]     Opening type: {selected_opening['label']}")
 
             # Build scene context
             scene_context = {
@@ -7942,7 +8165,7 @@ RELIGION:
             # ROUND 1: ALL 5 AGENTS PROPOSE PROSE (PARALLEL)
             # =========================================
             proposals = []
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Generating 5 prose proposals (parallel)...")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Generating 5 prose proposals (parallel)...")
 
             def _propose_worker(agent, _scene_data=scene_data, _characters=characters,
                                 _locations=locations, _world=world,
@@ -7967,22 +8190,22 @@ RELIGION:
 
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {executor.submit(_propose_worker, agent): agent for agent in all_agents}
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step6/prose-proposals"):
                     agent = futures[future]
                     try:
                         _, proposal = future.result()
                         if proposal is None:
-                            print(f"[Worker-{worker_id}]       [{agent.name}] FAILED: Returned None")
+                            tprint(f"[Worker-{worker_id}]       [{agent.name}] FAILED: Returned None")
                             continue
                         word_count = proposal.word_count()
                         techniques = proposal.techniques_used[:2] if proposal.techniques_used else []
                         proposals.append(proposal)
-                        print(f"[Worker-{worker_id}]       [{agent.name}] {word_count} words - {techniques}")
+                        tprint(f"[Worker-{worker_id}]       [{agent.name}] {word_count} words - {techniques}")
                     except Exception as e:
-                        print(f"[Worker-{worker_id}]       [{agent.name}] FAILED: {str(e)[:50]}")
+                        tprint(f"[Worker-{worker_id}]       [{agent.name}] FAILED: {str(e)[:50]}")
 
             if not proposals:
-                print(f"[Worker-{worker_id}]     All proposals failed - creating fallback prose")
+                tprint(f"[Worker-{worker_id}]     All proposals failed - creating fallback prose")
                 fallback_prose = f"Scene {scene_num}: {scene_data.get('happens', 'The story continues.')}"
                 scene_narrative = {
                     "scene_id": scene_id, "chapter_number": chapter_num,
@@ -8001,13 +8224,13 @@ RELIGION:
                 continue
 
             round1_elapsed = int(time.time() - scene_start)
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(proposals)} proposals done ({round1_elapsed}s)")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(proposals)} proposals done ({round1_elapsed}s)")
 
             # =========================================
             # ROUND 2: CROSS-AGENT CRITIQUES (5 critiques)
             # =========================================
             critiques = []
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Gathering 5 critiques...")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Gathering 5 critiques...")
 
             def _critique_worker(agent, target_proposal, _scene_context=scene_context):
                 critique = agent.critique_prose(
@@ -8022,25 +8245,25 @@ RELIGION:
                     target_idx = (i + 1) % len(proposals)
                     target_proposal = proposals[target_idx]
                     futures[executor.submit(_critique_worker, agent, target_proposal)] = (agent, target_proposal)
-                for future in as_completed(futures):
+                for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step6/prose-critiques"):
                     agent, target_proposal = futures[future]
                     try:
                         _, _, critique = future.result()
                         if critique is None:
-                            print(f"[Worker-{worker_id}]       [{agent.name}] critique failed: Returned None")
+                            tprint(f"[Worker-{worker_id}]       [{agent.name}] critique failed: Returned None")
                             continue
                         critiques.append(critique)
-                        print(f"[Worker-{worker_id}]       [{agent.name} -> {target_proposal.agent_name}] Score: {critique.overall_score:.1f}")
+                        tprint(f"[Worker-{worker_id}]       [{agent.name} -> {target_proposal.agent_name}] Score: {critique.overall_score:.1f}")
                     except Exception as e:
-                        print(f"[Worker-{worker_id}]       [{agent.name}] critique failed: {str(e)[:30]}")
+                        tprint(f"[Worker-{worker_id}]       [{agent.name}] critique failed: {str(e)[:30]}")
 
             round2_elapsed = int(time.time() - scene_start)
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(critiques)} critiques done ({round2_elapsed}s)")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} {len(critiques)} critiques done ({round2_elapsed}s)")
 
             # =========================================
             # ROUND 3: DIALOGUE MASTER ANALYZES ALL PROPOSALS
             # =========================================
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue analysis...")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue analysis...")
             best_dialogue_proposal = proposals[0]
             dialogue_analysis = None
             dialogue_vote = None
@@ -8049,14 +8272,14 @@ RELIGION:
                     proposal=best_dialogue_proposal, characters=characters,
                     scene_context=scene_context,
                 )
-                print(f"[Worker-{worker_id}]       Dialogue score: {dialogue_analysis.overall_dialogue_score:.1f}/10")
-                print(f"[Worker-{worker_id}]       No-tag test: {'PASS' if dialogue_analysis.no_tag_test_passed else 'FAIL'}")
+                tprint(f"[Worker-{worker_id}]       Dialogue score: {dialogue_analysis.overall_dialogue_score:.1f}/10")
+                tprint(f"[Worker-{worker_id}]       No-tag test: {'PASS' if dialogue_analysis.no_tag_test_passed else 'FAIL'}")
                 dialogue_vote = dialogue_master.vote_best_dialogue(
                     proposals=proposals, dialogue_analyses=[dialogue_analysis],
                 )
-                print(f"[Worker-{worker_id}]       Best dialogue: {dialogue_vote.best_dialogue_agent}")
+                tprint(f"[Worker-{worker_id}]       Best dialogue: {dialogue_vote.best_dialogue_agent}")
             except Exception as e:
-                print(f"[Worker-{worker_id}]       Dialogue analysis failed: {str(e)[:50]}")
+                tprint(f"[Worker-{worker_id}]       Dialogue analysis failed: {str(e)[:50]}")
                 from src.story_schemas import DialogueAnalysis, DialogueMasterVote
                 dialogue_analysis = DialogueAnalysis(
                     proposal_analyzed=proposals[0].agent_name,
@@ -8071,12 +8294,12 @@ RELIGION:
                 )
 
             round3_elapsed = int(time.time() - scene_start)
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue done ({round3_elapsed}s)")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Dialogue done ({round3_elapsed}s)")
 
             # =========================================
             # ROUND 4: SYNTHESIS AGENT BLENDS BEST ELEMENTS
             # =========================================
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesizing best elements from all 5 proposals...")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesizing best elements from all 5 proposals...")
             synthesis = None
             final_prose = ""
             scene_word_count = 0
@@ -8092,14 +8315,14 @@ RELIGION:
                 final_prose = synthesis.to_prose()
                 scene_word_count = len(final_prose.split())
                 synthesis_score = synthesis.synthesis_score
-                print(f"[Worker-{worker_id}]       Synthesis: {scene_word_count} words, score {synthesis_score:.1f}/10")
-                print(f"[Worker-{worker_id}]       Sensory: {', '.join(synthesis.sensory_selection.primary_senses)}")
-                print(f"[Worker-{worker_id}]       Voice: {synthesis.voice_ratio.active_percentage:.0f}% active")
+                tprint(f"[Worker-{worker_id}]       Synthesis: {scene_word_count} words, score {synthesis_score:.1f}/10")
+                tprint(f"[Worker-{worker_id}]       Sensory: {', '.join(synthesis.sensory_selection.primary_senses)}")
+                tprint(f"[Worker-{worker_id}]       Voice: {synthesis.voice_ratio.active_percentage:.0f}% active")
                 previous_scenes_senses.append(synthesis.sensory_selection.primary_senses)
                 if len(previous_scenes_senses) > 3:
                     previous_scenes_senses = previous_scenes_senses[-3:]
             except Exception as e:
-                print(f"[Worker-{worker_id}]       Synthesis failed: {str(e)[:80]}")
+                tprint(f"[Worker-{worker_id}]       Synthesis failed: {str(e)[:80]}")
                 final_prose = proposals[0].to_prose()
                 scene_word_count = len(final_prose.split())
                 synthesis_score = 6.0
@@ -8107,12 +8330,12 @@ RELIGION:
             chapter_word_count += scene_word_count
 
             round4_elapsed = int(time.time() - scene_start)
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesis done ({round4_elapsed}s)")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Synthesis done ({round4_elapsed}s)")
 
             # =========================================
             # ROUND 5: REAL-TIME CRITIQUE (5 critics parallel)
             # =========================================
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Real-time critique (5 critics)...")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Real-time critique (5 critics)...")
             critique_scores = []
             avg_critique_score = 7.0
 
@@ -8145,12 +8368,12 @@ RELIGION:
                     cont_crit.overall_continuity_score, pacing_crit.overall_pacing_score,
                     emot_crit.overall_emotional_score,
                 ]
-                print(f"[Worker-{worker_id}]       Critique avg: {avg_critique_score:.1f}/10")
+                tprint(f"[Worker-{worker_id}]       Critique avg: {avg_critique_score:.1f}/10")
             except Exception as e:
-                print(f"[Worker-{worker_id}]       Critique failed: {str(e)[:50]}")
+                tprint(f"[Worker-{worker_id}]       Critique failed: {str(e)[:50]}")
 
             scene_elapsed = int(time.time() - scene_start)
-            print(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Scene {scene_num} done ({scene_elapsed}s total)")
+            tprint(f"[Worker-{worker_id}]     {self._elapsed(chapter_start)} Scene {scene_num} done ({scene_elapsed}s total)")
 
             scene_narrative = {
                 "scene_id": scene_id, "chapter_number": chapter_num,
@@ -8208,7 +8431,7 @@ RELIGION:
         chapter_elapsed = int(time.time() - chapter_start)
         chapter_mins = chapter_elapsed // 60
         chapter_secs = chapter_elapsed % 60
-        print(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words (total {chapter_mins}m{chapter_secs}s)")
+        tprint(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} Chapter {chapter_num} complete: {len(chapter_scenes_narrative)} scenes, {chapter_word_count:,} words (total {chapter_mins}m{chapter_secs}s)")
 
         return {
             "chapter_num": chapter_num,
@@ -8294,21 +8517,21 @@ RELIGION:
 
             story_prompt, setting_prompt = self.extract_prompts(codex)
 
-            print(f"\n{'='*60}")
-            print("STEP 6: SCENE NARRATIVE WRITING (Synthesis System)")
-            print(f"{'='*60}")
-            print(f">>> Agents: 5 narrative specialists + DialogueMaster + Synthesis")
-            print(f">>> Method: Propose -> Critique -> Dialogue Analysis -> Synthesis -> Real-time Critique")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 6: SCENE NARRATIVE WRITING (Synthesis System)")
+            tprint(f"{'='*60}")
+            tprint(f">>> Agents: 5 narrative specialists + DialogueMaster + Synthesis")
+            tprint(f">>> Method: Propose -> Critique -> Dialogue Analysis -> Synthesis -> Real-time Critique")
             step6_cfg = get_step_config("step6_prose_generation")
             word_min = step6_cfg["targets"]["words_per_scene_min"]
             word_max = step6_cfg["targets"]["words_per_scene_max"]
-            print(f">>> Target: {word_min}-{word_max} words per scene")
-            print(f">>> Quality: Synthesis score 8.0+, Critique score 7.5+")
+            tprint(f">>> Target: {word_min}-{word_max} words per scene")
+            tprint(f">>> Quality: Synthesis score 8.0+, Critique score 7.5+")
 
             # Get Step 6 model from config (agents created per-thread in _write_chapter_narrative)
             step6_model = get_step_model("step6_prose_generation")
-            print(f"\n>>> Model: {step6_model}")
-            print(f">>> Agents: 5 proposal + DialogueMaster + Synthesis + 5 critics (created per-thread)")
+            tprint(f"\n>>> Model: {step6_model}")
+            tprint(f">>> Agents: 5 proposal + DialogueMaster + Synthesis + 5 critics (created per-thread)")
 
             step6_start = time.time()
 
@@ -8317,7 +8540,7 @@ RELIGION:
             # =========================================
             chapters_narrative = []
 
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
             # Get parallelization config
             parallel_config = step6_cfg.get("parallel_processing", {})
@@ -8325,7 +8548,7 @@ RELIGION:
             max_workers = parallel_config.get("max_workers", 6)
             chapters_list = chapter_outline.get("chapters", [])
 
-            print(f"\n>>> Parallel chapter processing: enabled={parallel_enabled}, max_workers={max_workers}, chapters={len(chapters_list)}")
+            tprint(f"\n>>> Parallel chapter processing: enabled={parallel_enabled}, max_workers={max_workers}, chapters={len(chapters_list)}")
 
             if parallel_enabled and len(chapters_list) > 1:
                 # PARALLEL: Process all chapters concurrently
@@ -8346,14 +8569,14 @@ RELIGION:
                     }
 
                     chapter_results = []
-                    for future in as_completed(future_to_chapter):
+                    for future in _safe_as_completed(future_to_chapter, _AGENT_TIMEOUT, "step6/chapters"):
                         ch_num = future_to_chapter[future]
                         try:
                             result = future.result()
                             chapter_results.append(result)
-                            print(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} completed: {result['word_count']:,} words")
+                            tprint(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} completed: {result['word_count']:,} words")
                         except Exception as e:
-                            print(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} FAILED: {str(e)[:100]}")
+                            tprint(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} FAILED: {str(e)[:100]}")
 
                 # Sort results by chapter number and assemble
                 chapter_results.sort(key=lambda r: r["chapter_num"])
@@ -8428,14 +8651,14 @@ RELIGION:
 
             duration = time.time() - start_time
 
-            print(f"\n{'='*60}")
-            print("STEP 5 COMPLETE")
-            print(f"{'='*60}")
-            print(f">>> Duration: {duration:.1f}s")
-            print(f">>> Total Scenes: {len(all_scene_narratives)}")
-            print(f">>> Total Words: {total_word_count:,}")
-            print(f">>> Avg Words/Scene: {avg_words:.0f}")
-            print(f">>> Estimated Reading Time: {total_word_count // 200} minutes")
+            tprint(f"\n{'='*60}")
+            tprint("STEP 5 COMPLETE")
+            tprint(f"{'='*60}")
+            tprint(f">>> Duration: {duration:.1f}s")
+            tprint(f">>> Total Scenes: {len(all_scene_narratives)}")
+            tprint(f">>> Total Words: {total_word_count:,}")
+            tprint(f">>> Avg Words/Scene: {avg_words:.0f}")
+            tprint(f">>> Estimated Reading Time: {total_word_count // 200} minutes")
 
             return Step6Result(
                 narrative=narrative,
@@ -8479,9 +8702,9 @@ RELIGION:
         Then ReviserAgent applies the critiques to improve the prose.
         """
         start_time = time.time()
-        print("\n" + "=" * 60)
-        print("STEP 7: NARRATIVE REVISION (5-Critic System)")
-        print("=" * 60)
+        tprint("\n" + "=" * 60)
+        tprint("STEP 7: NARRATIVE REVISION (5-Critic System)")
+        tprint("=" * 60)
 
         try:
             # Get data from codex (narrative prose lives in story.chapters)
@@ -8516,9 +8739,9 @@ RELIGION:
             focus_areas = self.author.revision_style.focus_areas
             cut_aggressively = self.author.revision_style.cut_aggressively
 
-            print(f"Revision passes: {num_passes}")
-            print(f"Focus areas: {focus_areas}")
-            print(f"Cut aggressively: {cut_aggressively}")
+            tprint(f"Revision passes: {num_passes}")
+            tprint(f"Focus areas: {focus_areas}")
+            tprint(f"Cut aggressively: {cut_aggressively}")
 
             # Initialize critics
             prose_critic = ProsePolishCritic(model=self.model)
@@ -8536,11 +8759,11 @@ RELIGION:
 
             # Process each revision pass
             for pass_num in range(num_passes):
-                print(f"\n{'=' * 40}")
-                print(f"REVISION PASS {pass_num + 1}/{num_passes}")
-                print("=" * 40)
+                tprint(f"\n{'=' * 40}")
+                tprint(f"REVISION PASS {pass_num + 1}/{num_passes}")
+                tprint("=" * 40)
 
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 def _process_scene(scene, chapter_num):
                     """Worker: run 5 parallel critics + optional revision for one scene."""
@@ -8550,10 +8773,10 @@ RELIGION:
                     prose = scene.get("prose", "")
 
                     if not prose:
-                        print(f"\n  Scene: {scene_id} [No prose to revise]")
+                        tprint(f"\n  Scene: {scene_id} [No prose to revise]")
                         return {"skipped": True, "scene_id": scene_id}
 
-                    print(f"\n  Scene: {scene_id} — Running 5 critics (parallel)...")
+                    tprint(f"\n  Scene: {scene_id} — Running 5 critics (parallel)...")
 
                     # Get scene characters from codex
                     scene_char_names = scene.get("characters_present", [])
@@ -8593,7 +8816,7 @@ RELIGION:
                         emot_crit.overall_emotional_score
                     ) / 5
 
-                    print(f"    {scene_id}: avg {avg_score:.1f}/10 (P:{prose_crit.overall_score:.0f} V:{voice_crit.overall_voice_score:.0f} C:{cont_crit.overall_continuity_score:.0f} Pc:{pacing_crit.overall_pacing_score:.0f} E:{emot_crit.overall_emotional_score:.0f})")
+                    tprint(f"    {scene_id}: avg {avg_score:.1f}/10 (P:{prose_crit.overall_score:.0f} V:{voice_crit.overall_voice_score:.0f} C:{cont_crit.overall_continuity_score:.0f} Pc:{pacing_crit.overall_pacing_score:.0f} E:{emot_crit.overall_emotional_score:.0f})")
 
                     # Bundle critiques
                     critique_bundle = {
@@ -8625,7 +8848,7 @@ RELIGION:
 
                     # Check if revision needed
                     if critique_bundle["needs_revision"]:
-                        print(f"    {scene_id}: REVISING (avg score: {avg_score:.1f}/10)")
+                        tprint(f"    {scene_id}: REVISING (avg score: {avg_score:.1f}/10)")
 
                         # Build critique text for reviser
                         critique_text = self._build_critique_text(
@@ -8677,11 +8900,11 @@ RELIGION:
                                     "emotional_score": emot_crit.overall_emotional_score,
                                 }
                             }
-                            print(f"    {scene_id}: REVISED ({scene['word_count']} words)")
+                            tprint(f"    {scene_id}: REVISED ({scene['word_count']} words)")
                         except Exception as e:
-                            print(f"    {scene_id}: REVISION FAILED: {e}")
+                            tprint(f"    {scene_id}: REVISION FAILED: {e}")
                     else:
-                        print(f"    {scene_id}: OK (avg score: {avg_score:.1f}/10)")
+                        tprint(f"    {scene_id}: OK (avg score: {avg_score:.1f}/10)")
 
                     return result
 
@@ -8689,21 +8912,21 @@ RELIGION:
                 all_scenes = []
                 for chapter in chapter_outline.get("chapters", []):
                     chapter_num = chapter.get("chapter_number", 0)
-                    print(f"\n--- Chapter {chapter_num}: {chapter.get('chapter_title', '')} ---")
+                    tprint(f"\n--- Chapter {chapter_num}: {chapter.get('chapter_title', '')} ---")
                     for scene in chapter.get("scenes", []):
                         if scene.get("prose"):
                             all_scenes.append((scene, chapter_num))
 
                 step7_cfg = get_step_config("step7_revision")
                 rev_max_workers = step7_cfg.get("parallel_processing", {}).get("max_workers", 6)
-                print(f"\n  Processing {len(all_scenes)} scenes in parallel (max_workers={rev_max_workers})...")
+                tprint(f"\n  Processing {len(all_scenes)} scenes in parallel (max_workers={rev_max_workers})...")
 
                 with ThreadPoolExecutor(max_workers=rev_max_workers) as scene_executor:
                     futures = {
                         scene_executor.submit(_process_scene, scene, ch_num): (scene, ch_num)
                         for scene, ch_num in all_scenes
                     }
-                    for future in as_completed(futures):
+                    for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step7/revision-scenes"):
                         try:
                             result = future.result()
                             if result.get("skipped"):
@@ -8717,7 +8940,7 @@ RELIGION:
                                 revision_history.append(result["revision_entry"])
                         except Exception as e:
                             scene, ch_num = futures[future]
-                            print(f"    Scene {scene.get('scene_id', '?')} FAILED: {e}")
+                            tprint(f"    Scene {scene.get('scene_id', '?')} FAILED: {e}")
 
             # Store critiques in metadata (not story)
             if "metadata" not in codex:
@@ -8747,14 +8970,14 @@ RELIGION:
             }
 
             duration = time.time() - start_time
-            print(f"\n{'=' * 60}")
-            print("STEP 7 COMPLETE: Narrative Revision")
-            print(f"  Scenes revised: {scenes_revised}")
-            print(f"  Revision passes: {num_passes}")
-            print(f"  Avg score before: {avg_before:.1f}/10")
-            print(f"  Avg score after: {avg_after:.1f}/10")
-            print(f"  Duration: {duration:.1f}s")
-            print("=" * 60)
+            tprint(f"\n{'=' * 60}")
+            tprint("STEP 7 COMPLETE: Narrative Revision")
+            tprint(f"  Scenes revised: {scenes_revised}")
+            tprint(f"  Revision passes: {num_passes}")
+            tprint(f"  Avg score before: {avg_before:.1f}/10")
+            tprint(f"  Avg score after: {avg_after:.1f}/10")
+            tprint(f"  Duration: {duration:.1f}s")
+            tprint("=" * 60)
 
             return Step7Result(
                 narrative=chapter_outline,
@@ -8890,7 +9113,7 @@ RELIGION:
         worker_id = thread_name.split('-')[-1] if '-' in thread_name else 'Main'
 
         chapter_num = chapter.get("chapter_number", 0)
-        print(f"[Worker-{worker_id}] Chapter {chapter_num}...")
+        tprint(f"[Worker-{worker_id}] Chapter {chapter_num}...")
 
         # Build chapter summary from scenes
         scenes = chapter.get("scenes", [])
@@ -8914,7 +9137,7 @@ RELIGION:
         )
 
         winning_title = chapter_debate["winning_title"]
-        print(f"[Worker-{worker_id}]   -> \"{winning_title}\"")
+        tprint(f"[Worker-{worker_id}]   -> \"{winning_title}\"")
 
         return chapter_num, winning_title, chapter_debate
 
@@ -8978,8 +9201,8 @@ RELIGION:
             # =================================================================
             # BOOK TITLE DEBATE
             # =================================================================
-            print("\n--- Book Title Debate ---")
-            print("  3 agents proposing titles...")
+            tprint("\n--- Book Title Debate ---")
+            tprint("  3 agents proposing titles...")
 
             book_debate = run_book_title_debate(
                 logline=logline,
@@ -8990,7 +9213,7 @@ RELIGION:
             )
 
             book_title = book_debate["winning_title"]
-            print(f"  Winner: \"{book_title}\" ({book_debate['winner_agent']})")
+            tprint(f"  Winner: \"{book_title}\" ({book_debate['winner_agent']})")
 
             # =================================================================
             # CHECK PARALLELIZATION CONFIG
@@ -9006,11 +9229,11 @@ RELIGION:
             # PARALLELIZATION: PROPOSAL LEVEL
             # =================================================================
             if parallel_enabled and len(narrative_chapters) > 0:
-                print("\n--- Chapter Title Generation (Parallel Mode) ---")
-                print(f"  Generating titles for {len(narrative_chapters)} chapters in parallel...")
-                print(f"  Max workers: {max_workers}")
+                tprint("\n--- Chapter Title Generation (Parallel Mode) ---")
+                tprint(f"  Generating titles for {len(narrative_chapters)} chapters in parallel...")
+                tprint(f"  Max workers: {max_workers}")
 
-                from concurrent.futures import ThreadPoolExecutor, as_completed
+                from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 with ThreadPoolExecutor(max_workers=max_workers) as executor:
                     # Submit all chapter title debates in parallel
@@ -9027,7 +9250,7 @@ RELIGION:
                     # Collect chapter results
                     chapter_titles = {}
                     chapter_debates = []
-                    for future in as_completed(chapter_futures):
+                    for future in _safe_as_completed(chapter_futures, _AGENT_TIMEOUT, "step8/chapter-naming"):
                         chapter_num, winning_title, chapter_debate = future.result()
                         chapter_titles[chapter_num] = winning_title
                         chapter_debates.append(chapter_debate)
@@ -9039,14 +9262,14 @@ RELIGION:
                 # =================================================================
                 # SEQUENTIAL MODE (FALLBACK)
                 # =================================================================
-                print("\n--- Chapter Title Debates (Sequential Mode) ---")
+                tprint("\n--- Chapter Title Debates (Sequential Mode) ---")
 
                 chapter_titles = {}
                 chapter_debates = []
 
                 for chapter in narrative_chapters:
                     chapter_num = chapter.get("chapter_number", 0)
-                    print(f"  Chapter {chapter_num}...")
+                    tprint(f"  Chapter {chapter_num}...")
 
                     # Build chapter summary from scenes
                     scenes = chapter.get("scenes", [])
@@ -9071,7 +9294,7 @@ RELIGION:
                     winning_title = chapter_debate["winning_title"]
                     chapter_titles[chapter_num] = winning_title
                     chapter_debates.append(chapter_debate)
-                    print(f"    -> \"{winning_title}\"")
+                    tprint(f"    -> \"{winning_title}\"")
 
             # =================================================================
             # UPDATE CODEX
@@ -9086,7 +9309,7 @@ RELIGION:
                     chapter["chapter_title"] = f"Chapter {chapter_num} - {chapter_titles[chapter_num]}"
 
             duration = time.time() - start_time
-            print(f"\n  Total naming time: {duration:.1f}s")
+            tprint(f"\n  Total naming time: {duration:.1f}s")
 
             return Step8Result(
                 book_title=book_title,
@@ -9130,7 +9353,7 @@ RELIGION:
             return
         with open(codex_path, "w", encoding="utf-8") as f:
             json.dump(codex, f, indent=2, ensure_ascii=False)
-        print(f">>> Checkpoint saved ({step_label})")
+        tprint(f">>> Checkpoint saved ({step_label})")
 
     def run(
         self,
@@ -9155,10 +9378,10 @@ RELIGION:
         step_timings = {}
         pipeline_start = time.time()
 
-        print(f"\n>>> Phase 1: Author-Driven Story Creation")
-        print(f">>> Author: {self.author.name}")
-        print(f">>> Structure: {self.author.preferred_structure}")
-        print(f">>> Running steps: {steps_to_run}")
+        tprint(f"\n>>> Phase 1: Author-Driven Story Creation")
+        tprint(f">>> Author: {self.author.name}")
+        tprint(f">>> Structure: {self.author.preferred_structure}")
+        tprint(f">>> Running steps: {steps_to_run}")
 
         # Initialize codex structure
         if "story" not in codex:
@@ -9174,9 +9397,9 @@ RELIGION:
 
         # Step 0: Theme Foundation
         if 0 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 0: Theme Foundation (Multi-Agent Debate)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 0: Theme Foundation (Multi-Agent Debate)")
+            tprint(f"{'='*60}")
 
             result = self.step0_theme_foundation(codex)
             results["step0"] = result
@@ -9191,15 +9414,15 @@ RELIGION:
                 steps_completed.append(0)
                 step_timings["step0_theme_foundation"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 0")
-                print(f"{self._elapsed(pipeline_start)} Step 0 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 0 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 0 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 0 FAILED: {result.error}")
 
         # Step 1: Character Creation (Theme → Characters)
         if 1 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 1: Character Creation (Theme → Characters)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 1: Character Creation (Theme → Characters)")
+            tprint(f"{'='*60}")
 
             result = self.step1_character_creation(codex)
             results["step1"] = result
@@ -9210,15 +9433,15 @@ RELIGION:
                 steps_completed.append(1)
                 step_timings["step1_character_creation"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 1")
-                print(f"{self._elapsed(pipeline_start)} Step 1 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 1 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 1 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 1 FAILED: {result.error}")
 
         # Step 2: Story Shape & Genre Selection
         if 2 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 2: Story Shape & Genre Selection (Multi-Agent Debate)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 2: Story Shape & Genre Selection (Multi-Agent Debate)")
+            tprint(f"{'='*60}")
 
             result = self.step2_story_shape_genre(codex)
             results["step2"] = result
@@ -9240,15 +9463,15 @@ RELIGION:
                 steps_completed.append(2)
                 step_timings["step2_story_shape_genre"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 2")
-                print(f"{self._elapsed(pipeline_start)} Step 2 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 2 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 2 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 2 FAILED: {result.error}")
 
         # Step 3: Plot Structure (Character Arc + Story Beats)
         if 3 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 3: Plot Structure (Character Arc + Story Beats)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 3: Plot Structure (Character Arc + Story Beats)")
+            tprint(f"{'='*60}")
 
             result = self.step3_plot_structure(codex)
             results["step3"] = result
@@ -9266,15 +9489,15 @@ RELIGION:
                 steps_completed.append(3)
                 step_timings["step3_plot_structure"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 3")
-                print(f"{self._elapsed(pipeline_start)} Step 3 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 3 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 3 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 3 FAILED: {result.error}")
 
         # Step 4: World Building (World Pressure + Dynamic Major Locations)
         if 4 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 4: World Building (World Pressure + Major Locations)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 4: World Building (World Pressure + Major Locations)")
+            tprint(f"{'='*60}")
 
             result = self.step4_world_building(codex)
             results["step4"] = result
@@ -9290,15 +9513,15 @@ RELIGION:
                 steps_completed.append(4)
                 step_timings["step4_world_building"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 4")
-                print(f"{self._elapsed(pipeline_start)} Step 4 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 4 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 4 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 4 FAILED: {result.error}")
 
         # Step 5: Chapter & Scene Breakdown
         if 5 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 5: Chapter & Scene Breakdown (3-Agent Debate)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 5: Chapter & Scene Breakdown (3-Agent Debate)")
+            tprint(f"{'='*60}")
 
             result = self.step5_chapter_scene_breakdown(codex)
             results["step5"] = result
@@ -9317,12 +9540,12 @@ RELIGION:
                 steps_completed.append(5)
                 step_timings["step5_chapter_scene_breakdown"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 5")
-                print(f"{self._elapsed(pipeline_start)} Step 5 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 5 COMPLETE ({result.duration_seconds:.0f}s)")
 
                 # Step 5B: Foreshadowing & Setup/Payoff Analysis (runs automatically after Step 5)
-                print(f"\n{'='*60}")
-                print(f"{self._elapsed(pipeline_start)} STEP 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate)")
-                print(f"{'='*60}")
+                tprint(f"\n{'='*60}")
+                tprint(f"{self._elapsed(pipeline_start)} STEP 5B: Foreshadowing & Setup/Payoff Analysis (3-Agent Debate)")
+                tprint(f"{'='*60}")
 
                 result_5b = self.step5b_foreshadowing_analysis(codex)
                 results["step5b"] = result_5b
@@ -9332,13 +9555,13 @@ RELIGION:
                     codex["metadata"]["phase_1"]["step5b_foreshadowing"] = result_5b["debates"]
 
                     step_timings["step5b_foreshadowing_analysis"] = result_5b["duration"]
-                    print(f"{self._elapsed(pipeline_start)} Step 5B COMPLETE ({result_5b['duration']:.0f}s)")
+                    tprint(f"{self._elapsed(pipeline_start)} Step 5B COMPLETE ({result_5b['duration']:.0f}s)")
                     self._save_checkpoint(codex, codex_path, "step 5B")
 
                     # Step 5C: Complete Scene Interconnection Analysis (runs automatically after Step 5B)
-                    print(f"\n{'='*60}")
-                    print(f"{self._elapsed(pipeline_start)} STEP 5C: Complete Scene Interconnection Analysis")
-                    print(f"{'='*60}")
+                    tprint(f"\n{'='*60}")
+                    tprint(f"{self._elapsed(pipeline_start)} STEP 5C: Complete Scene Interconnection Analysis")
+                    tprint(f"{'='*60}")
 
                     result_5c = self.step5c_interconnection_analysis(codex)
                     results["step5c"] = result_5c
@@ -9348,23 +9571,23 @@ RELIGION:
                         codex["metadata"]["phase_1"]["step5c_interconnection"] = result_5c["report"]
 
                         step_timings["step5c_interconnection_analysis"] = result_5c["duration"]
-                        print(f"{self._elapsed(pipeline_start)} Step 5C COMPLETE ({result_5c['duration']:.0f}s)")
+                        tprint(f"{self._elapsed(pipeline_start)} Step 5C COMPLETE ({result_5c['duration']:.0f}s)")
                         self._save_checkpoint(codex, codex_path, "step 5C")
                     else:
-                        print(f"{self._elapsed(pipeline_start)} Step 5C FAILED: {result_5c.get('error', 'Unknown error')}")
-                        print(">>> Continuing to Step 6 with current chapter outline...")
+                        tprint(f"{self._elapsed(pipeline_start)} Step 5C FAILED: {result_5c.get('error', 'Unknown error')}")
+                        tprint(">>> Continuing to Step 6 with current chapter outline...")
                 else:
-                    print(f"{self._elapsed(pipeline_start)} Step 5B FAILED: {result_5b.get('error', 'Unknown error')}")
-                    print(">>> Continuing to Step 6 with original chapter outline...")
+                    tprint(f"{self._elapsed(pipeline_start)} Step 5B FAILED: {result_5b.get('error', 'Unknown error')}")
+                    tprint(">>> Continuing to Step 6 with original chapter outline...")
 
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 5 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 5 FAILED: {result.error}")
 
         # Step 6: Scene Narrative Writing
         if 6 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
+            tprint(f"{'='*60}")
 
             result = self.step6_narrative(codex)
             results["step6"] = result
@@ -9416,46 +9639,46 @@ RELIGION:
                 steps_completed.append(6)
                 step_timings["step6_narrative"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 6")
-                print(f"{self._elapsed(pipeline_start)} Step 6 COMPLETE ({result.duration_seconds:.0f}s)")
+                tprint(f"{self._elapsed(pipeline_start)} Step 6 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 6 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 6 FAILED: {result.error}")
 
         # Step 7: Narrative Revision with 5-Critic System
         if 7 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 7: Narrative Revision (5-Critic System)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 7: Narrative Revision (5-Critic System)")
+            tprint(f"{'='*60}")
             result = self.step7_revision(codex)
             results["step7"] = result
             if result.success:
-                print(f"\n{self._elapsed(pipeline_start)} Step 7 COMPLETE: Revised {result.scenes_revised} scenes ({result.duration_seconds:.0f}s)")
-                print(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
+                tprint(f"\n{self._elapsed(pipeline_start)} Step 7 COMPLETE: Revised {result.scenes_revised} scenes ({result.duration_seconds:.0f}s)")
+                tprint(f"    Avg score: {result.average_score_before:.1f} -> {result.average_score_after:.1f}")
                 steps_completed.append(7)
                 step_timings["step7_revision"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 7")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 7 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 7 FAILED: {result.error}")
 
         # Step 8: Book & Chapter Title Naming
         if 8 in steps_to_run:
-            print(f"\n{'='*60}")
-            print(f"{self._elapsed(pipeline_start)} STEP 8: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
-            print(f"{'='*60}")
+            tprint(f"\n{'='*60}")
+            tprint(f"{self._elapsed(pipeline_start)} STEP 8: BOOK & CHAPTER TITLE NAMING (3-Agent Debate)")
+            tprint(f"{'='*60}")
             result = self.step8_naming(codex)
             results["step8"] = result
             if result.success:
-                print(f"\n{self._elapsed(pipeline_start)} Step 8 COMPLETE: Book titled \"{result.book_title}\" ({result.duration_seconds:.0f}s)")
-                print(f"    Chapter titles: {len(result.chapter_titles)}")
+                tprint(f"\n{self._elapsed(pipeline_start)} Step 8 COMPLETE: Book titled \"{result.book_title}\" ({result.duration_seconds:.0f}s)")
+                tprint(f"    Chapter titles: {len(result.chapter_titles)}")
                 steps_completed.append(8)
                 step_timings["step8_naming"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 8")
             else:
-                print(f"{self._elapsed(pipeline_start)} Step 8 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} Step 8 FAILED: {result.error}")
 
         # Steps 8-10: Add as we implement them
         for step_num in range(9, 11):
             if step_num in steps_to_run:
-                print(f"\n>>> Step {step_num}: Not yet implemented")
+                tprint(f"\n>>> Step {step_num}: Not yet implemented")
 
         # Aggregate token usage across all completed steps
         step_tokens = {}
