@@ -4,15 +4,16 @@ Template 1: Static Audio - Generation Module
 
 Generates images and media using ComfyUI based on prompts from Phase 2.
 
-Step 1: Generate Audio (Qwen TTS Voice Clone - full scenes with sequential naming)
-        Order: book title → chapter 1 title → ch1 scenes → chapter 2 title → ch2 scenes → ...
-        Naming: 001_title, 002_ch01_title, 003_ch01_sc01, 004_ch01_sc02, ...
-Step 2: Generate Static Images (characters, locations, posters)
-Step 3: Generate Scene Images (one image per scene within chapters)
-Step 4: Generate Videos (COMMENTED OUT)
+Step 1: Character Portraits (1024x1024 square)
+Step 2: Location Images (1280x720 landscape)
+Step 3: Scene Images (one per scene, 1280x720 landscape)
+Step 4: Thumbnails/Posters
+Step 5: Audio (Qwen TTS Voice Clone - full scenes with sequential naming)
+Step 6: Video (future, disabled)
 
 Usage (standalone):
     uv run python -m src.templates.template_1_static_audio.generation forge/xxx/codex.json
+    uv run python -m src.templates.template_1_static_audio.generation forge/xxx/codex.json --steps 1
 """
 
 import sys
@@ -372,6 +373,540 @@ def generate_audio_qwen(
         return False, gen_data
 
 
+def _generate_image(
+    prompt_text: str,
+    filename_prefix: str,
+    label: str,
+    workflow_path: str,
+    comfyui_url: str,
+    timeout: int,
+) -> tuple[bool | None, dict]:
+    """Generate a single image using a specific workflow.
+
+    Args:
+        prompt_text: The image prompt text
+        filename_prefix: Output path prefix for SaveImage node
+        label: Human-readable label for logging
+        workflow_path: Path to the ComfyUI workflow JSON to use
+        comfyui_url: ComfyUI API URL
+        timeout: Timeout in seconds
+
+    Returns:
+        (success, generation_data) where:
+        - success=True: Generation completed
+        - success=False: Generation failed (non-fatal)
+        - success=None: Connection error (fatal)
+    """
+    seed = generate_seed()
+    try:
+        result = trigger_comfy(
+            workflow_json_path=workflow_path,
+            replacements={
+                "10_filename_prefix": filename_prefix,
+                "5_seed": seed,
+                "11_text": prompt_text,
+            },
+            comfyui_url=comfyui_url,
+            timeout=timeout,
+        )
+
+        generation_data = {
+            "prompt_id": result["prompt_id"],
+            "status": result["status"],
+            "execution_time": result["execution_time"],
+            "output_path": f"{filename_prefix}_00001_.png",
+            "seed": seed,
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        if result["status"] == "completed":
+            print(f"        Completed in {result['execution_time']:.1f}s")
+            return True, generation_data
+        else:
+            error_msg = result.get("error", "Unknown error")
+            print(f"        Failed: {error_msg}")
+            generation_data["error"] = error_msg
+            return False, generation_data
+
+    except ConnectionError as e:
+        print(f"        Connection error: {e}")
+        return None, {
+            "status": "error",
+            "error": str(e),
+            "generated_at": datetime.now().isoformat(),
+        }
+
+    except TimeoutError as e:
+        print(f"        Timeout: {e}")
+        return False, {
+            "status": "timeout",
+            "error": str(e),
+            "seed": seed,
+            "generated_at": datetime.now().isoformat(),
+        }
+
+    except Exception as e:
+        print(f"        Error: {e}")
+        return False, {
+            "status": "error",
+            "error": str(e),
+            "generated_at": datetime.now().isoformat(),
+        }
+
+
+def _find_comfyui_output(filename_prefix: str) -> Path | None:
+    """Find the latest ComfyUI output file matching a SaveImage prefix.
+
+    ComfyUI appends ``_{NNNNN}_.png`` to the prefix. On regeneration it
+    increments the counter (``_00002_``, etc.). This returns the most
+    recently modified file matching the prefix, or ``None`` if no match.
+
+    Args:
+        filename_prefix: The prefix passed to SaveImage
+            (e.g., ``"api/20260226/scenes/ch01_sc02_sh00_layer00_loc"``).
+
+    Returns:
+        Absolute path to the latest matching file, or None.
+    """
+    parent = (Path(COMFYUI_OUTPUT_DIR) / filename_prefix).parent
+    stem = Path(filename_prefix).name
+    if not parent.exists():
+        return None
+    matches = list(parent.glob(f"{stem}_*_.png"))
+    if not matches:
+        return None
+    return max(matches, key=lambda p: p.stat().st_mtime)
+
+
+def _generate_location_layer(
+    prompt: str,
+    base_image_name: str,
+    filename_prefix: str,
+    label: str,
+    workflow_path: str,
+    comfyui_url: str,
+    timeout: int,
+) -> tuple[bool | None, dict]:
+    """Apply location modifications to a base location image.
+
+    Uses the Qwen Image Edit (single-image) workflow to modify an existing
+    location image for time-of-day, weather, and atmosphere effects.
+
+    Args:
+        prompt: The location_layer prompt describing modifications.
+        base_image_name: Full absolute path to the base location image.
+        filename_prefix: Output path prefix for SaveImage node.
+        label: Human-readable label for logging.
+        workflow_path: Path to the location edit workflow JSON.
+        comfyui_url: ComfyUI API URL.
+        timeout: Timeout in seconds.
+
+    Returns:
+        (success, generation_data) — same contract as _generate_image().
+    """
+    seed = generate_seed()
+    try:
+        result = trigger_comfy(
+            workflow_json_path=workflow_path,
+            replacements={
+                "78_image": base_image_name,
+                "102:76_prompt": prompt,
+                "102:3_seed": seed,
+                "60_filename_prefix": filename_prefix,
+            },
+            comfyui_url=comfyui_url,
+            timeout=timeout,
+        )
+
+        generation_data = {
+            "prompt_id": result["prompt_id"],
+            "status": result["status"],
+            "execution_time": result["execution_time"],
+            "filename_prefix": filename_prefix,
+            "seed": seed,
+            "layer_type": "location",
+            "input_image": base_image_name,
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        if result["status"] == "completed":
+            output_path = _find_comfyui_output(filename_prefix)
+            generation_data["output_path"] = str(output_path) if output_path else ""
+            print(f"        Completed in {result['execution_time']:.1f}s")
+            return True, generation_data
+        else:
+            error_msg = result.get("error", "Unknown error")
+            print(f"        Failed: {error_msg}")
+            generation_data["error"] = error_msg
+            return False, generation_data
+
+    except ConnectionError as e:
+        print(f"        Connection error: {e}")
+        return None, {"status": "error", "error": str(e), "layer_type": "location",
+                       "generated_at": datetime.now().isoformat()}
+
+    except TimeoutError as e:
+        print(f"        Timeout: {e}")
+        return False, {"status": "timeout", "error": str(e), "seed": seed,
+                        "layer_type": "location", "generated_at": datetime.now().isoformat()}
+
+    except Exception as e:
+        print(f"        Error: {e}")
+        return False, {"status": "error", "error": str(e), "layer_type": "location",
+                        "generated_at": datetime.now().isoformat()}
+
+
+def _generate_character_layer(
+    prompt: str,
+    scene_image_name: str,
+    portrait_image_name: str,
+    filename_prefix: str,
+    label: str,
+    workflow_path: str,
+    comfyui_url: str,
+    timeout: int,
+) -> tuple[bool | None, dict]:
+    """Composite a character into a scene image using their portrait as reference.
+
+    Uses the Qwen Image Edit Plus (two-image) workflow. Image 1 is the current
+    scene state, image 2 is the character portrait from Step 0.
+
+    Args:
+        prompt: The character_layer prompt describing placement and pose.
+        scene_image_name: Full absolute path to the current scene image.
+        portrait_image_name: Full absolute path to the character portrait.
+        filename_prefix: Output path prefix for SaveImage node.
+        label: Human-readable label for logging.
+        workflow_path: Path to the two-image edit workflow JSON.
+        comfyui_url: ComfyUI API URL.
+        timeout: Timeout in seconds.
+
+    Returns:
+        (success, generation_data) — same contract as _generate_image().
+    """
+    seed = generate_seed()
+    try:
+        result = trigger_comfy(
+            workflow_json_path=workflow_path,
+            replacements={
+                "41_image": scene_image_name,
+                "83_image": portrait_image_name,
+                "91:68_prompt": prompt,
+                "91:65_seed": seed,
+                "92_filename_prefix": filename_prefix,
+            },
+            comfyui_url=comfyui_url,
+            timeout=timeout,
+        )
+
+        generation_data = {
+            "prompt_id": result["prompt_id"],
+            "status": result["status"],
+            "execution_time": result["execution_time"],
+            "filename_prefix": filename_prefix,
+            "seed": seed,
+            "layer_type": "character",
+            "input_scene": scene_image_name,
+            "input_portrait": portrait_image_name,
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        if result["status"] == "completed":
+            output_path = _find_comfyui_output(filename_prefix)
+            generation_data["output_path"] = str(output_path) if output_path else ""
+            print(f"        Completed in {result['execution_time']:.1f}s")
+            return True, generation_data
+        else:
+            error_msg = result.get("error", "Unknown error")
+            print(f"        Failed: {error_msg}")
+            generation_data["error"] = error_msg
+            return False, generation_data
+
+    except ConnectionError as e:
+        print(f"        Connection error: {e}")
+        return None, {"status": "error", "error": str(e), "layer_type": "character",
+                       "generated_at": datetime.now().isoformat()}
+
+    except TimeoutError as e:
+        print(f"        Timeout: {e}")
+        return False, {"status": "timeout", "error": str(e), "seed": seed,
+                        "layer_type": "character", "generated_at": datetime.now().isoformat()}
+
+    except Exception as e:
+        print(f"        Error: {e}")
+        return False, {"status": "error", "error": str(e), "layer_type": "character",
+                        "generated_at": datetime.now().isoformat()}
+
+
+def _run_location_pass(
+    scene_prompt_data: dict,
+    timestamp: str,
+    ch_num: int,
+    sc_num: int,
+    comfyui_url: str,
+    timeout: int,
+    shot_num: int = 0,
+) -> dict:
+    """Run the location edit layer for a single scene.
+
+    Resolves the base location image from Step 1 output and, if the scene
+    requires location modification, runs the location edit workflow.
+
+    This is the first pass of the two-pass scene generation pipeline.
+    All location edits across scenes should be batched together so
+    ComfyUI only loads the location edit model once.
+
+    Args:
+        scene_prompt_data: The scene's ``scene_image_prompt`` dict from codex.
+        timestamp: Forge timestamp for path construction.
+        ch_num: Chapter number.
+        sc_num: Scene number.
+        comfyui_url: ComfyUI API URL.
+        timeout: Timeout in seconds.
+        shot_num: Shot index within the scene (default 0).
+
+    Returns:
+        Scene state dict with keys:
+            - current_scene_path (Path): path to use as input for character pass
+            - shot_prefix (str): e.g. ``"ch01_sc02_sh00"``
+            - layer_index (int): next layer index for character pass
+            - layers_data (list[dict]): layer metadata collected so far
+            - location_ok (bool | None): True=success, False=failed, None=connection error
+    """
+    location_id = scene_prompt_data.get("location_id", "")
+    location_layer = scene_prompt_data.get("location_layer", {})
+    location_name = scene_prompt_data.get("location_name", "unknown")
+    shot_prefix = f"ch{ch_num:02d}_sc{sc_num:02d}_sh{shot_num:02d}"
+
+    # --- Resolve base location image (full absolute path via glob) ---
+    base_loc_prefix = f"api/{timestamp}/locations/{location_id}"
+    current_scene_path = _find_comfyui_output(base_loc_prefix)
+
+    if current_scene_path is None:
+        error_msg = f"Base location image not found for prefix: {base_loc_prefix}"
+        print(f"        {error_msg}")
+        return {
+            "current_scene_path": None, "shot_prefix": shot_prefix,
+            "layer_index": 0, "layers_data": [],
+            "location_ok": False, "error": error_msg,
+        }
+
+    layer_index = 0
+    layers_data: list[dict] = []
+
+    # --- Location layer (only if modification needed) ---
+    if location_layer.get("requires_modification"):
+        loc_prefix = f"api/{timestamp}/scenes/{shot_prefix}_layer{layer_index:02d}_loc"
+        loc_prompt = location_layer.get("prompt", "")
+        loc_edit_workflow = str(get_workflow_path("scene_location_edit"))
+
+        print(f"      Layer {layer_index}: Location edit ({location_name})")
+
+        success, gen_data = _generate_location_layer(
+            prompt=loc_prompt,
+            base_image_name=str(current_scene_path),
+            filename_prefix=loc_prefix,
+            label=f"{shot_prefix}_layer{layer_index:02d}_loc",
+            workflow_path=loc_edit_workflow,
+            comfyui_url=comfyui_url,
+            timeout=timeout,
+        )
+
+        gen_data["layer_index"] = layer_index
+        layers_data.append(gen_data)
+
+        if success is None:
+            return {
+                "current_scene_path": None, "shot_prefix": shot_prefix,
+                "layer_index": layer_index + 1, "layers_data": layers_data,
+                "location_ok": None,
+            }
+        if not success:
+            return {
+                "current_scene_path": None, "shot_prefix": shot_prefix,
+                "layer_index": layer_index + 1, "layers_data": layers_data,
+                "location_ok": False,
+            }
+
+        # Update current scene path to location layer output (glob-based)
+        current_scene_path = _find_comfyui_output(loc_prefix)
+        if current_scene_path is None:
+            error_msg = f"Location layer output not found for prefix: {loc_prefix}"
+            print(f"        {error_msg}")
+            return {
+                "current_scene_path": None, "shot_prefix": shot_prefix,
+                "layer_index": layer_index + 1, "layers_data": layers_data,
+                "location_ok": False, "error": error_msg,
+            }
+        layer_index += 1
+
+    return {
+        "current_scene_path": current_scene_path, "shot_prefix": shot_prefix,
+        "layer_index": layer_index, "layers_data": layers_data,
+        "location_ok": True,
+    }
+
+
+def _run_character_pass(
+    scene_state: dict,
+    scene_prompt_data: dict,
+    timestamp: str,
+    comfyui_url: str,
+    timeout: int,
+) -> tuple[bool | None, dict]:
+    """Run all character layers for a single scene.
+
+    Takes the scene state produced by ``_run_location_pass()`` and
+    composites characters sequentially onto ``current_scene_path``.
+
+    This is the second pass of the two-pass scene generation pipeline.
+    All character compositing across scenes should be batched together
+    so ComfyUI only loads the character edit model once.
+
+    Args:
+        scene_state: Dict returned by ``_run_location_pass()``.
+        scene_prompt_data: The scene's ``scene_image_prompt`` dict from codex.
+        timestamp: Forge timestamp for path construction.
+        comfyui_url: ComfyUI API URL.
+        timeout: Timeout in seconds per layer.
+
+    Returns:
+        (success, generation_data) where generation_data includes a ``layers`` array
+        covering both location and character layers.
+    """
+    current_scene_path = scene_state["current_scene_path"]
+    shot_prefix = scene_state["shot_prefix"]
+    layer_index = scene_state["layer_index"]
+    layers_data = list(scene_state["layers_data"])  # copy to avoid mutation
+
+    character_layers = scene_prompt_data.get("character_layers", [])
+    location_layer = scene_prompt_data.get("location_layer", {})
+    total_layers = (1 if location_layer.get("requires_modification") else 0) + len(character_layers)
+
+    char_edit_workflow = str(get_workflow_path("scene_character_edit"))
+    last_layer_prefix = ""
+
+    for i, char_layer in enumerate(character_layers):
+        char_id = char_layer.get("character_id", f"char_{i+1:03d}")
+        char_name = char_layer.get("character_name", char_id)
+        char_prompt = char_layer.get("prompt", "")
+
+        # Resolve character portrait path (glob-based)
+        portrait_prefix = f"api/{timestamp}/characters/{char_id}"
+        portrait_path = _find_comfyui_output(portrait_prefix)
+
+        if portrait_path is None:
+            error_msg = f"Character portrait not found for prefix: {portrait_prefix}"
+            print(f"        {error_msg}")
+            gen_data = {"layer_type": "character", "layer_index": layer_index,
+                        "character_id": char_id, "character_name": char_name,
+                        "status": "error", "error": error_msg,
+                        "generated_at": datetime.now().isoformat()}
+            layers_data.append(gen_data)
+            return False, _build_layered_result(layers_data, layer_index + 1)
+
+        # Every layer gets a numbered name with character ID suffix
+        char_prefix = f"api/{timestamp}/scenes/{shot_prefix}_layer{layer_index:02d}_{char_id}"
+
+        print(f"      Layer {layer_index}: Character {char_name} ({char_id})")
+
+        success, gen_data = _generate_character_layer(
+            prompt=char_prompt,
+            scene_image_name=str(current_scene_path),
+            portrait_image_name=str(portrait_path),
+            filename_prefix=char_prefix,
+            label=f"{shot_prefix}_layer{layer_index:02d}_{char_id}",
+            workflow_path=char_edit_workflow,
+            comfyui_url=comfyui_url,
+            timeout=timeout,
+        )
+
+        gen_data["layer_index"] = layer_index
+        gen_data["character_id"] = char_id
+        gen_data["character_name"] = char_name
+        layers_data.append(gen_data)
+
+        if success is None:
+            return None, _build_layered_result(layers_data, layer_index + 1)
+        if not success:
+            return False, _build_layered_result(layers_data, layer_index + 1)
+
+        # Update current scene path for next character layer (glob-based)
+        current_scene_path = _find_comfyui_output(char_prefix)
+        if current_scene_path is None:
+            error_msg = f"Character layer output not found for prefix: {char_prefix}"
+            print(f"        {error_msg}")
+            return False, _build_layered_result(layers_data, layer_index + 1)
+        last_layer_prefix = char_prefix
+        layer_index += 1
+
+    # --- Build final result (last layer's output is the final scene) ---
+    final_path = _find_comfyui_output(last_layer_prefix) if last_layer_prefix else current_scene_path
+    final_output = str(final_path) if final_path else ""
+    return True, {
+        "pipeline": "layered",
+        "status": "completed",
+        "output_path": final_output,
+        "final_layer_prefix": last_layer_prefix,
+        "total_layers_attempted": total_layers,
+        "total_layers_completed": total_layers,
+        "layers": layers_data,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
+def _build_layered_result(
+    layers_data: list[dict],
+    total_attempted: int,
+    error: str | None = None,
+) -> dict:
+    """Build a generation result dict for layered scenes (used on partial failure)."""
+    completed = sum(1 for l in layers_data if l.get("status") == "completed")
+    result = {
+        "pipeline": "layered",
+        "status": "error",
+        "output_path": "",
+        "total_layers_attempted": total_attempted,
+        "total_layers_completed": completed,
+        "layers": layers_data,
+        "generated_at": datetime.now().isoformat(),
+    }
+    if error:
+        result["error"] = error
+    return result
+
+
+def _make_error_result(
+    codex_path: Path,
+    error: str,
+    **counts,
+) -> GenerationResult:
+    """Build a failed GenerationResult with current counts."""
+    return GenerationResult(
+        codex_path=codex_path,
+        poster_count=counts.get("poster_count", 0),
+        character_portrait_count=counts.get("character_portrait_count", 0),
+        location_image_count=counts.get("location_image_count", 0),
+        scene_image_count=counts.get("scene_image_count", 0),
+        shot_frame_count=counts.get("shot_frame_count", 0),
+        video_count=counts.get("video_count", 0),
+        audio_count=counts.get("audio_count", 0),
+        success=False,
+        error=error,
+    )
+
+
+# Step name constants for logging and metadata
+STEP_NAMES = {
+    0: "Character Portraits",
+    1: "Location Images",
+    2: "Scene Images",
+    3: "Thumbnails/Posters",
+    4: "Audio (Qwen TTS)",
+    5: "Video (future)",
+}
+
+
 def run_template1_generation(
     codex_path: Path,
     comfyui_url: str = None,
@@ -382,18 +917,19 @@ def run_template1_generation(
     """
     Generate images and media using ComfyUI for Template 1 (Static Audio).
 
-    Step 1: Generate Audio (Qwen TTS Voice Clone - full scenes)
-            Generates: book title → chapter titles → scene prose (sequential naming)
-    Step 2: Generate Static Images (characters, locations, posters)
-    Step 3: Generate Scene Images (one per scene)
-    Step 4: Generate Videos (COMMENTED OUT)
+    Step 0: Character Portraits (1024x1024 square)
+    Step 1: Location Images (1280x720 landscape)
+    Step 2: Scene Images (1280x720 landscape, one per scene)
+    Step 3: Thumbnails/Posters
+    Step 4: Audio (Qwen TTS Voice Clone)
+    Step 5: Video (future, disabled)
 
     Args:
         codex_path: Path to codex.json (must have prompts from Phase 2)
         comfyui_url: ComfyUI API URL (default: from config)
-        workflow_path: Path to ComfyUI workflow JSON (default: from config)
-        steps: List of step numbers to run (default: [1, 2, 3])
-        timeout: Timeout in seconds for each generation (default: 300)
+        workflow_path: Deprecated — each step uses its own workflow from config
+        steps: List of step numbers to run (default: [0, 1, 2, 3, 4])
+        timeout: Timeout in seconds for each generation (default: from config)
 
     Returns:
         GenerationResult with counts of generated media
@@ -403,38 +939,38 @@ def run_template1_generation(
 
     # Get configuration
     comfyui_url = comfyui_url or DEFAULT_COMFYUI_URL
-    workflow_path = workflow_path or str(get_workflow_path("image"))
     timeout = timeout or DEFAULT_COMFYUI_TIMEOUT
-    steps_to_run = steps if steps is not None else [1, 2, 3]
+    steps_to_run = steps if steps is not None else [0, 1, 2, 3, 4]
 
     # Filter steps based on GENERATION_STEPS config
-    STEP_CONFIG_MAP = {1: 0, 2: 1, 3: 2, 4: 3}
+    # Step N maps to config position N (0-based)
     original_steps = steps_to_run.copy()
-    steps_to_run = [s for s in steps_to_run if should_run_step(STEP_CONFIG_MAP.get(s, -1))]
+    steps_to_run = [s for s in steps_to_run if should_run_step(s)]
 
     # Report any skipped steps
     skipped_steps = [s for s in original_steps if s not in steps_to_run]
     if skipped_steps:
-        print(f">>> Steps {skipped_steps} skipped by GENERATION_STEPS config")
+        skipped_names = [f"{s} ({STEP_NAMES.get(s, '?')})" for s in skipped_steps]
+        print(f">>> Steps skipped by GENERATION_STEPS config: {', '.join(skipped_names)}")
 
     # Get timestamp for output paths
     timestamp = get_timestamp_from_codex_path(codex_path)
 
     print(f"\n{'='*60}")
-    print("TEMPLATE 1: MEDIA GENERATION (Static Audio)")
+    print("PHASE 3: MEDIA GENERATION")
     print(f"{'='*60}")
     print(f">>> ComfyUI URL: {comfyui_url}")
-    print(f">>> Workflow: {workflow_path}")
     print(f">>> Timeout: {timeout}s")
-    print(f">>> Running steps: {steps_to_run}")
+    step_labels = [f"{s}-{STEP_NAMES.get(s, '?')}" for s in steps_to_run]
+    print(f">>> Running steps: {', '.join(step_labels)}")
 
-    # Initialize metadata in new structure
+    # Initialize metadata
     if "metadata" not in codex:
         codex["metadata"] = {}
 
     phase3_metadata = {
         "comfyui_url": comfyui_url,
-        "workflow_used": Path(workflow_path).name if workflow_path else None,
+        "workflows_used": {},
         "steps_executed": [],
         "template": "static_audio",
     }
@@ -443,27 +979,380 @@ def run_template1_generation(
     step_timings = {}
 
     # Counters
-    poster_count = 0
     character_portrait_count = 0
     location_image_count = 0
     scene_image_count = 0
-    shot_frame_count = 0
-    video_count = 0
+    poster_count = 0
     audio_count = 0
+    video_count = 0
+    shot_frame_count = 0
+
+    # Helper to get current counts dict for error results
+    def _counts():
+        return dict(
+            character_portrait_count=character_portrait_count,
+            location_image_count=location_image_count,
+            scene_image_count=scene_image_count,
+            poster_count=poster_count,
+            audio_count=audio_count,
+            video_count=video_count,
+            shot_frame_count=shot_frame_count,
+        )
 
     # =========================================================================
-    # Step 1: Generate Audio (Qwen TTS - full scenes with sequential naming)
+    # Step 1: Character Portraits
+    # =========================================================================
+    if 0 in steps_to_run:
+        step_start = time.time()
+        char_workflow = str(get_workflow_path("character"))
+        phase3_metadata["workflows_used"]["character"] = Path(char_workflow).name
+
+        print(f"\n{'='*60}")
+        print("STEP 0: Character Portraits")
+        print(f"  Workflow: {Path(char_workflow).name}")
+        print(f"{'='*60}")
+
+        characters = codex.get("story", {}).get("characters", [])
+
+        if not characters:
+            print(">>> No characters found, skipping")
+        else:
+            print(f">>> Generating {len(characters)} character portraits...")
+
+            for i, character in enumerate(characters):
+                char_prompt = character.get("character_prompt", {})
+                prompt_text = char_prompt.get("prompt", "")
+                char_name = character.get("name", f"character_{i+1}")
+
+                if not prompt_text:
+                    print(f"    [{i+1}/{len(characters)}] {char_name} - No prompt, skipping")
+                    continue
+
+                char_id = character.get("character_id", f"char_{i+1:03d}")
+                filename_prefix = f"api/{timestamp}/characters/{char_id}"
+                print(f"    [{i+1}/{len(characters)}] {char_name}")
+
+                success, gen_data = _generate_image(
+                    prompt_text, filename_prefix, char_name,
+                    workflow_path=char_workflow,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+
+                char_prompt["generation"] = gen_data
+
+                if success is None:
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {gen_data['error']}", **_counts()
+                    )
+                elif success:
+                    character_portrait_count += 1
+
+            print(f">>> Characters complete: {character_portrait_count}/{len(characters)}")
+
+        phase3_metadata["steps_executed"].append(0)
+        phase3_metadata["total_characters_generated"] = character_portrait_count
+        step_timings["step0_characters"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f">>> Step 0 complete ({step_timings['step0_characters']:.1f}s)")
+
+    # =========================================================================
+    # Step 2: Location Images
     # =========================================================================
     if 1 in steps_to_run:
         step_start = time.time()
+        loc_workflow = str(get_workflow_path("location"))
+        phase3_metadata["workflows_used"]["location"] = Path(loc_workflow).name
+
         print(f"\n{'='*60}")
-        print("STEP 1: Generate Audio (Qwen TTS Voice Clone)")
+        print("STEP 1: Location Images")
+        print(f"  Workflow: {Path(loc_workflow).name}")
+        print(f"{'='*60}")
+
+        locations = codex.get("story", {}).get("locations", [])
+
+        if not locations:
+            print(">>> No locations found, skipping")
+        else:
+            print(f">>> Generating {len(locations)} location images...")
+
+            for i, location in enumerate(locations):
+                loc_prompt = location.get("location_prompt", {})
+                prompt_text = loc_prompt.get("prompt", "")
+                loc_name = location.get("name", f"location_{i+1}")
+
+                if not prompt_text:
+                    print(f"    [{i+1}/{len(locations)}] {loc_name} - No prompt, skipping")
+                    continue
+
+                loc_id = location.get("id", f"loc_{i+1:03d}")
+                filename_prefix = f"api/{timestamp}/locations/{loc_id}"
+                print(f"    [{i+1}/{len(locations)}] {loc_name}")
+
+                success, gen_data = _generate_image(
+                    prompt_text, filename_prefix, loc_name,
+                    workflow_path=loc_workflow,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+
+                loc_prompt["generation"] = gen_data
+
+                if success is None:
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {gen_data['error']}", **_counts()
+                    )
+                elif success:
+                    location_image_count += 1
+
+            print(f">>> Locations complete: {location_image_count}/{len(locations)}")
+
+        phase3_metadata["steps_executed"].append(1)
+        phase3_metadata["total_locations_generated"] = location_image_count
+        step_timings["step1_locations"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f">>> Step 1 complete ({step_timings['step1_locations']:.1f}s)")
+
+    # =========================================================================
+    # Step 3: Scene Images (Two-Pass Layered Compositing Pipeline)
+    # =========================================================================
+    if 2 in steps_to_run:
+        step_start = time.time()
+
+        # Load workflow paths for layered pipeline
+        loc_edit_wf = str(get_workflow_path("scene_location_edit"))
+        char_edit_wf = str(get_workflow_path("scene_character_edit"))
+        scene_workflow = str(get_workflow_path("scene"))  # flat prompt fallback
+
+        phase3_metadata["workflows_used"]["scene_location_edit"] = Path(loc_edit_wf).name
+        phase3_metadata["workflows_used"]["scene_character_edit"] = Path(char_edit_wf).name
+
+        print(f"\n{'='*60}")
+        print("STEP 2: Scene Images (Two-Pass Layered Compositing)")
+        print(f"  Location edit workflow: {Path(loc_edit_wf).name}")
+        print(f"  Character edit workflow: {Path(char_edit_wf).name}")
+        print(f"{'='*60}")
+
+        chapters_data = codex.get("story", {}).get("chapters", {})
+        chapters = chapters_data.get("chapters", [])
+
+        # --- Collect scene jobs ---
+        # Each job: (ch_num, sc_num, scene_prompt_data, prompt_type)
+        layered_jobs: list[tuple[int, int, dict]] = []
+        flat_jobs: list[tuple[int, int, dict]] = []
+        for ch_idx, chapter in enumerate(chapters):
+            ch_num = chapter.get("chapter_number", ch_idx + 1)
+            for sc_idx, scene in enumerate(chapter.get("scenes", [])):
+                sc_num = scene.get("scene_number", sc_idx + 1)
+                scene_prompt_data = scene.get("scene_image_prompt", {})
+                prompt_type = scene_prompt_data.get("prompt_type", "")
+                if prompt_type == "layered":
+                    layered_jobs.append((ch_num, sc_num, scene_prompt_data))
+                elif scene_prompt_data.get("prompt"):
+                    flat_jobs.append((ch_num, sc_num, scene_prompt_data))
+
+        total_scenes = len(layered_jobs) + len(flat_jobs)
+
+        if total_scenes == 0:
+            print(">>> No scene image prompts found, skipping")
+            print(">>> (Ensure Phase 2 has generated scene_image_prompt for each scene)")
+        else:
+            print(f">>> Generating {total_scenes} scene images ({len(layered_jobs)} layered, {len(flat_jobs)} flat)...")
+            scene_global_idx = 0
+
+            # =============================================================
+            # Pass 1: All location edits (keeps location edit model loaded)
+            # =============================================================
+            if layered_jobs:
+                loc_edits_needed = sum(
+                    1 for _, _, spd in layered_jobs
+                    if spd.get("location_layer", {}).get("requires_modification")
+                )
+                print(f"\n  --- Pass 1: Location edits ({loc_edits_needed} of {len(layered_jobs)} scenes need modification) ---")
+
+            scene_states: list[dict] = []
+            for ch_num, sc_num, scene_prompt_data in layered_jobs:
+                location_name = scene_prompt_data.get("location_name", "unknown")
+                needs_edit = scene_prompt_data.get("location_layer", {}).get("requires_modification", False)
+                scene_global_idx += 1
+                label = "edit" if needs_edit else "no edit"
+                print(f"    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {location_name} ({label})")
+
+                state = _run_location_pass(
+                    scene_prompt_data=scene_prompt_data,
+                    timestamp=timestamp,
+                    ch_num=ch_num,
+                    sc_num=sc_num,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+                scene_states.append(state)
+
+                if state["location_ok"] is None:
+                    # Connection error — abort entirely
+                    error_msg = state.get("error", "Connection error during location pass")
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    scene_prompt_data["generation"] = _build_layered_result(
+                        state["layers_data"], state["layer_index"],
+                    )
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {error_msg}", **_counts()
+                    )
+
+            # =============================================================
+            # Pass 2: All character compositing (keeps char edit model loaded)
+            # =============================================================
+            if layered_jobs:
+                total_chars = sum(
+                    len(spd.get("character_layers", []))
+                    for _, _, spd in layered_jobs
+                )
+                print(f"\n  --- Pass 2: Character compositing ({total_chars} character layers across {len(layered_jobs)} scenes) ---")
+
+            for (ch_num, sc_num, scene_prompt_data), state in zip(layered_jobs, scene_states):
+                location_name = scene_prompt_data.get("location_name", "unknown")
+                n_chars = len(scene_prompt_data.get("character_layers", []))
+                print(f"    Ch{ch_num} Sc{sc_num} - {location_name} ({n_chars} character(s))")
+
+                if not state["location_ok"]:
+                    # Location pass failed — record error and skip character pass
+                    print(f"      Skipping: location pass failed")
+                    scene_prompt_data["generation"] = _build_layered_result(
+                        state["layers_data"], state["layer_index"],
+                    )
+                    continue
+
+                success, gen_data = _run_character_pass(
+                    scene_state=state,
+                    scene_prompt_data=scene_prompt_data,
+                    timestamp=timestamp,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+
+                scene_prompt_data["generation"] = gen_data
+
+                if success is None:
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {gen_data.get('error', 'unknown')}", **_counts()
+                    )
+                elif success:
+                    scene_image_count += 1
+
+            # =============================================================
+            # Flat prompt fallback scenes (backward compat)
+            # =============================================================
+            for ch_num, sc_num, scene_prompt_data in flat_jobs:
+                prompt_text = scene_prompt_data["prompt"]
+                location_name = scene_prompt_data.get("location_name", "unknown")
+                scene_global_idx += 1
+                print(f"    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {location_name} (flat)")
+
+                filename_prefix = f"api/{timestamp}/scenes/ch{ch_num:02d}_sc{sc_num:02d}"
+                success, gen_data = _generate_image(
+                    prompt_text, filename_prefix, f"ch{ch_num}_sc{sc_num}",
+                    workflow_path=scene_workflow,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+
+                scene_prompt_data["generation"] = gen_data
+
+                if success is None:
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {gen_data.get('error', 'unknown')}", **_counts()
+                    )
+                elif success:
+                    scene_image_count += 1
+
+            print(f">>> Scene images complete: {scene_image_count}/{total_scenes}")
+
+        phase3_metadata["steps_executed"].append(2)
+        phase3_metadata["total_scene_images_generated"] = scene_image_count
+        step_timings["step2_scenes"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f">>> Step 2 complete ({step_timings['step2_scenes']:.1f}s)")
+
+    # =========================================================================
+    # Step 4: Thumbnails/Posters
+    # =========================================================================
+    if 3 in steps_to_run:
+        step_start = time.time()
+        thumb_workflow = str(get_workflow_path("thumbnail"))
+        phase3_metadata["workflows_used"]["thumbnail"] = Path(thumb_workflow).name
+
+        print(f"\n{'='*60}")
+        print("STEP 3: Thumbnails/Posters")
+        print(f"  Workflow: {Path(thumb_workflow).name}")
+        print(f"{'='*60}")
+
+        poster_prompts = codex.get("story", {}).get("outline", {}).get("poster_prompts", [])
+
+        if not poster_prompts:
+            print(">>> No poster prompts found, skipping")
+        else:
+            print(f">>> Generating {len(poster_prompts)} poster images...")
+
+            for i, poster in enumerate(poster_prompts):
+                prompt_text = poster.get("prompt", "")
+                if not prompt_text:
+                    print(f"    [{i+1}/{len(poster_prompts)}] No prompt text, skipping")
+                    continue
+
+                filename_prefix = f"api/{timestamp}/posters/poster_{i+1:04d}"
+                agent = poster.get("agent", "Unknown")
+                composition = poster.get("composition", "unknown")
+                print(f"    [{i+1}/{len(poster_prompts)}] {agent} - {composition}")
+
+                success, gen_data = _generate_image(
+                    prompt_text, filename_prefix, f"poster_{i+1}",
+                    workflow_path=thumb_workflow,
+                    comfyui_url=comfyui_url,
+                    timeout=timeout,
+                )
+
+                poster["generation"] = gen_data
+
+                if success is None:
+                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
+                    save_codex(codex, codex_path)
+                    return _make_error_result(
+                        codex_path, f"Cannot connect to ComfyUI: {gen_data['error']}", **_counts()
+                    )
+                elif success:
+                    poster_count += 1
+
+            print(f">>> Posters complete: {poster_count}/{len(poster_prompts)}")
+
+        phase3_metadata["steps_executed"].append(3)
+        phase3_metadata["total_posters_generated"] = poster_count
+        step_timings["step3_thumbnails"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f">>> Step 3 complete ({step_timings['step3_thumbnails']:.1f}s)")
+
+    # =========================================================================
+    # Step 5: Audio (Qwen TTS Voice Clone)
+    # =========================================================================
+    if 4 in steps_to_run:
+        step_start = time.time()
+        print(f"\n{'='*60}")
+        print("STEP 4: Audio (Qwen TTS Voice Clone)")
         print(f"{'='*60}")
 
         # Load Qwen TTS workflow
-        audio_workflow_path = Path(__file__).parent.parent.parent.parent / "workflows" / "Qwen_tts_voice_clone.json"
+        audio_workflow_path = str(get_workflow_path("audio"))
+        phase3_metadata["workflows_used"]["audio"] = Path(audio_workflow_path).name
 
-        if not audio_workflow_path.exists():
+        if not Path(audio_workflow_path).exists():
             print(f">>> ERROR: Qwen TTS workflow not found at {audio_workflow_path}")
         else:
             with open(audio_workflow_path, "r", encoding="utf-8") as f:
@@ -489,7 +1378,7 @@ def run_template1_generation(
                 ch_num = chapter.get("chapter_number", ch_idx + 1)
                 ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
 
-                # Chapter title audio (ch_title already has "Chapter X - Title" format)
+                # Chapter title audio
                 audio_items.append({
                     "type": "chapter_title",
                     "chapter_number": ch_num,
@@ -520,8 +1409,7 @@ def run_template1_generation(
                 print(f"    - {len([i for i in audio_items if i['type'] == 'scene'])} scenes")
                 print(f">>> Timeout: {AUDIO_GENERATION_TIMEOUT}s ({AUDIO_GENERATION_TIMEOUT // 60} minutes) per item")
 
-                # Initialize audio generation tracking in chapters_data
-                # Reset audio generation tracking (clear old items from previous runs)
+                # Reset audio generation tracking
                 chapters_data["audio_generation"] = {"items": [], "total_generated": 0}
 
                 audio_generated_count = 0
@@ -567,17 +1455,8 @@ def run_template1_generation(
                         print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
                         chapters_data["audio_generation"]["total_generated"] = audio_generated_count
                         save_codex(codex, codex_path)
-                        return GenerationResult(
-                            codex_path=codex_path,
-                            poster_count=poster_count,
-                            character_portrait_count=character_portrait_count,
-                            location_image_count=location_image_count,
-                            scene_image_count=scene_image_count,
-                            shot_frame_count=shot_frame_count,
-                            video_count=video_count,
-                            audio_count=audio_generated_count,
-                            success=False,
-                            error=f"Cannot connect to ComfyUI: {gen_data['error']}",
+                        return _make_error_result(
+                            codex_path, f"Cannot connect to ComfyUI: {gen_data['error']}", **_counts()
                         )
                     elif success:
                         audio_generated_count += 1
@@ -587,337 +1466,30 @@ def run_template1_generation(
                     save_codex(codex, codex_path)
 
                 audio_count = audio_generated_count
-                phase3_metadata["steps_executed"].append(1)
-                phase3_metadata["total_audio_generated"] = audio_generated_count
-                step_timings["step1_audio"] = round(time.time() - step_start, 2)
 
-                print(f"\n>>> Step 1 complete ({step_timings['step1_audio']:.1f}s):")
-                print(f"    Audio files generated: {audio_generated_count}/{len(audio_items)}")
-
-    # =========================================================================
-    # Helper function for image generation (used by Steps 2 and 3)
-    # =========================================================================
-    def generate_image(prompt_text: str, filename_prefix: str, label: str) -> tuple[bool, dict]:
-        """Generate a single image. Returns (success, generation_data)."""
-        seed = generate_seed()
-        try:
-            result = trigger_comfy(
-                workflow_json_path=workflow_path,
-                replacements={
-                    "10_filename_prefix": filename_prefix,
-                    "5_seed": seed,
-                    "11_text": prompt_text,
-                },
-                comfyui_url=comfyui_url,
-                timeout=timeout,
-            )
-
-            generation_data = {
-                "prompt_id": result["prompt_id"],
-                "status": result["status"],
-                "execution_time": result["execution_time"],
-                "output_path": f"{filename_prefix}_00001_.png",
-                "seed": seed,
-                "generated_at": datetime.now().isoformat(),
-            }
-
-            if result["status"] == "completed":
-                print(f"        Completed in {result['execution_time']:.1f}s")
-                return True, generation_data
-            else:
-                error_msg = result.get("error", "Unknown error")
-                print(f"        Failed: {error_msg}")
-                generation_data["error"] = error_msg
-                return False, generation_data
-
-        except ConnectionError as e:
-            print(f"        Connection error: {e}")
-            return None, {
-                "status": "error",
-                "error": str(e),
-                "generated_at": datetime.now().isoformat(),
-            }
-
-        except TimeoutError as e:
-            print(f"        Timeout: {e}")
-            return False, {
-                "status": "timeout",
-                "error": str(e),
-                "seed": seed,
-                "generated_at": datetime.now().isoformat(),
-            }
-
-        except Exception as e:
-            print(f"        Error: {e}")
-            return False, {
-                "status": "error",
-                "error": str(e),
-                "generated_at": datetime.now().isoformat(),
-            }
+        phase3_metadata["steps_executed"].append(4)
+        phase3_metadata["total_audio_generated"] = audio_count
+        step_timings["step4_audio"] = round(time.time() - step_start, 2)
+        print(f"\n>>> Step 4 complete ({step_timings.get('step4_audio', 0):.1f}s):")
+        print(f"    Audio files generated: {audio_count}")
 
     # =========================================================================
-    # Step 2: Generate Static Images (Characters, Locations, Posters)
+    # Step 6: Video (future, disabled)
     # =========================================================================
-    if 2 in steps_to_run:
-        step_start = time.time()
-        print(f"\n{'='*60}")
-        print("STEP 2: Generate Static Images")
-        print(f"{'='*60}")
-
-        # ---------------------------------------------------------------------
-        # Step 2a: Character Portraits
-        # ---------------------------------------------------------------------
-        print(f"\n--- 2a: Character Portraits ---")
-        characters = codex.get("story", {}).get("characters", [])
-
-        if not characters:
-            print(">>> No characters found, skipping")
-        else:
-            print(f">>> Generating {len(characters)} character portraits...")
-
-            for i, character in enumerate(characters):
-                char_prompt = character.get("character_prompt", {})
-                prompt_text = char_prompt.get("prompt", "")
-                char_name = character.get("name", f"character_{i+1}")
-
-                if not prompt_text:
-                    print(f"    [{i+1}/{len(characters)}] {char_name} - No prompt, skipping")
-                    continue
-
-                filename_prefix = f"api/{timestamp}/characters/{sanitize_filename(char_name)}"
-                print(f"    [{i+1}/{len(characters)}] {char_name}")
-
-                success, gen_data = generate_image(prompt_text, filename_prefix, char_name)
-
-                char_prompt["generation"] = gen_data
-
-                if success is None:
-                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                    print(">>> Make sure ComfyUI is running and try again.")
-                    save_codex(codex, codex_path)
-                    return GenerationResult(
-                        codex_path=codex_path,
-                        poster_count=poster_count,
-                        character_portrait_count=character_portrait_count,
-                        location_image_count=location_image_count,
-                        scene_image_count=scene_image_count,
-                        shot_frame_count=shot_frame_count,
-                        video_count=video_count,
-                        audio_count=audio_count,
-                        success=False,
-                        error=f"Cannot connect to ComfyUI: {gen_data['error']}",
-                    )
-                elif success:
-                    character_portrait_count += 1
-
-            print(f">>> Characters complete: {character_portrait_count}/{len(characters)}")
-
-        # ---------------------------------------------------------------------
-        # Step 2b: Location Images
-        # ---------------------------------------------------------------------
-        print(f"\n--- 2b: Location Images ---")
-        locations = codex.get("story", {}).get("locations", [])
-
-        if not locations:
-            print(">>> No locations found, skipping")
-        else:
-            print(f">>> Generating {len(locations)} location images...")
-
-            for i, location in enumerate(locations):
-                loc_prompt = location.get("location_prompt", {})
-                prompt_text = loc_prompt.get("prompt", "")
-                loc_name = location.get("name", f"location_{i+1}")
-
-                if not prompt_text:
-                    print(f"    [{i+1}/{len(locations)}] {loc_name} - No prompt, skipping")
-                    continue
-
-                filename_prefix = f"api/{timestamp}/locations/{sanitize_filename(loc_name)}"
-                print(f"    [{i+1}/{len(locations)}] {loc_name}")
-
-                success, gen_data = generate_image(prompt_text, filename_prefix, loc_name)
-
-                loc_prompt["generation"] = gen_data
-
-                if success is None:
-                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                    print(">>> Make sure ComfyUI is running and try again.")
-                    save_codex(codex, codex_path)
-                    return GenerationResult(
-                        codex_path=codex_path,
-                        poster_count=poster_count,
-                        character_portrait_count=character_portrait_count,
-                        location_image_count=location_image_count,
-                        scene_image_count=scene_image_count,
-                        shot_frame_count=shot_frame_count,
-                        video_count=video_count,
-                        audio_count=audio_count,
-                        success=False,
-                        error=f"Cannot connect to ComfyUI: {gen_data['error']}",
-                    )
-                elif success:
-                    location_image_count += 1
-
-            print(f">>> Locations complete: {location_image_count}/{len(locations)}")
-
-        # ---------------------------------------------------------------------
-        # Step 2c: Poster Images
-        # ---------------------------------------------------------------------
-        print(f"\n--- 2c: Poster Images ---")
-        poster_prompts = codex.get("story", {}).get("outline", {}).get("poster_prompts", [])
-
-        if not poster_prompts:
-            print(">>> No poster prompts found, skipping")
-        else:
-            print(f">>> Generating {len(poster_prompts)} poster images...")
-
-            for i, poster in enumerate(poster_prompts):
-                prompt_text = poster.get("prompt", "")
-                if not prompt_text:
-                    print(f"    [{i+1}/{len(poster_prompts)}] No prompt text, skipping")
-                    continue
-
-                filename_prefix = f"api/{timestamp}/posters/poster_{i+1:04d}"
-                agent = poster.get("agent", "Unknown")
-                composition = poster.get("composition", "unknown")
-                print(f"    [{i+1}/{len(poster_prompts)}] {agent} - {composition}")
-
-                success, gen_data = generate_image(prompt_text, filename_prefix, f"poster_{i+1}")
-
-                poster["generation"] = gen_data
-
-                if success is None:
-                    print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                    print(">>> Make sure ComfyUI is running and try again.")
-                    save_codex(codex, codex_path)
-                    return GenerationResult(
-                        codex_path=codex_path,
-                        poster_count=poster_count,
-                        character_portrait_count=character_portrait_count,
-                        location_image_count=location_image_count,
-                        scene_image_count=scene_image_count,
-                        shot_frame_count=shot_frame_count,
-                        video_count=video_count,
-                        audio_count=audio_count,
-                        success=False,
-                        error=f"Cannot connect to ComfyUI: {gen_data['error']}",
-                    )
-                elif success:
-                    poster_count += 1
-
-            print(f">>> Posters complete: {poster_count}/{len(poster_prompts)}")
-
-        # Update metadata
-        phase3_metadata["steps_executed"].append(2)
-        phase3_metadata["total_characters_generated"] = character_portrait_count
-        phase3_metadata["total_locations_generated"] = location_image_count
-        phase3_metadata["total_posters_generated"] = poster_count
-        step_timings["step2_static_images"] = round(time.time() - step_start, 2)
-
-        # Save codex after Step 2 to preserve progress
-        save_codex(codex, codex_path)
-
-        print(f"\n>>> Step 2 complete ({step_timings['step2_static_images']:.1f}s):")
-        print(f"    Character portraits: {character_portrait_count}")
-        print(f"    Location images: {location_image_count}")
-        print(f"    Poster images: {poster_count}")
-
-    # =========================================================================
-    # Step 3: Generate Scene Images (one image per scene)
-    # =========================================================================
-    if 3 in steps_to_run:
-        step_start = time.time()
-        print(f"\n{'='*60}")
-        print("STEP 3: Generate Scene Images")
-        print(f"{'='*60}")
-
-        chapters_data = codex.get("story", {}).get("chapters", {})
-        chapters = chapters_data.get("chapters", [])
-
-        # Count total scenes with prompts
-        total_scenes = 0
-        for ch in chapters:
-            for sc in ch.get("scenes", []):
-                if sc.get("scene_image_prompt", {}).get("prompt"):
-                    total_scenes += 1
-
-        if total_scenes == 0:
-            print(">>> No scene image prompts found, skipping")
-            print(">>> (Ensure Phase 2 has generated scene_image_prompt for each scene)")
-        else:
-            print(f">>> Generating {total_scenes} scene images...")
-
-            scene_global_idx = 0
-            for ch_idx, chapter in enumerate(chapters):
-                ch_num = chapter.get("chapter_number", ch_idx + 1)
-
-                for sc_idx, scene in enumerate(chapter.get("scenes", [])):
-                    sc_num = scene.get("scene_number", sc_idx + 1)
-
-                    scene_prompt_data = scene.get("scene_image_prompt", {})
-                    prompt_text = scene_prompt_data.get("prompt", "")
-
-                    if not prompt_text:
-                        print(f"    [Ch{ch_num} Sc{sc_num}] No prompt, skipping")
-                        continue
-
-                    scene_global_idx += 1
-                    location_name = scene_prompt_data.get("location_name", "unknown")
-                    filename_prefix = f"api/{timestamp}/scenes/ch{ch_num:02d}_sc{sc_num:02d}"
-                    print(f"    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {location_name}")
-
-                    success, gen_data = generate_image(prompt_text, filename_prefix, f"ch{ch_num}_sc{sc_num}")
-
-                    scene_prompt_data["generation"] = gen_data
-
-                    if success is None:
-                        print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                        print(">>> Make sure ComfyUI is running and try again.")
-                        save_codex(codex, codex_path)
-                        return GenerationResult(
-                            codex_path=codex_path,
-                            poster_count=poster_count,
-                            character_portrait_count=character_portrait_count,
-                            location_image_count=location_image_count,
-                            scene_image_count=scene_image_count,
-                            shot_frame_count=shot_frame_count,
-                            video_count=video_count,
-                            audio_count=audio_count,
-                            success=False,
-                            error=f"Cannot connect to ComfyUI: {gen_data['error']}",
-                        )
-                    elif success:
-                        scene_image_count += 1
-
-            print(f">>> Scene images complete: {scene_image_count}/{total_scenes}")
-
-        # Update metadata for Step 3
-        phase3_metadata["steps_executed"].append(3)
-        phase3_metadata["total_scene_images_generated"] = scene_image_count
-        step_timings["step3_scene_images"] = round(time.time() - step_start, 2)
-
-        # Save codex after Step 3
-        save_codex(codex, codex_path)
-        print(f"\n>>> Step 3 complete ({step_timings['step3_scene_images']:.1f}s)")
-
-    # =========================================================================
-    # Step 4: Generate Videos (COMMENTED OUT)
-    # =========================================================================
-    if 4 in steps_to_run:
-        print(f"\n>>> Step 4 (Videos) is currently disabled")
+    if 5 in steps_to_run:
+        print(f"\n>>> Step 5 (Video) is currently disabled")
 
     # Save metadata and codex
     codex["metadata"]["phase_3"] = phase3_metadata
     save_codex(codex, codex_path)
 
-    print(f"\n>>> Template 1 Generation complete!")
-    print(f"    Poster images: {poster_count}")
+    print(f"\n>>> Phase 3 Generation complete!")
     print(f"    Character portraits: {character_portrait_count}")
     print(f"    Location images: {location_image_count}")
     print(f"    Scene images: {scene_image_count}")
-    print(f"    Shot frames: {shot_frame_count}")
-    print(f"    Videos: {video_count}")
+    print(f"    Posters/Thumbnails: {poster_count}")
     print(f"    Audio: {audio_count}")
+    print(f"    Videos: {video_count}")
     print(f">>> Saved to: {codex_path}")
 
     return GenerationResult(
@@ -937,7 +1509,7 @@ def run_template1_generation(
 def main():
     """CLI entry point for standalone execution."""
     parser = argparse.ArgumentParser(
-        description="Template 1: Generate images and media using ComfyUI (Static Audio)"
+        description="Template 1: Generate images and media using ComfyUI"
     )
     parser.add_argument(
         "codex_path",
@@ -950,16 +1522,11 @@ def main():
         help=f"ComfyUI API URL (default: {DEFAULT_COMFYUI_URL})"
     )
     parser.add_argument(
-        "--workflow",
-        default=None,
-        help="Path to ComfyUI workflow JSON (default: from config)"
-    )
-    parser.add_argument(
         "--steps",
         nargs="+",
         type=int,
-        choices=[1, 2, 3, 4],
-        help="Run specific steps (1: Audio, 2: Static Images, 3: Scene Images, 4: Videos [disabled])"
+        choices=[0, 1, 2, 3, 4, 5],
+        help="Run specific steps (0: Characters, 1: Locations, 2: Scenes, 3: Thumbnails, 4: Audio, 5: Video)"
     )
     parser.add_argument(
         "--timeout",
@@ -976,7 +1543,6 @@ def main():
     result = run_template1_generation(
         args.codex_path,
         comfyui_url=args.comfyui_url,
-        workflow_path=args.workflow,
         steps=args.steps,
         timeout=args.timeout,
     )

@@ -230,7 +230,7 @@ def generate_novel(
         print("PHASE 3: MEDIA GENERATION")
         print("=" * 60)
         phase_start = time.time()
-        result = run_phase3_generation(codex_path, steps=[1, 2, 3])
+        result = run_phase3_generation(codex_path, steps=[0, 1, 2, 3, 4])
         phase_timings["generation"] = {
             "duration_seconds": round(time.time() - phase_start, 2),
             "steps": getattr(result, "step_timings", {})

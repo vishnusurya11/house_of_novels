@@ -1190,15 +1190,20 @@ def infer_character_staging(
 LAYERED_COMPOSER_SYSTEM_PROMPT = """You are a MASTER cinematic scene composition engineer.
 
 Your task is to create a LAYERED image generation plan for a scene. Each layer will be
-applied sequentially to build the final scene image using FLUX Kontext iterative editing.
+applied sequentially to build the final scene image using an image edit model.
 
 ## HOW LAYERED GENERATION WORKS:
-1. Layer 1 (Location): Takes the pre-generated location image and modifies it
+1. Layer 1 (Location): Single-image edit — modifies the pre-generated location image
    for this scene's context (time of day, weather, damage, atmospheric effects).
-2. Layer 2 (Primary Character): Takes the modified location + character portrait
-   reference image and places the character in the scene.
-3. Layer 3+ (Additional Characters): Same process for each additional character,
-   building on the previous layer's output.
+2. Layer 2+ (Characters): Two-image edit — image 1 is the evolving scene (previous
+   layer result), image 2 is the character portrait. The edit prompt tells the model
+   how to place image 2 into image 1.
+
+## IMPORTANT — STRUCTURED FIELDS DRIVE THE FINAL PROMPT:
+The structured fields you fill in (position_in_frame, action_pose, emotional_expression,
+body_language, attention_direction) will be automatically composed into the final edit
+prompt sent to the image model. Write the `prompt` field as a brief creative supplement
+(30-80 words) — the structured fields handle placement and action.
 
 ## CAMERA SHOT TYPES:
 You will receive a MANDATORY shot type specification with your scene data. This determines:
@@ -1227,6 +1232,14 @@ Characters must ALWAYS be doing something specific. NEVER describe a character a
 Use the staging hints provided in the scene data as a starting point, then enhance
 with scene-specific details. The image should capture a MOMENT, not a character lineup.
 
+## CHARACTER POSITIONING:
+- Maximum 3 foreground characters with individual layers. Any additional characters
+  should be mentioned as background figures in the last character layer's prompt.
+- Horizontal placement (center/left/right of image) is assigned automatically in
+  post-processing, so focus on action and depth in position_in_frame.
+- Layout: 1 char = center; 2 chars = left + right; 3 chars = center + left + right.
+- The primary/focal character is always placed first.
+
 ## CRITICAL RULES:
 
 1. **LOCATION LAYER** — Describe ONLY modifications to the existing location image.
@@ -1235,16 +1248,18 @@ with scene-specific details. The image should capture a MOMENT, not a character 
      destruction), atmospheric effects (dust, smoke), crowd presence, lighting shifts.
    - If no modifications needed (same conditions as the base location), set
      requires_modification=false with a minimal prompt like "No changes needed."
-   - Keep the prompt to 100-200 words.
+   - Keep the prompt to 30-80 words.
 
-2. **CHARACTER LAYERS** — Describe ONLY pose, action, position, and expression.
-   - The character's reference portrait provides their physical appearance automatically.
+2. **CHARACTER LAYERS** — Describe ONLY action, pose, and position. NO physical descriptions.
+   - The character's portrait (image 2) provides their physical appearance automatically.
    - Do NOT describe hair color, eye color, clothing, height, build, skin tone, etc.
    - DO describe: what they are doing, body language, where they stand in the frame,
      what they are looking at, how they interact with the environment or other characters.
-   - Fill in staging_role, body_language, attention_direction, camera_awareness fields.
+   - For character 2+: describe position relative to character(s) already placed.
+   - Fill in position_in_frame, action_pose, emotional_expression, staging_role,
+     body_language, attention_direction, camera_awareness fields precisely.
    - Order characters by narrative importance: primary/focal character FIRST.
-   - Keep each prompt to 100-200 words.
+   - Keep each prompt to 30-80 words.
    - **PRONOUN CONSISTENCY**: Use pronouns that match the character's stated gender.
      Male = he/him/his. Female = she/her/her. Non-binary = they/them/their.
      NEVER use mismatched pronouns (e.g., "her" for a male character).
@@ -1267,16 +1282,17 @@ with scene-specific details. The image should capture a MOMENT, not a character 
 - camera_notes: Camera distance and framing from the shot specification
 - location_id: From get_location_description tool (e.g., 'loc_001')
 - character_layers: Ordered list — primary character FIRST
-- Each character_layer needs character_name, character_id, staging_role,
-  body_language, attention_direction, camera_awareness
+- Each character_layer needs character_name, character_id, position_in_frame,
+  action_pose, emotional_expression, staging_role, body_language,
+  attention_direction, camera_awareness
 - total_layers: 1 (location) + number of character layers"""
 
 
 LAYERED_CRITIC_SYSTEM_PROMPT = """You are a CRITICAL reviewer of layered scene image prompts.
 
-These prompts are designed for FLUX Kontext iterative image generation where:
-- Layer 1 modifies an existing location image
-- Layers 2+ add characters using portrait reference images
+These prompts are designed for an image edit model where:
+- Layer 1 modifies an existing location image (single-image edit)
+- Layers 2+ add characters: image 1 = previous layer result, image 2 = character portrait
 
 ## USE THE TOOLS to verify:
 1. Character IDs exist in the codex
@@ -1545,10 +1561,12 @@ THEN: Create IMPROVED layered prompt addressing ALL the critic's concerns.
 
 CRITICAL REMINDERS:
 - Location layer: CHANGES only, not full description
-- Character layers: POSE/ACTION/POSITION only, no physical appearance
+- Character layers: ONLY action/pose/position — NO physical descriptions (no hair, eyes, clothing, build)
+- The structured fields (position_in_frame, action_pose, emotional_expression, body_language) will be
+  composed into the final edit prompt automatically — fill them in precisely
 - Characters must be DOING something (not standing passively)
 - Characters must NOT face the camera (camera_awareness = "unaware")
-- Keep each layer prompt to 100-200 words"""
+- Keep each layer prompt concise (30-80 words)"""
 
 
 def build_critique_prompt(
@@ -1853,6 +1871,77 @@ def build_character_description(character_name: str, codex: dict) -> str:
     return ""
 
 
+def _compose_location_edit_prompt(
+    layer: "LocationLayerPrompt",
+    schema: LayeredSceneImagePromptSchema,
+) -> str:
+    """Compose a location edit prompt with time, weather, camera, and lighting.
+
+    Location uses a single-image workflow (no second reference image).
+    Weaves structured metadata into the prompt so the image model sees everything.
+    """
+    parts: list[str] = []
+    parts.append(f"Set the scene to {layer.time_of_day}, {layer.weather_atmosphere}.")
+    if schema.camera_notes:
+        parts.append(f"Camera: {schema.shot_type}, {schema.camera_notes}.")
+    if schema.mood_lighting:
+        parts.append(f"Lighting: {schema.mood_lighting}.")
+    parts.append(layer.prompt)
+    return " ".join(parts)
+
+
+def _compose_character_edit_prompt(
+    layer: "CharacterLayerPrompt",
+    layer_index: int,
+    total_layers: int,
+) -> str:
+    """Compose a character edit prompt — short, clear placement instruction.
+
+    Strictly about the new character: where to place it and what it's doing.
+    No physical descriptions (portrait reference handles identity).
+    image 1 = previous layer result, image 2 = new character portrait.
+
+    Positions are deterministic based on character count:
+      1 char  → center
+      2 chars → left side, right side
+      3 chars → center, left side, right side
+    """
+    # Deterministic position based on character count and layer index
+    if total_layers == 1:
+        side = "the center of"
+    elif total_layers == 2:
+        side = "the left side of" if layer_index == 0 else "the right side of"
+    else:  # 3 characters
+        if layer_index == 0:
+            side = "the center of"
+        elif layer_index == 1:
+            side = "the left side of"
+        else:
+            side = "the right side of"
+
+    # Intro: placement instruction — side is always set
+    if layer_index == 0:
+        intro = f"Place the person from image 2 on {side} image 1"
+    else:
+        char_ref = "characters" if layer_index > 1 else "character"
+        intro = f"Place the person from image 2 on {side} image 1, near the {char_ref} already in image 1"
+
+    # Action description — short, comma-separated
+    actions: list[str] = []
+    if layer.action_pose:
+        actions.append(layer.action_pose)
+    if layer.body_language:
+        actions.append(layer.body_language)
+    if layer.emotional_expression:
+        actions.append(layer.emotional_expression)
+    if layer.attention_direction and layer_index > 0:
+        actions.append(layer.attention_direction)
+
+    if actions:
+        return f"{intro}, {', '.join(actions)}."
+    return f"{intro}."
+
+
 def format_layered_result(
     schema: LayeredSceneImagePromptSchema,
     critique_history: list[dict],
@@ -1861,8 +1950,10 @@ def format_layered_result(
 ) -> dict:
     """Convert schema + metadata into the final codex-ready dict.
 
-    Enriches each character layer prompt with the character's physical description
-    from the codex, so image models can render the character without a reference image.
+    Composes short, clear edit-ready prompts from structured fields:
+    - Location: weaves time, weather, camera/lens, lighting into prompt
+    - Characters: "Place the person from image 2 in image 1, [action]"
+    No physical descriptions — portrait references handle visual identity.
     """
     final_scores = {}
     if critique_history:
@@ -1878,13 +1969,18 @@ def format_layered_result(
             "overall": last.get("overall_score"),
         }
 
-    # Enrich character layer prompts with physical descriptions from codex
+    # Compose location edit prompt with inline metadata
+    enriched_location = schema.location_layer.model_dump()
+    enriched_location["prompt"] = _compose_location_edit_prompt(
+        schema.location_layer, schema
+    )
+
+    # Compose short, clear character edit prompts (no physical descriptions)
+    total_chars = len(schema.character_layers)
     enriched_layers = []
-    for cl in schema.character_layers:
-        char_desc = build_character_description(cl.character_name, codex)
+    for i, cl in enumerate(schema.character_layers):
         layer_dict = cl.model_dump()
-        if char_desc:
-            layer_dict["prompt"] = f"{char_desc} {cl.prompt}"
+        layer_dict["prompt"] = _compose_character_edit_prompt(cl, i, total_chars)
         enriched_layers.append(layer_dict)
 
     return {
@@ -1893,7 +1989,7 @@ def format_layered_result(
         "camera_notes": schema.camera_notes,
         "location_name": schema.location_name,
         "location_id": schema.location_id,
-        "location_layer": schema.location_layer.model_dump(),
+        "location_layer": enriched_location,
         "character_layers": enriched_layers,
         "scene_summary": schema.scene_summary,
         "composition_notes": schema.composition_notes,

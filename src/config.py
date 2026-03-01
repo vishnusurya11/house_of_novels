@@ -197,11 +197,16 @@ DEFAULT_STRUCTURE = "three_act"  # Default story structure if author doesn't spe
 DEFAULT_COMFYUI_URL = "http://127.0.0.1:8188"
 DEFAULT_COMFYUI_TIMEOUT = 1800  # 30 minutes per generation
 
-# ComfyUI workflow paths (relative to project root)
+# ComfyUI workflow paths (relative to project root) — one per generation step
 COMFYUI_WORKFLOWS = {
-    "image": "workflows/z_image_turbo_example.json",
+    "character": "workflows/z_image_turbo_characters.json",  # 1024x1024 square portraits
+    "location": "workflows/z_image_turbo_locations.json",     # 1280x720 landscape
+    "scene": "workflows/z_image_turbo_example.json",         # 1280x720 landscape (flat prompt fallback)
+    "scene_location_edit": "workflows/image_qwen_image_edit_location.json",        # single-image location edit
+    "scene_character_edit": "workflows/image_qwen_image_edit_2511_two_images.json", # two-image character composite
+    "thumbnail": "workflows/z_image_turbo_example.json",     # 1280x720 landscape
+    "audio": "workflows/Qwen_tts_voice_clone.json",
     "video": "workflows/video_ltx2_i2v_distilled.json",
-    "audio": "workflows/Vibevoice_Single-Speaker.json",
 }
 
 # ComfyUI output directory (where images/videos are saved)
@@ -212,16 +217,15 @@ COMFYUI_OUTPUT_DIR = _env_config["comfyui_output_dir"]
 VIDEO_GENERATION_TIMEOUT = 1800  # seconds
 
 # Generation step control (binary string)
-# Position: 0=audio, 1=static_images, 2=scene_images, 3=videos, 4=editing
+# Position: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=audio, 5=video
 # Value: 1=run, 0=skip
 # Examples:
-#   "11111" = Run everything (default)
-#   "11100" = Audio + static images + scene images (current default)
-#   "01100" = Static + scene images (skip audio)
-#   "10000" = Only audio generation
-#   "00100" = Only scene images
-#   "00001" = Only editing (assume media exists)
-GENERATION_STEPS = "11101"
+#   "111110" = Run everything except video (default)
+#   "100000" = Only character portraits
+#   "011000" = Locations + scene images
+#   "000010" = Only audio generation
+#   "111111" = Run everything including video
+GENERATION_STEPS = "111110"
 
 # Audio generation timeout (30 minutes per generation)
 AUDIO_GENERATION_TIMEOUT = 1800  # seconds
@@ -276,7 +280,7 @@ def should_run_step(step_index: int) -> bool:
     """Check if a generation step should run based on GENERATION_STEPS config.
 
     Args:
-        step_index: 0=audio, 1=static_images, 2=shot_frames, 3=videos, 4=editing
+        step_index: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=audio, 5=video
 
     Returns:
         True if the step should run, False otherwise

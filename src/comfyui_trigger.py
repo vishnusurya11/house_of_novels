@@ -307,6 +307,67 @@ def trigger_comfy(
         }
 
 
+def upload_image_to_comfyui(
+    image_path: Path,
+    comfyui_url: str = "http://127.0.0.1:8188",
+) -> str:
+    """Upload an image to ComfyUI's input/ directory via the /upload/image API.
+
+    ComfyUI's LoadImage node reads from the input/ directory. To chain workflow
+    outputs as inputs to subsequent workflows, we upload the output image back
+    to the input/ directory.
+
+    Args:
+        image_path: Absolute path to the image file on disk.
+        comfyui_url: Base URL of ComfyUI API.
+
+    Returns:
+        The filename as stored in ComfyUI's input/ directory.
+        Use this value in LoadImage node replacements.
+
+    Raises:
+        FileNotFoundError: Image file does not exist.
+        ConnectionError: Cannot reach ComfyUI API.
+        RuntimeError: Upload failed (non-200 response).
+    """
+    image_path = Path(image_path)
+    if not image_path.exists():
+        raise FileNotFoundError(f"Image not found: {image_path}")
+
+    base_url = comfyui_url.rstrip("/")
+
+    with open(image_path, "rb") as f:
+        image_bytes = f.read()
+
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                f"{base_url}/upload/image",
+                files={"image": (image_path.name, image_bytes, "image/png")},
+                data={"overwrite": "true"},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            result = response.json()
+
+            if "name" not in result:
+                raise RuntimeError(
+                    f"No 'name' in ComfyUI upload response: {result}"
+                )
+
+            return result["name"]
+
+    except httpx.ConnectError as e:
+        raise ConnectionError(
+            f"Cannot connect to ComfyUI at {base_url}. "
+            f"Is ComfyUI running? Error: {e}"
+        )
+    except httpx.HTTPStatusError as e:
+        raise RuntimeError(
+            f"ComfyUI upload error: {e.response.status_code} - {e.response.text}"
+        )
+
+
 if __name__ == "__main__":
     import sys
 
