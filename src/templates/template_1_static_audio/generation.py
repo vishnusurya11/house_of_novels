@@ -478,6 +478,99 @@ def _find_comfyui_output(filename_prefix: str) -> Path | None:
     return max(matches, key=lambda p: p.stat().st_mtime)
 
 
+def _apply_ai_stamp(
+    image_path: Path,
+    svg_path: Path,
+    corner: str = "top-right",
+    scale: float = 0.15,
+    padding_fraction: float = 0.02,
+) -> bool:
+    """Overlay an SVG stamp onto a generated image.
+
+    Dynamically sizes the stamp relative to the image dimensions so it scales
+    correctly from 720p thumbnails to 4K posters (follows ESRB/PEGI badge
+    sizing conventions: ~15% of image height).
+
+    Args:
+        image_path: Absolute path to the PNG image to stamp.
+        svg_path: Absolute path to the SVG stamp file.
+        corner: Placement corner — "top-right", "top-left", "bottom-right", "bottom-left".
+        scale: Stamp height as a fraction of image height (0.15 = 15%).
+        padding_fraction: Edge padding as a fraction of image height (0.02 = 2%).
+
+    Returns:
+        True if stamp was applied successfully, False on error.
+    """
+    try:
+        from svglib.svglib import svg2rlg
+        from reportlab.graphics import renderPM
+        from PIL import Image
+        import io
+
+        # Load the poster image
+        poster = Image.open(image_path).convert("RGBA")
+        width, height = poster.size
+
+        # Dynamic sizing: stamp and padding scale with image resolution
+        stamp_size = max(32, int(height * scale))
+        pad = max(4, int(height * padding_fraction))
+
+        # Rasterize SVG → ReportLab drawing → PIL Image (pure Python, no Cairo C lib)
+        drawing = svg2rlg(str(svg_path))
+        if drawing is None:
+            print(f"      WARNING: Could not parse SVG: {svg_path}")
+            return False
+
+        # Scale the drawing to target stamp size
+        sx = stamp_size / drawing.width
+        sy = stamp_size / drawing.height
+        drawing.width = stamp_size
+        drawing.height = stamp_size
+        drawing.scale(sx, sy)
+
+        # Render to PNG with magenta background for chroma keying.
+        # ReportLab always renders on an opaque canvas — magenta won't appear
+        # in any stamp design so we can safely key it out to restore transparency.
+        png_bytes = renderPM.drawToString(drawing, fmt="PNG", bg=0xFF00FF)
+        stamp = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+
+        # Chroma-key: replace magenta background pixels with full transparency
+        pixels = stamp.load()
+        for py in range(stamp.height):
+            for px in range(stamp.width):
+                r, g, b, a = pixels[px, py]
+                if r > 240 and g < 20 and b > 240:
+                    pixels[px, py] = (0, 0, 0, 0)
+
+        # Compute position based on corner
+        if corner == "top-right":
+            x = width - stamp_size - pad
+            y = pad
+        elif corner == "top-left":
+            x = pad
+            y = pad
+        elif corner == "bottom-right":
+            x = width - stamp_size - pad
+            y = height - stamp_size - pad
+        elif corner == "bottom-left":
+            x = pad
+            y = height - stamp_size - pad
+        else:
+            x = width - stamp_size - pad
+            y = pad
+
+        # Alpha-composite the stamp onto the poster
+        poster.paste(stamp, (x, y), stamp)
+
+        # Save back as RGB PNG (drop alpha channel for final output)
+        poster.convert("RGB").save(image_path, "PNG")
+        return True
+
+    except Exception as e:
+        print(f"      WARNING: Failed to apply AI stamp: {e}")
+        return False
+
+
 def _generate_location_layer(
     prompt: str,
     base_image_name: str,
@@ -1330,6 +1423,19 @@ def run_template1_generation(
                     )
                 elif success:
                     poster_count += 1
+
+                    # Apply AI disclosure stamp to the generated poster
+                    output_file = _find_comfyui_output(filename_prefix)
+                    if output_file:
+                        stamp_svg = Path(__file__).resolve().parent.parent.parent.parent / "svg" / "AI_stamp_1.svg"
+                        if stamp_svg.exists():
+                            if _apply_ai_stamp(output_file, stamp_svg):
+                                print(f"      AI stamp applied to {output_file.name}")
+                            poster["generation"]["stamped"] = True
+                        else:
+                            print(f"      WARNING: AI stamp SVG not found at {stamp_svg}")
+                    else:
+                        print(f"      WARNING: Could not find output file for {filename_prefix}")
 
             print(f">>> Posters complete: {poster_count}/{len(poster_prompts)}")
 
