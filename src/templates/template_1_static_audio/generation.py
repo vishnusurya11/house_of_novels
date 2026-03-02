@@ -528,19 +528,33 @@ def _apply_ai_stamp(
         drawing.height = stamp_size
         drawing.scale(sx, sy)
 
-        # Render to PNG with magenta background for chroma keying.
-        # ReportLab always renders on an opaque canvas — magenta won't appear
-        # in any stamp design so we can safely key it out to restore transparency.
-        png_bytes = renderPM.drawToString(drawing, fmt="PNG", bg=0xFF00FF)
-        stamp = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        # Double-render alpha extraction: ReportLab always renders on an opaque
+        # canvas, so we render on white and black backgrounds then mathematically
+        # recover the true alpha channel. This handles anti-aliased edges cleanly
+        # (no chroma-key fringing) and works for any SVG content.
+        png_white = renderPM.drawToString(drawing, fmt="PNG", bg=0xFFFFFF)
+        png_black = renderPM.drawToString(drawing, fmt="PNG", bg=0x000000)
+        img_w = Image.open(io.BytesIO(png_white)).convert("RGB")
+        img_b = Image.open(io.BytesIO(png_black)).convert("RGB")
 
-        # Chroma-key: replace magenta background pixels with full transparency
-        pixels = stamp.load()
-        for py in range(stamp.height):
-            for px in range(stamp.width):
-                r, g, b, a = pixels[px, py]
-                if r > 240 and g < 20 and b > 240:
-                    pixels[px, py] = (0, 0, 0, 0)
+        stamp = Image.new("RGBA", img_w.size)
+        pw, pb, ps = img_w.load(), img_b.load(), stamp.load()
+        for y in range(stamp.height):
+            for x in range(stamp.width):
+                rw, gw, bw = pw[x, y]
+                rb, gb, bb = pb[x, y]
+                # alpha = 1 - avg(white_channel - black_channel) / 255
+                a = max(0, min(255, 255 - ((rw - rb) + (gw - gb) + (bw - bb)) // 3))
+                if a < 2:
+                    ps[x, y] = (0, 0, 0, 0)
+                else:
+                    # Recover true color: C = black_render / (alpha / 255)
+                    ps[x, y] = (
+                        min(255, rb * 255 // a),
+                        min(255, gb * 255 // a),
+                        min(255, bb * 255 // a),
+                        a,
+                    )
 
         # Compute position based on corner
         if corner == "top-right":
