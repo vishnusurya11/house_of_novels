@@ -34,7 +34,8 @@ from src.story_agents.image_prompt_agents import (
     StoryPosterPromptAgent,
     StoryPosterCriticAgent,
 )
-from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt
+from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt  # noqa: F401
+from src.story_agents.scene_image_prompt_agents import generate_layered_scene_image_prompt
 from src.story_agents.chapter_image_prompt_agents import generate_chapter_image_prompt
 from src.story_agents.thumbnail_agents import generate_thumbnail_prompts_via_council
 # from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
@@ -520,6 +521,11 @@ def run_phase2_prompts(
     chapter_outline = story.get("chapters", {})
     chapters = chapter_outline.get("chapters", [])
 
+    # Validate chapter structure before processing
+    if not isinstance(chapters, list):
+        print(f"  [WARN] chapters is {type(chapters).__name__}, expected list — resetting to []")
+        chapters = []
+
     # Count total scenes for progress reporting
     total_scenes = sum(len(ch.get("scenes", [])) for ch in chapters)
 
@@ -542,45 +548,36 @@ def run_phase2_prompts(
                 print(f"\n    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num} - {ch_title}...")
 
                 try:
-                    result = generate_scene_image_prompt(
+                    result = generate_layered_scene_image_prompt(
                         scene_data=scene,
-                        act_number=ch_num,  # Use chapter number as act context
+                        act_number=ch_num,
                         codex=codex,
                         visual_style=visual_style,
                         model=model,
                         max_revisions=2,
                     )
 
-                    # Add scene image prompt to scene data
-                    scene["scene_image_prompt"] = {
-                        "prompt": result["prompt"],
-                        "chapter_number": ch_num,
-                        "scene_number": sc_num,
-                        "location_name": result["location_name"],
-                        "location_id": result.get("location_id", ""),
-                        "characters_in_scene": result["characters_in_scene"],
-                        "character_ids": result.get("character_ids", []),
-                        "scene_summary": result["scene_summary"],
-                        "composition_notes": result["composition_notes"],
-                        "mood_lighting": result["mood_lighting"],
-                        "revision_count": result["revision_count"],
-                        "final_scores": result["final_scores"],
-                    }
+                    # Store layered result directly (already has prompt_type="layered")
+                    result["chapter_number"] = ch_num
+                    result["scene_number"] = sc_num
+                    scene["scene_image_prompt"] = result
 
                     # Store metadata
+                    char_names = [cl["character_name"] for cl in result.get("character_layers", [])]
                     phase2_metadata["scene_image_prompts"].append({
                         "chapter_number": ch_num,
                         "scene_number": sc_num,
                         "location": result["location_name"],
-                        "characters": result["characters_in_scene"],
+                        "characters": char_names,
+                        "total_layers": result["total_layers"],
                         "revision_count": result["revision_count"],
                         "final_scores": result["final_scores"],
                         "critique_history": result["critique_history"],
                     })
 
                     scene_image_prompt_count += 1
-                    avg_score = result["final_scores"]["overall"]
-                    print(f"        Score: {avg_score:.1f}/10 (revisions: {result['revision_count']})")
+                    avg_score = result["final_scores"].get("overall", 0)
+                    print(f"        Score: {avg_score:.1f}/10 (layers: {result['total_layers']}, revisions: {result['revision_count']})")
 
                 except Exception as e:
                     print(f"        ERROR: {e}")

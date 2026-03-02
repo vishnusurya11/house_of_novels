@@ -52,10 +52,12 @@ def run_phase3_generation(
     This function delegates to the template's run_generation() method.
     By default, uses template_1 (static_audio).
 
-    Step 1: Generate Audio (VibeVoice TTS for each sentence)
-    Step 2: Generate Static Images (characters, locations, posters)
-    Step 3: Generate Scene Images (scene-specific images)
-    Step 4: Generate Videos (DISABLED)
+    Step 0: Character Portraits (1024x1024 square)
+    Step 1: Location Images (1280x720 landscape)
+    Step 2: Scene Images (1280x720 landscape, one per scene)
+    Step 3: Thumbnails/Posters
+    Step 4: Audio (Qwen TTS Voice Clone)
+    Step 5: Video (future, disabled)
 
     Args:
         codex_path: Path to codex.json (must have prompts from Phase 4)
@@ -119,8 +121,8 @@ def main():
         "--steps",
         nargs="+",
         type=int,
-        choices=[1, 2, 3, 4],
-        help="Run specific steps (1: Audio, 2: Static Images, 3: Scene Images, 4: Videos [disabled])"
+        choices=[0, 1, 2, 3, 4, 5],
+        help="Run specific steps (0: Characters, 1: Locations, 2: Scenes, 3: Thumbnails, 4: Audio, 5: Video)"
     )
     parser.add_argument(
         "--timeout",

@@ -15,6 +15,9 @@ dependencies = [
     "moviepy>=2.0.0",
     "pydub>=0.25.1",
     "audioop-lts>=0.2.1",
+    "Pillow>=11.0.0",  # Image compositing (AI stamp overlay)
+    "svglib>=0.9.0",  # SVG → ReportLab drawing (pure Python)
+    "reportlab>=4.0",  # PDF/image rendering (used by svglib)
     "pyyaml>=6.0",  # Config file loading
     "diskcache>=5.6.0",  # LLM response caching for re-runs
     # YouTube upload (Phase 7)

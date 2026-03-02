@@ -24,30 +24,30 @@ class VisualStyle(TypedDict):
 
 # Style definitions following 2026 prompt engineering best practices
 VISUAL_STYLES: dict[str, VisualStyle] = {
-    # "anime": {
-    #     "name": "Anime",
-    #     "prefix": "Anime style illustration,",
-    #     "suffix": "anime art style, cel shaded, vibrant saturated colors, Studio Ghibli inspired, Japanese animation aesthetic, clean linework, expressive character design, high quality anime",
-    #     "description": "Japanese anime/manga style with cel shading and vibrant colors"
-    # },
-    # "cartoon": {
-    #     "name": "Cartoon",
-    #     "prefix": "Cartoon illustration,",
-    #     "suffix": "cartoon art style, hand-drawn animation quality, colorful and expressive, western animation aesthetic, bold outlines, playful character design, professional cartoon art",
-    #     "description": "Western cartoon style with bold lines and bright colors"
-    # },
+    "anime": {
+        "name": "Anime",
+        "prefix": "Anime style illustration,",
+        "suffix": "anime art style, cel shaded, vibrant saturated colors, Studio Ghibli inspired, Japanese animation aesthetic, clean linework, expressive character design, high quality anime",
+        "description": "Japanese anime/manga style with cel shading and vibrant colors"
+    },
+    "cartoon": {
+        "name": "Cartoon",
+        "prefix": "Cartoon illustration,",
+        "suffix": "cartoon art style, hand-drawn animation quality, colorful and expressive, western animation aesthetic, bold outlines, playful character design, professional cartoon art",
+        "description": "Western cartoon style with bold lines and bright colors"
+    },
     # "pixar_3d": {
     #     "name": "Pixar 3D",
     #     "prefix": "3D animated illustration,",
     #     "suffix": "3D render, Pixar animation style, Octane render, stylized 3D, DreamWorks quality, polished CGI animation",
     #     "description": "Pixar/DreamWorks style 3D CGI animation"
     # },
-    "ghibli": {
-        "name": "Studio Ghibli",
-        "prefix": "Studio Ghibli style illustration,",
-        "suffix": "Ghibli art style, Hayao Miyazaki inspired, soft watercolor aesthetic, nostalgic anime quality, hand-painted feel",
-        "description": "Studio Ghibli's signature soft watercolor style"
-    },
+    # "ghibli": {
+    #     "name": "Studio Ghibli",
+    #     "prefix": "Studio Ghibli style illustration,",
+    #     "suffix": "Ghibli art style, Hayao Miyazaki inspired, soft watercolor aesthetic, nostalgic anime quality, hand-painted feel",
+    #     "description": "Studio Ghibli's signature soft watercolor style"
+    # },
     # "oil_painting": {
     #     "name": "Oil Painting",
     #     "prefix": "Oil painting artwork,",

@@ -74,6 +74,16 @@ When designing a character's appearance:
 - Clothing choices reveal personality and status
 - Physical details tell the character's story
 
+## VISUAL DIFFERENTIATION (MANDATORY):
+Physical appearance must be visually DISTINCT from every other character.
+A character's psychology should manifest in UNIQUE physical traits:
+- Different posture (a confident leader stands differently from a broken outcast)
+- Different build (anxiety might make someone thin; comfort-eating might make another heavy)
+- Different grooming (meticulous vs. unkempt reflects different inner states)
+- Different movement style implied by build and posture
+If a visual slot has been pre-assigned, you MUST design within that slot.
+Psychology explains WHY this character looks the way the slot dictates.
+
 You always connect the external to the internal."""
 
     def propose_physical(
@@ -84,15 +94,17 @@ You always connect the external to the internal."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance based on psychological analysis."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design the physical appearance for this character based on their psychological state:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
 EMOTIONAL STATE: {adjective}
 GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design their appearance to REFLECT their psychological state.
@@ -104,6 +116,7 @@ Consider:
 - What physical signs of their emotional state would be visible?
 
 CRITICAL FORMAT:
+- gender: MUST be "{gender}" (pre-assigned, do not change)
 - body_build: How their life/state shaped their body (1-2 sentences)
 - height: Simple height description
 - hair_color: Hair color AND style that reflects their state
@@ -111,6 +124,8 @@ CRITICAL FORMAT:
 - eye_color: Eye color
 - distinguishing_features: ONLY if meaningful to their psychology, otherwise leave empty
 - costume: DETAILED clothing that tells their story (2-3 sentences)
+
+IMPORTANT: All description fields must use pronouns matching the character's gender ({gender}).
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -228,7 +243,43 @@ When designing:
 - Connect physical details to their role and occupation
 - Create memorable, specific details (not generic ones)
 
-You design characters that readers can VISUALIZE instantly."""
+## VISUAL DIFFERENTIATION RULES (MANDATORY):
+1. Apply the SILHOUETTE TEST: if this character is filled solid black,
+   can you tell them apart from every other character by outline alone?
+2. Apply the THUMBNAIL TEST: at 64x64 pixels (tiny image), can you STILL
+   tell this character apart from every other character?
+3. Assign a PRIMARY SHAPE to overall body proportions:
+   - CIRCULAR = warm, rounded, approachable
+   - RECTANGULAR = broad, sturdy, stable
+   - TRIANGULAR = angular, dynamic, sharp
+   - DIAMOND = narrow top/bottom, wide middle
+   No two characters should share the same primary shape.
+4. HAIR is the #1 visual identifier — vary color AND style AND length across cast.
+   Hair must be dramatically different between characters (not just shade variations).
+5. VARY body builds deliberately: wiry, stocky, lean, muscular, petite, lanky.
+   NOT everyone "average" or "athletic."
+6. VARY heights: short, below-average, above-average, tall. NOT everyone the same.
+7. COSTUME COLOR: No two characters should share the same dominant clothing color.
+   Each character gets their own color palette.
+8. FABRIC/TEXTURE: Vary materials — one leather, one linen, one silk, one wool, etc.
+9. SIGNATURE ACCESSORY: Each character must carry or wear ONE unique prop/accessory
+   that no other character shares (a specific hat, a piece of jewelry, a tool, a weapon).
+10. Scars are NOT a distinguishing feature unless the story demands it.
+    Prefer: freckles, dimples, calloused hands, ink stains, weather-beaten skin.
+11. If a visual slot has been pre-assigned, you MUST design within that slot.
+
+FORBIDDEN (these are lazy AI defaults):
+- Giving every character a facial scar
+- Making everyone "average height" with "dark hair"
+- Using "athletic build" as the default for everyone
+- Making all characters the same ethnicity unless the story requires it
+- Hazel eyes on more than one character
+- "Soft" or "deep" as eye color modifiers on everyone
+- Same dominant clothing color on multiple characters
+- Generic "dark cloak" or "simple tunic" on everyone
+- All characters in the same fabric/material
+
+You design characters that readers can VISUALIZE instantly — even as tiny thumbnails."""
 
     def propose_physical(
         self,
@@ -238,13 +289,15 @@ You design characters that readers can VISUALIZE instantly."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance focused on visual distinctiveness."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design a VISUALLY DISTINCTIVE physical appearance for this character:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
-GOAL: {goal}
+GOAL: {goal}{gender_line}
 WORLD SETTING: {setting}
 
 Create a design that makes this character INSTANTLY RECOGNIZABLE.
@@ -256,10 +309,12 @@ Focus on:
 4. Memorable, SPECIFIC details (not generic)
 
 CRITICAL RULES:
+- gender: MUST be "{gender}" (pre-assigned, do not change)
 - NO default scars, birthmarks, or mysterious marks unless they mean something
 - distinguishing_features should be EMPTY unless truly significant
 - Costume should be 2-3 sentences of SPECIFIC detail
 - Make them visually memorable
+- All description fields must use pronouns matching the character's gender ({gender})
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -371,7 +426,17 @@ When designing:
 - What visual cues hint at their narrative role?
 - How does their appearance set reader expectations?
 
-You design characters that FIT their narrative function."""
+## VISUAL DIFFERENTIATION (MANDATORY):
+Characters must be visually distinguishable in EVERY scene. If two characters
+stood side by side as silhouettes, readers must tell them apart INSTANTLY.
+Narrative role should drive CONTRASTING visual design:
+- Mentor vs. protege should look fundamentally different (not just older/younger)
+- Antagonist should be visually opposite to protagonist (different shape, color palette, build)
+- Allies should be visually distinct from each other — not a matching set
+- Think Disney/Pixar: every character has a unique silhouette and color scheme
+If a visual slot has been pre-assigned, you MUST design within that slot.
+
+You design characters that FIT their narrative function AND are visually unmistakable."""
 
     def propose_physical(
         self,
@@ -381,15 +446,17 @@ You design characters that FIT their narrative function."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance based on narrative function."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design physical appearance based on NARRATIVE FUNCTION:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type} (their function: protagonist/antagonist/supporting)
 PROTAGONIST STATE: {adjective}
 PROTAGONIST GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design appearance that reflects their NARRATIVE PURPOSE.
@@ -404,6 +471,8 @@ For {role_type}:
 - Protagonist: Design that readers root for
 - Antagonist: Design that creates meaningful opposition
 - Supporting: Design that complements/contrasts protagonist
+
+IMPORTANT: gender MUST be "{gender}" (pre-assigned). All descriptions must use matching pronouns.
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 
@@ -512,7 +581,17 @@ When designing:
 - How does their appearance invite connection?
 - What tells readers "this could be me"?
 
-You design characters that readers emotionally invest in."""
+## VISUAL DIFFERENTIATION (MANDATORY):
+Audiences identify characters by visual shorthand. Each character needs ONE
+iconic visual trait that no other character shares. Think Disney:
+- Elsa = ice-blue, single braid, tall and regal
+- Anna = warm colors, double braids, shorter and energetic
+- Rapunzel = impossibly long golden hair
+Every character needs that ONE thing an audience remembers instantly.
+If a visual slot has been pre-assigned, you MUST design within that slot.
+Make the character relatable AND visually unmistakable.
+
+You design characters that readers emotionally invest in AND can identify at a glance."""
 
     def propose_physical(
         self,
@@ -522,15 +601,17 @@ You design characters that readers emotionally invest in."""
         goal: str,
         stakes: str,
         setting: str,
+        gender: str = "",
     ) -> CharacterPhysicalProposal:
         """Propose physical appearance focused on audience connection."""
+        gender_line = f"\nCHARACTER GENDER: {gender}\nUse {gender} pronouns consistently (he/him/his for male, she/her/hers for female). Set gender=\"{gender}\" in the physical schema." if gender else ""
         prompt = f"""Design physical appearance that creates AUDIENCE CONNECTION:
 
 CHARACTER ROLE: {role}
 CHARACTER TYPE: {role_type}
 EMOTIONAL STATE: {adjective}
 GOAL: {goal}
-STAKES: {stakes}
+STAKES: {stakes}{gender_line}
 WORLD SETTING: {setting}
 
 Design appearance that makes readers CARE about this character.
@@ -544,6 +625,8 @@ Consider:
 For a {adjective} character:
 - What physical signs of their struggle would readers recognize?
 - How do we show their humanity through appearance?
+
+IMPORTANT: gender MUST be "{gender}" (pre-assigned). All descriptions must use matching pronouns.
 
 Provide a proposal matching CharacterPhysicalProposal schema."""
 

@@ -50,6 +50,19 @@ CRITICAL RULES - UNIQUE INDIVIDUALS ONLY:
 - Each character must be distinct enough to generate a unique portrait image
 - Generic group descriptions like "various villagers" or "the crowd" are FORBIDDEN
 
+VISUAL DIFFERENTIATION CHECKLIST (verify for EVERY character):
+- HAIR: Different color OR different style from every other character
+- BUILD: Different body type (wiry vs stocky vs lean vs muscular vs petite)
+- HEIGHT: Vary across cast (not everyone "average")
+- POSTURE: Different default bearing (military straight, hunched, relaxed lean)
+- SIGNATURE: One unique visual element no other character shares
+
+BANNED AI DEFAULTS:
+- Facial scars as a distinguishing feature (max 1 character in entire cast)
+- "Athletic build" on everyone
+- "Dark hair" on everyone
+- Empty body_build or ethnicity fields (these are REQUIRED)
+
 Guidelines:
 - Make descriptions specific, not generic
 - Physical traits should hint at personality/history

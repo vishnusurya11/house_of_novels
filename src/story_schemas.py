@@ -108,10 +108,174 @@ class PhysicalDescriptionSchema(BaseModel):
         description="Ethnic appearance/complexion (e.g., 'dark-skinned with West African features', 'pale with East Asian features', 'olive Mediterranean complexion')"
     )
     eye_color: str = Field(..., description="Eye color")
+    posture: str = Field(
+        default="",
+        description=(
+            "Default standing bearing reflecting personality: 'military-straight', "
+            "'scholarly hunch', 'predatory lean', 'casual slouch', 'guarded arms-crossed'"
+        )
+    )
     distinguishing_features: str = Field(
         default="",
-        description="OPTIONAL: Meaningful unique features only if relevant to story (NOT default scars). Leave empty if none."
+        description=(
+            "OPTIONAL: ONE truly unique visual feature only if it serves the story. "
+            "BANNED defaults: facial scars, mysterious marks, glowing eyes, heterochromia. "
+            "Good examples: 'gap between front teeth', 'constellation of freckles across nose', "
+            "'ink-stained fingers', 'single gray streak in dark hair'. "
+            "Leave EMPTY if character is distinguished by other means (hair, build, clothing)."
+        )
     )
+
+
+class CorrectedCharacterPhysical(BaseModel):
+    """A single character's corrected physical fields from cast audit."""
+    character_name: str = Field(..., description="Exact character name from input")
+    body_build: str = Field(..., description="Corrected body build")
+    height: str = Field(..., description="Corrected height")
+    hair_color: str = Field(..., description="Corrected hair color AND style")
+    eye_color: str = Field(..., description="Corrected eye color")
+    ethnicity: str = Field(..., description="Corrected ethnicity/complexion")
+    posture: str = Field(..., description="Corrected posture/bearing")
+    distinguishing_features: str = Field(default="", description="Corrected distinguishing feature (leave empty if not needed)")
+    changes_made: str = Field(
+        default="no changes",
+        description="Brief explanation of what was changed and why, or 'no changes' if character is fine"
+    )
+
+
+class CastVisualAuditResult(BaseModel):
+    """Result of validating visual uniqueness across the full character cast."""
+    characters: list[CorrectedCharacterPhysical] = Field(
+        ..., description="All characters with corrected physical fields. Characters with no collisions are returned unchanged."
+    )
+    collision_summary: str = Field(
+        default="",
+        description="Brief summary of all collisions found and fixes applied"
+    )
+
+
+# =============================================================================
+# Cast Contrast Matrix — pre-planned visual slots for character ensemble
+# =============================================================================
+
+
+class CharacterVisualSlot(BaseModel):
+    """Pre-assigned visual attributes for one character to ensure cast-wide contrast."""
+    character_role: str = Field(
+        ..., description="Character role/label (e.g., 'protagonist', 'antagonist', 'mentor', 'trickster')"
+    )
+    # Body & proportions
+    primary_shape: str = Field(
+        ..., description="Primary shape language for body proportions: 'circular' (warm, rounded), 'rectangular' (broad, sturdy), 'triangular' (angular, sharp), or 'diamond' (narrow top/bottom, wide middle)"
+    )
+    height_bracket: str = Field(
+        ..., description="Height bracket: 'short', 'below-average', 'above-average', or 'tall'"
+    )
+    body_archetype: str = Field(
+        ..., description="Body build archetype: 'petite', 'wiry', 'stocky', 'broad', 'lanky', or 'muscular'"
+    )
+    posture_archetype: str = Field(
+        ..., description="Default posture: 'military-straight', 'scholarly-hunched', 'relaxed-slouch', 'coiled-ready', 'regal-upright', or 'guarded-closed'"
+    )
+    # Hair
+    hair_color: str = Field(
+        ..., description="Assigned hair color (e.g., 'jet black', 'auburn red', 'platinum blonde', 'warm brown', 'silver-grey')"
+    )
+    hair_style: str = Field(
+        ..., description="Assigned hair style (e.g., 'tight braids', 'loose waves', 'buzzcut', 'slicked back', 'wild curls', 'neat bun')"
+    )
+    hair_length: str = Field(
+        ..., description="Hair length: 'cropped/shaved', 'short', 'medium', or 'long'"
+    )
+    # Eyes
+    eye_color: str = Field(
+        ..., description="Assigned eye color (e.g., 'dark brown', 'pale green', 'steel grey', 'amber', 'ice blue')"
+    )
+    eye_expression: str = Field(
+        ..., description="Default eye expression/shape (e.g., 'narrow and watchful', 'wide and curious', 'heavy-lidded', 'sharp and alert')"
+    )
+    # Clothing & costume
+    dominant_clothing_color: str = Field(
+        ..., description="Primary clothing color (e.g., 'deep burgundy', 'forest green', 'weathered tan', 'midnight blue')"
+    )
+    clothing_style: str = Field(
+        ..., description="Overall clothing style (e.g., 'layered robes', 'fitted military jacket', 'loose peasant tunic', 'elegant wrapped dress')"
+    )
+    fabric_texture: str = Field(
+        ..., description="Primary fabric/material (e.g., 'leather', 'linen', 'silk', 'wool', 'canvas', 'fur-trimmed')"
+    )
+    signature_accessory: str = Field(
+        ..., description="One unique accessory/prop this character always carries or wears (e.g., 'brass pocket watch', 'feathered hat', 'bone necklace', 'leather bracers')"
+    )
+    # Overall palette
+    color_family: str = Field(
+        ..., description="Overall color family: 'warm earth tones', 'cool blues/silvers', 'rich jewel tones', or 'muted neutrals'"
+    )
+
+
+class CastContrastMatrix(BaseModel):
+    """Pre-planned visual slots for the entire character cast to ensure maximum differentiation.
+
+    Generated BEFORE individual character creation. Each slot assigns unique
+    visual attributes so no two characters share the same shape, color, hair, etc.
+    """
+    characters: list[CharacterVisualSlot] = Field(
+        ..., description="One visual slot per character, all attributes unique across the cast"
+    )
+    design_rationale: str = Field(
+        ..., description="Brief explanation of how the visual slots create maximum contrast across the cast"
+    )
+
+
+# =============================================================================
+# Cast Ensemble Debate — multi-agent validation of full character cast
+# =============================================================================
+
+
+class CorrectedCharacterFull(BaseModel):
+    """A single character's corrected fields from ensemble debate — includes costume."""
+    character_name: str = Field(..., description="Exact character name")
+    body_build: str = Field(..., description="Corrected body build")
+    height: str = Field(..., description="Corrected height")
+    hair_color: str = Field(..., description="Corrected hair color AND style")
+    eye_color: str = Field(..., description="Corrected eye color")
+    ethnicity: str = Field(..., description="Corrected ethnicity/complexion")
+    posture: str = Field(..., description="Corrected posture/bearing")
+    distinguishing_features: str = Field(default="", description="Corrected distinguishing feature")
+    costume: str = Field(..., description="Corrected costume description (2-3 sentences)")
+    changes_made: str = Field(
+        default="no changes",
+        description="What was changed and why, or 'no changes'"
+    )
+
+
+class CastEnsembleProposal(BaseModel):
+    """One agent's proposed corrections for the entire cast's visual identity."""
+    agent_name: str = Field(..., description="Name of proposing agent")
+    methodology: str = Field(..., description="What this agent focused on (silhouette, costume, overall visual)")
+    characters: list[CorrectedCharacterFull] = Field(
+        ..., description="Corrected fields for ALL characters"
+    )
+    ensemble_analysis: str = Field(
+        ..., description="Analysis of the cast as a whole — what collisions exist and how fixes address them"
+    )
+
+
+class CastEnsembleCritique(BaseModel):
+    """One agent's critique of another agent's ensemble correction proposal."""
+    critic_agent: str = Field(..., description="Name of the critiquing agent")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+    strengths: str = Field(..., description="What this proposal does well")
+    weaknesses: str = Field(..., description="What could be improved")
+    suggestion: str = Field(..., description="Specific improvement suggestion")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class CastEnsembleVote(BaseModel):
+    """One agent's vote for the best ensemble correction proposal."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent voted for")
+    vote_reasoning: str = Field(..., description="Why this correction set is best")
 
 
 class CostumeDescription(BaseModel):
@@ -1395,7 +1559,292 @@ class TitleVote(BaseModel):
 
 
 # =============================================================================
-# Phase 4 Step 4: Scene Image Prompt Schemas
+# Phase 2 Step 4: Shot Type & Staging (internal data containers)
+# =============================================================================
+
+
+class ShotTypeSpec(BaseModel):
+    """Camera framing specification for a scene image.
+
+    Computed deterministically from scene metadata — NOT part of LLM output.
+    Injected into the composer prompt as a mandatory constraint.
+    """
+    shot_type: str = Field(
+        ...,
+        description=(
+            "One of: wide_establishing, full_shot, medium_wide, two_shot, "
+            "over_shoulder, crowd_tension, tracking_motion, insert_detail"
+        )
+    )
+    shot_description: str = Field(
+        ...,
+        description="Human-readable description of the shot framing"
+    )
+    camera_distance: str = Field(
+        ...,
+        description="Focal length keyword: '24mm wide-angle', '85mm telephoto', etc."
+    )
+    character_scale: str = Field(
+        ...,
+        description="How much of the frame characters occupy: '5-20% of frame', 'knees-up', etc."
+    )
+    composition_rule: str = Field(
+        ...,
+        description="Primary composition guideline for this shot type"
+    )
+    negative_composition: str = Field(
+        default="",
+        description="Framing to AVOID (e.g., 'NOT: close-up, portrait, headshot')"
+    )
+
+
+class CharacterStagingHint(BaseModel):
+    """Pre-computed action/body-language hint for a character in a scene.
+
+    Inferred from scene metadata before the LLM runs. Provides the composer
+    agent with staging direction so characters are not passively standing.
+    Internal only — NOT part of LLM structured output.
+    """
+    character_name: str = Field(..., description="Character name")
+    character_id: str = Field(default="", description="Character ID")
+    staging_role: str = Field(
+        default="",
+        description="Narrative staging role: 'focal POV character in dialogue', 'hidden observer', etc."
+    )
+    physical_action: str = Field(
+        default="",
+        description="Specific physical action: 'gripping coat cuff, half-turned toward speaker'"
+    )
+    body_language: str = Field(
+        default="",
+        description="Posture and tension: 'shoulders hunched, arms crossed defensively'"
+    )
+    attention_direction: str = Field(
+        default="",
+        description="Where the character is looking: 'eyes locked on the unseen leader'"
+    )
+    camera_awareness: str = Field(
+        default="unaware",
+        description="Relationship to camera: 'unaware' (candid, default), 'turned away', 'profile'"
+    )
+
+
+# =============================================================================
+# Phase 2 Step 4: Layered Scene Image Prompt Schemas
+# =============================================================================
+
+class LocationLayerPrompt(BaseModel):
+    """Layer 1: How to modify the pre-generated location image for this scene.
+
+    The base location image already exists from Phase 3 Step 2.
+    This prompt describes ONLY the changes needed for this specific scene
+    (time of day, weather, damage, atmospheric effects, etc.).
+    """
+    prompt: str = Field(
+        ...,
+        description=(
+            "100-200 word prompt describing ONLY how the base location image "
+            "should be modified for this scene. Focus on: time of day changes, "
+            "weather effects, lighting shifts, damage/destruction, seasonal "
+            "changes, crowd presence, fire, smoke, etc. Do NOT describe the "
+            "location from scratch — describe CHANGES to the existing image."
+        )
+    )
+    time_of_day: str = Field(
+        ...,
+        description="Time of day in this scene: dawn, morning, noon, afternoon, dusk, night"
+    )
+    weather_atmosphere: str = Field(
+        ...,
+        description="Weather and atmospheric conditions: clear, foggy, rainy, stormy, snowy, etc."
+    )
+    modifications: list[str] = Field(
+        ...,
+        description=(
+            "List of specific visual modifications to apply to the base location "
+            "(e.g., 'burning buildings in background', 'heavy rain', 'night with torchlight')"
+        )
+    )
+    requires_modification: bool = Field(
+        ...,
+        description=(
+            "False if the base location image can be used as-is (same time of day, "
+            "no weather changes, no damage). True if modifications are needed."
+        )
+    )
+
+
+class CharacterLayerPrompt(BaseModel):
+    """Layer 2+: How to place one character into the scene image.
+
+    The character's reference portrait provides their physical appearance.
+    This prompt describes ONLY pose, action, position, and expression —
+    never hair color, eye color, clothing, height, or build.
+    """
+    character_name: str = Field(
+        ...,
+        description="Character name from codex (for reference lookup, NOT used in image generation)"
+    )
+    character_id: str = Field(
+        ...,
+        description="Character ID from codex (e.g., 'char_001') for portrait image lookup"
+    )
+    prompt: str = Field(
+        ...,
+        description=(
+            "100-200 word prompt describing ONLY this character's placement in the scene. "
+            "Focus on: pose, action, expression, position in frame (left/center/right, "
+            "foreground/midground), interaction with environment or other characters. "
+            "Do NOT describe the character's physical appearance (the reference image "
+            "provides that). Do NOT describe the location (already in the image)."
+        )
+    )
+    position_in_frame: str = Field(
+        ...,
+        description="Where in the frame: 'left foreground', 'center midground', 'right background', etc."
+    )
+    action_pose: str = Field(
+        ...,
+        description="What the character is doing: 'standing with arms crossed', 'kneeling', 'running', etc."
+    )
+    emotional_expression: str = Field(
+        ...,
+        description="Facial expression and emotional state: 'determined gaze', 'tearful', 'smirking', etc."
+    )
+    is_primary: bool = Field(
+        ...,
+        description="True if this is the primary/focal character of the scene"
+    )
+    # Staging fields — optional with defaults for backward compatibility
+    staging_role: str = Field(
+        default="",
+        description="Narrative staging role: 'focal protagonist in crisis', 'hidden observer', etc."
+    )
+    body_language: str = Field(
+        default="",
+        description="Specific body language: 'shoulders hunched defensively', 'leaning forward aggressively'"
+    )
+    attention_direction: str = Field(
+        default="",
+        description="Where character is looking: 'eyes locked on opponent', 'gazing into distance'"
+    )
+    camera_awareness: str = Field(
+        default="unaware",
+        description="Relationship to camera: 'unaware' (candid, default), 'turned away', 'profile'"
+    )
+
+
+class LayeredSceneImagePromptSchema(BaseModel):
+    """Complete layered prompt structure for iterative scene image generation.
+
+    Instead of one monolithic prompt, the scene is built layer by layer:
+    1. Location layer modifies the pre-generated location image
+    2. Character layers add characters one-by-one using portrait references
+    """
+    location_name: str = Field(
+        ...,
+        description="Location name from codex"
+    )
+    location_id: str = Field(
+        default="",
+        description="Location ID from codex (e.g., 'loc_001') for base image lookup"
+    )
+    location_layer: LocationLayerPrompt = Field(
+        ...,
+        description="Layer 1: Location modification prompt"
+    )
+    character_layers: list[CharacterLayerPrompt] = Field(
+        ...,
+        description=(
+            "Layers 2+: Character placement prompts, ordered by importance. "
+            "First character is the primary/focal character."
+        )
+    )
+    scene_summary: str = Field(
+        ...,
+        description="Brief 1-2 sentence summary of the key visual moment"
+    )
+    composition_notes: str = Field(
+        ...,
+        description="Overall composition: camera angle, framing, depth of field"
+    )
+    mood_lighting: str = Field(
+        ...,
+        description="Overall mood and lighting description for the complete scene"
+    )
+    total_layers: int = Field(
+        ...,
+        description="Total number of generation layers (1 location + N characters)"
+    )
+    # Shot type fields — optional with defaults for backward compatibility
+    shot_type: str = Field(
+        default="full_shot",
+        description=(
+            "Camera shot type: wide_establishing, full_shot, medium_wide, two_shot, "
+            "over_shoulder, crowd_tension, tracking_motion, insert_detail"
+        )
+    )
+    camera_notes: str = Field(
+        default="",
+        description="Camera distance and framing notes (e.g., '24mm wide-angle, character occupies 10% of frame')"
+    )
+
+
+class LayeredSceneImageCritiqueSchema(BaseModel):
+    """Critique for layered scene image prompts."""
+    location_modification_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are location changes specific and actionable?"
+    )
+    character_placement_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are character poses, positions, and actions clearly described?"
+    )
+    no_redundancy_score: float = Field(
+        ..., ge=1, le=10,
+        description=(
+            "Score 10 if layers avoid redundant descriptions. Score low if character "
+            "layers describe physical appearance (handled by reference image) or "
+            "location details (handled by location layer)."
+        )
+    )
+    composition_score: float = Field(
+        ..., ge=1, le=10,
+        description="Do character positions create good visual composition together?"
+    )
+    action_clarity_score: float = Field(
+        ..., ge=1, le=10,
+        description="Are character actions and interactions clear and visually interesting?"
+    )
+    # Shot type and character action scoring — optional with defaults for backward compat
+    shot_adherence_score: float = Field(
+        default=8.0, ge=1, le=10,
+        description=(
+            "Does the composition match the specified shot type? "
+            "Character scale, camera distance, framing consistent with shot_type."
+        )
+    )
+    character_action_score: float = Field(
+        default=8.0, ge=1, le=10,
+        description=(
+            "Are characters actively DOING something, not just standing? "
+            "Body language specific, attention direction clear, actions match scene emotion."
+        )
+    )
+    overall_score: float = Field(..., description="Average of all 7 scores")
+    needs_revision: bool = Field(
+        ...,
+        description="True if any score < 7"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Specific improvements needed"
+    )
+
+
+# =============================================================================
+# DEPRECATED: Use LayeredSceneImagePromptSchema instead
+# Kept for backward compatibility with existing codex files
 # =============================================================================
 
 class SceneImagePromptSchema(BaseModel):
@@ -1420,7 +1869,7 @@ class SceneImagePromptSchema(BaseModel):
 
 
 class SceneImageCritiqueSchema(BaseModel):
-    """Critique for scene image prompts."""
+    """DEPRECATED: Use LayeredSceneImageCritiqueSchema instead. Critique for scene image prompts."""
     character_accuracy_score: float = Field(
         ..., ge=1, le=10,
         description="Physical descriptions match codex character profiles"

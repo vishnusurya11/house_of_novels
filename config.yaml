@@ -14,6 +14,8 @@ global:
   default_temperature: 0.7
   default_token_limit: 8000
   max_concurrent_api_calls: 25  # Global cap on simultaneous OpenRouter API calls (threading.Semaphore)
+  agent_call_timeout: 300   # Max seconds per parallel agent call (prevents hung LLM calls from blocking pipeline)
+  debate_timeout: 600       # Max seconds per full debate (outer timeout for Step 2 parallel debates)
 
 # Step-level configuration (Phase 1)
 steps:
@@ -168,3 +170,10 @@ steps:
       debate_level: true
       max_workers_proposals: 6
       max_workers_debates: 5
+
+# Phase 2: Prompt Generation
+phase2_scene_prompts:
+  max_character_layers: 3  # Max characters with individual layers; excess become background figures
+  shot_selection:
+    enabled: true       # Set false to disable shot selection (uses full_shot default)
+    force_shot_type:    # Override shot type for all scenes (for testing); null = auto-select

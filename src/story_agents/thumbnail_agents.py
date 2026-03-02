@@ -15,7 +15,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from langchain_openai import ChatOpenAI
 
-from src.config import DEFAULT_MODEL
+from src.config import DEFAULT_MODEL, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
 
 
 # =============================================================================
@@ -283,7 +283,7 @@ def run_single_agent(
     prompt_text = agent_info['prompt'].format(**context)
 
     # Create LLM
-    llm = ChatOpenAI(model=model, temperature=0.8)
+    llm = ChatOpenAI(model=model, temperature=0.8, api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
 
     # Generate
     response = llm.invoke(prompt_text)
@@ -319,7 +319,7 @@ def vote_on_prompts(
     )
 
     # Use a more analytical model for voting
-    llm = ChatOpenAI(model=model, temperature=0.3)
+    llm = ChatOpenAI(model=model, temperature=0.3, api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL)
 
     try:
         response = llm.invoke(voting_prompt)
