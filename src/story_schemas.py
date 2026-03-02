@@ -154,6 +154,130 @@ class CastVisualAuditResult(BaseModel):
     )
 
 
+# =============================================================================
+# Cast Contrast Matrix — pre-planned visual slots for character ensemble
+# =============================================================================
+
+
+class CharacterVisualSlot(BaseModel):
+    """Pre-assigned visual attributes for one character to ensure cast-wide contrast."""
+    character_role: str = Field(
+        ..., description="Character role/label (e.g., 'protagonist', 'antagonist', 'mentor', 'trickster')"
+    )
+    # Body & proportions
+    primary_shape: str = Field(
+        ..., description="Primary shape language for body proportions: 'circular' (warm, rounded), 'rectangular' (broad, sturdy), 'triangular' (angular, sharp), or 'diamond' (narrow top/bottom, wide middle)"
+    )
+    height_bracket: str = Field(
+        ..., description="Height bracket: 'short', 'below-average', 'above-average', or 'tall'"
+    )
+    body_archetype: str = Field(
+        ..., description="Body build archetype: 'petite', 'wiry', 'stocky', 'broad', 'lanky', or 'muscular'"
+    )
+    posture_archetype: str = Field(
+        ..., description="Default posture: 'military-straight', 'scholarly-hunched', 'relaxed-slouch', 'coiled-ready', 'regal-upright', or 'guarded-closed'"
+    )
+    # Hair
+    hair_color: str = Field(
+        ..., description="Assigned hair color (e.g., 'jet black', 'auburn red', 'platinum blonde', 'warm brown', 'silver-grey')"
+    )
+    hair_style: str = Field(
+        ..., description="Assigned hair style (e.g., 'tight braids', 'loose waves', 'buzzcut', 'slicked back', 'wild curls', 'neat bun')"
+    )
+    hair_length: str = Field(
+        ..., description="Hair length: 'cropped/shaved', 'short', 'medium', or 'long'"
+    )
+    # Eyes
+    eye_color: str = Field(
+        ..., description="Assigned eye color (e.g., 'dark brown', 'pale green', 'steel grey', 'amber', 'ice blue')"
+    )
+    eye_expression: str = Field(
+        ..., description="Default eye expression/shape (e.g., 'narrow and watchful', 'wide and curious', 'heavy-lidded', 'sharp and alert')"
+    )
+    # Clothing & costume
+    dominant_clothing_color: str = Field(
+        ..., description="Primary clothing color (e.g., 'deep burgundy', 'forest green', 'weathered tan', 'midnight blue')"
+    )
+    clothing_style: str = Field(
+        ..., description="Overall clothing style (e.g., 'layered robes', 'fitted military jacket', 'loose peasant tunic', 'elegant wrapped dress')"
+    )
+    fabric_texture: str = Field(
+        ..., description="Primary fabric/material (e.g., 'leather', 'linen', 'silk', 'wool', 'canvas', 'fur-trimmed')"
+    )
+    signature_accessory: str = Field(
+        ..., description="One unique accessory/prop this character always carries or wears (e.g., 'brass pocket watch', 'feathered hat', 'bone necklace', 'leather bracers')"
+    )
+    # Overall palette
+    color_family: str = Field(
+        ..., description="Overall color family: 'warm earth tones', 'cool blues/silvers', 'rich jewel tones', or 'muted neutrals'"
+    )
+
+
+class CastContrastMatrix(BaseModel):
+    """Pre-planned visual slots for the entire character cast to ensure maximum differentiation.
+
+    Generated BEFORE individual character creation. Each slot assigns unique
+    visual attributes so no two characters share the same shape, color, hair, etc.
+    """
+    characters: list[CharacterVisualSlot] = Field(
+        ..., description="One visual slot per character, all attributes unique across the cast"
+    )
+    design_rationale: str = Field(
+        ..., description="Brief explanation of how the visual slots create maximum contrast across the cast"
+    )
+
+
+# =============================================================================
+# Cast Ensemble Debate — multi-agent validation of full character cast
+# =============================================================================
+
+
+class CorrectedCharacterFull(BaseModel):
+    """A single character's corrected fields from ensemble debate — includes costume."""
+    character_name: str = Field(..., description="Exact character name")
+    body_build: str = Field(..., description="Corrected body build")
+    height: str = Field(..., description="Corrected height")
+    hair_color: str = Field(..., description="Corrected hair color AND style")
+    eye_color: str = Field(..., description="Corrected eye color")
+    ethnicity: str = Field(..., description="Corrected ethnicity/complexion")
+    posture: str = Field(..., description="Corrected posture/bearing")
+    distinguishing_features: str = Field(default="", description="Corrected distinguishing feature")
+    costume: str = Field(..., description="Corrected costume description (2-3 sentences)")
+    changes_made: str = Field(
+        default="no changes",
+        description="What was changed and why, or 'no changes'"
+    )
+
+
+class CastEnsembleProposal(BaseModel):
+    """One agent's proposed corrections for the entire cast's visual identity."""
+    agent_name: str = Field(..., description="Name of proposing agent")
+    methodology: str = Field(..., description="What this agent focused on (silhouette, costume, overall visual)")
+    characters: list[CorrectedCharacterFull] = Field(
+        ..., description="Corrected fields for ALL characters"
+    )
+    ensemble_analysis: str = Field(
+        ..., description="Analysis of the cast as a whole — what collisions exist and how fixes address them"
+    )
+
+
+class CastEnsembleCritique(BaseModel):
+    """One agent's critique of another agent's ensemble correction proposal."""
+    critic_agent: str = Field(..., description="Name of the critiquing agent")
+    target_agent: str = Field(..., description="Name of the agent being critiqued")
+    strengths: str = Field(..., description="What this proposal does well")
+    weaknesses: str = Field(..., description="What could be improved")
+    suggestion: str = Field(..., description="Specific improvement suggestion")
+    score: int = Field(..., ge=1, le=10, description="Score 1-10")
+
+
+class CastEnsembleVote(BaseModel):
+    """One agent's vote for the best ensemble correction proposal."""
+    voter_agent: str = Field(..., description="Name of the voting agent")
+    voted_for_agent: str = Field(..., description="Name of the agent voted for")
+    vote_reasoning: str = Field(..., description="Why this correction set is best")
+
+
 class CostumeDescription(BaseModel):
     """Detailed costume description for world-accurate character design."""
     primary_color: str = Field(

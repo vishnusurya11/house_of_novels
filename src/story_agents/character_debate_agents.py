@@ -74,6 +74,16 @@ When designing a character's appearance:
 - Clothing choices reveal personality and status
 - Physical details tell the character's story
 
+## VISUAL DIFFERENTIATION (MANDATORY):
+Physical appearance must be visually DISTINCT from every other character.
+A character's psychology should manifest in UNIQUE physical traits:
+- Different posture (a confident leader stands differently from a broken outcast)
+- Different build (anxiety might make someone thin; comfort-eating might make another heavy)
+- Different grooming (meticulous vs. unkempt reflects different inner states)
+- Different movement style implied by build and posture
+If a visual slot has been pre-assigned, you MUST design within that slot.
+Psychology explains WHY this character looks the way the slot dictates.
+
 You always connect the external to the internal."""
 
     def propose_physical(
@@ -236,20 +246,27 @@ When designing:
 ## VISUAL DIFFERENTIATION RULES (MANDATORY):
 1. Apply the SILHOUETTE TEST: if this character is filled solid black,
    can you tell them apart from every other character by outline alone?
-2. Assign a PRIMARY SHAPE to overall body proportions:
+2. Apply the THUMBNAIL TEST: at 64x64 pixels (tiny image), can you STILL
+   tell this character apart from every other character?
+3. Assign a PRIMARY SHAPE to overall body proportions:
    - CIRCULAR = warm, rounded, approachable
    - RECTANGULAR = broad, sturdy, stable
    - TRIANGULAR = angular, dynamic, sharp
+   - DIAMOND = narrow top/bottom, wide middle
    No two characters should share the same primary shape.
-3. HAIR is the #1 visual identifier — vary color AND style across cast.
-4. VARY body builds deliberately: wiry, stocky, lean, muscular, petite, lanky.
+4. HAIR is the #1 visual identifier — vary color AND style AND length across cast.
+   Hair must be dramatically different between characters (not just shade variations).
+5. VARY body builds deliberately: wiry, stocky, lean, muscular, petite, lanky.
    NOT everyone "average" or "athletic."
-5. VARY heights: short, average, tall. NOT everyone the same.
-6. Scars are NOT a distinguishing feature unless the story demands it.
-   Prefer: freckles, dimples, calloused hands, ink stains, weather-beaten skin.
-7. Each character should have ONE unmistakable visual signature that
-   no other character shares (a unique hairstyle, a striking eye color,
-   an unusual build, a specific posture).
+6. VARY heights: short, below-average, above-average, tall. NOT everyone the same.
+7. COSTUME COLOR: No two characters should share the same dominant clothing color.
+   Each character gets their own color palette.
+8. FABRIC/TEXTURE: Vary materials — one leather, one linen, one silk, one wool, etc.
+9. SIGNATURE ACCESSORY: Each character must carry or wear ONE unique prop/accessory
+   that no other character shares (a specific hat, a piece of jewelry, a tool, a weapon).
+10. Scars are NOT a distinguishing feature unless the story demands it.
+    Prefer: freckles, dimples, calloused hands, ink stains, weather-beaten skin.
+11. If a visual slot has been pre-assigned, you MUST design within that slot.
 
 FORBIDDEN (these are lazy AI defaults):
 - Giving every character a facial scar
@@ -258,8 +275,11 @@ FORBIDDEN (these are lazy AI defaults):
 - Making all characters the same ethnicity unless the story requires it
 - Hazel eyes on more than one character
 - "Soft" or "deep" as eye color modifiers on everyone
+- Same dominant clothing color on multiple characters
+- Generic "dark cloak" or "simple tunic" on everyone
+- All characters in the same fabric/material
 
-You design characters that readers can VISUALIZE instantly."""
+You design characters that readers can VISUALIZE instantly — even as tiny thumbnails."""
 
     def propose_physical(
         self,
@@ -406,7 +426,17 @@ When designing:
 - What visual cues hint at their narrative role?
 - How does their appearance set reader expectations?
 
-You design characters that FIT their narrative function."""
+## VISUAL DIFFERENTIATION (MANDATORY):
+Characters must be visually distinguishable in EVERY scene. If two characters
+stood side by side as silhouettes, readers must tell them apart INSTANTLY.
+Narrative role should drive CONTRASTING visual design:
+- Mentor vs. protege should look fundamentally different (not just older/younger)
+- Antagonist should be visually opposite to protagonist (different shape, color palette, build)
+- Allies should be visually distinct from each other — not a matching set
+- Think Disney/Pixar: every character has a unique silhouette and color scheme
+If a visual slot has been pre-assigned, you MUST design within that slot.
+
+You design characters that FIT their narrative function AND are visually unmistakable."""
 
     def propose_physical(
         self,
@@ -551,7 +581,17 @@ When designing:
 - How does their appearance invite connection?
 - What tells readers "this could be me"?
 
-You design characters that readers emotionally invest in."""
+## VISUAL DIFFERENTIATION (MANDATORY):
+Audiences identify characters by visual shorthand. Each character needs ONE
+iconic visual trait that no other character shares. Think Disney:
+- Elsa = ice-blue, single braid, tall and regal
+- Anna = warm colors, double braids, shorter and energetic
+- Rapunzel = impossibly long golden hair
+Every character needs that ONE thing an audience remembers instantly.
+If a visual slot has been pre-assigned, you MUST design within that slot.
+Make the character relatable AND visually unmistakable.
+
+You design characters that readers emotionally invest in AND can identify at a glance."""
 
     def propose_physical(
         self,

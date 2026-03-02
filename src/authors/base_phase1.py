@@ -166,6 +166,10 @@ from src.story_schemas import (
     CharacterSheetSchema,
     PhysicalDescriptionSchema,
     CastVisualAuditResult,
+    CastContrastMatrix,
+    CastEnsembleProposal,
+    CastEnsembleCritique,
+    CastEnsembleVote,
     NameProposal,
     NameCritiques,
     NameVote,
@@ -1358,7 +1362,8 @@ Return your response with COMPLETE data."""))
     def _create_character_parallel(self, char_idx: int, perspective: dict, central_question: str,
                                    story_prompt: str, setting_prompt: str, existing_names: list,
                                    codex: dict,
-                                   existing_characters_visual: list[dict] | None = None) -> tuple:
+                                   existing_characters_visual: list[dict] | None = None,
+                                   visual_slot: "CharacterVisualSlot | None" = None) -> tuple:
         """Create a single character in parallel with thread-safe logging.
 
         This method extracts the character creation logic to enable parallel processing.
@@ -1372,6 +1377,7 @@ Return your response with COMPLETE data."""))
             setting_prompt: Setting description
             existing_names: List of already used character names (thread-safe access managed by caller)
             codex: The codex dictionary (for context)
+            visual_slot: Pre-assigned visual attributes from the contrast matrix.
 
         Returns:
             tuple: (character_dict, character_debate_history)
@@ -1712,6 +1718,7 @@ Return your response with COMPLETE data."""))
             setting_prompt=setting_prompt,
             existing_characters_visual=existing_characters_visual,
             gender=gender,
+            visual_slot=visual_slot,
         )
 
         # Extract physical description from winning proposal
@@ -1775,6 +1782,109 @@ Return your response with COMPLETE data."""))
         tprint(f"\n[Worker-{worker_id}] >>> Character {char_idx+1} complete!")
 
         return (character, character_debate_history)
+
+    def _plan_cast_contrast_matrix(
+        self,
+        perspectives: list[dict],
+        setting_prompt: str,
+    ) -> CastContrastMatrix | None:
+        """Pre-plan visual contrast slots for the entire cast before creating characters.
+
+        Generates a CastContrastMatrix that assigns UNIQUE visual attributes to each
+        character role so no two characters share shape, color, hair, eyes, or costume.
+        This matrix is injected into each character's physical debate as a binding constraint.
+
+        Args:
+            perspectives: List of thematic perspectives from Step 0.
+            setting_prompt: The setting description for genre/world context.
+
+        Returns:
+            CastContrastMatrix with one CharacterVisualSlot per character, or None on failure.
+        """
+        from src.story_agents.base_story_agent import BaseStoryAgent
+
+        class CastContrastPlanner(BaseStoryAgent):
+            @property
+            def name(self) -> str:
+                return "CAST_CONTRAST_PLANNER"
+
+            @property
+            def role(self) -> str:
+                return "Cast Visual Contrast Planner"
+
+            @property
+            def system_prompt(self) -> str:
+                return """You are a professional character designer who pre-plans visual contrast
+across an entire cast BEFORE any individual character is designed.
+
+Your job: assign UNIQUE visual attributes to each character slot so that:
+1. No two characters share the SAME primary body shape
+2. No two characters share the SAME height bracket
+3. No two characters share the SAME body archetype
+4. No two characters share the SAME posture
+5. No two characters share the SAME hair color
+6. No two characters share the SAME hair style
+7. No two characters share the SAME hair length
+8. No two characters share the SAME eye color
+9. No two characters share the SAME dominant clothing color
+10. No two characters share the SAME clothing style
+11. No two characters share the SAME fabric/texture
+12. Each character has a UNIQUE signature accessory
+13. No two characters share the SAME color family
+
+Think like Disney/Pixar character designers — maximize visual contrast.
+The cast should pass the silhouette test (recognizable as solid black outlines)
+and the thumbnail test (distinguishable at 64x64 pixels).
+
+Ensure choices are appropriate for the story's setting and genre."""
+
+        planner = CastContrastPlanner(model=self.model)
+
+        # Build role descriptions from perspectives
+        role_lines = []
+        for i, p in enumerate(perspectives):
+            role_lines.append(
+                f"- Character {i+1}: {p['perspective_name']} "
+                f"(corner: {p['corner']}, position: {p['position']})"
+            )
+
+        prompt = f"""Pre-plan visual contrast slots for {len(perspectives)} characters.
+
+SETTING CONTEXT:
+{setting_prompt}
+
+CHARACTER ROLES:
+{chr(10).join(role_lines)}
+
+Assign COMPLETELY UNIQUE visual attributes to each character:
+- Body: shape language, height, build, posture (ALL different)
+- Hair: color, style, length (ALL different)
+- Eyes: color, expression (ALL different)
+- Costume: dominant color, style, fabric, signature accessory (ALL different)
+- Color family: overall palette (ALL different)
+
+RULES:
+- No attribute should be repeated across ANY two characters
+- Choices must fit the setting/genre (no sci-fi outfits in medieval fantasy)
+- Maximize silhouette contrast — different shapes, heights, postures
+- Maximize color contrast — spread across the spectrum
+- Each character gets ONE unique signature accessory that no one else has"""
+
+        tprint(f"\n>>> Planning cast contrast matrix for {len(perspectives)} characters...")
+
+        try:
+            matrix = planner.invoke_structured(prompt, CastContrastMatrix, max_tokens=8000)
+            tprint(f"  Contrast matrix planned: {len(matrix.characters)} slots")
+            for slot in matrix.characters:
+                tprint(
+                    f"    {slot.character_role}: {slot.primary_shape} / {slot.height_bracket} / "
+                    f"{slot.hair_color} / {slot.dominant_clothing_color}"
+                )
+            tprint(f"  Rationale: {matrix.design_rationale[:120]}...")
+            return matrix
+        except Exception as e:
+            tprint(f"  WARNING: Contrast matrix planning failed ({e}), proceeding without constraints")
+            return None
 
     def _validate_cast_visual_uniqueness(self, characters: list[dict]) -> list[dict]:
         """Validate and fix visual uniqueness across the full character cast.
@@ -1881,6 +1991,163 @@ Return your response with COMPLETE data."""))
 
         return characters
 
+    def _run_cast_ensemble_debate(self, characters: list[dict]) -> list[dict]:
+        """Run 3-agent ensemble debate to validate visual uniqueness across the full cast.
+
+        Replaces the single-LLM audit with a proper multi-agent debate:
+        1. PROPOSE: Each of 3 agents reviews ALL characters and proposes corrections
+        2. CROSS-CRITIQUE: Each agent critiques the other two proposals
+        3. VOTE: All 3 agents vote for the best correction set
+        4. APPLY: Winning corrections applied to character dicts
+
+        Args:
+            characters: List of character dicts from Step 1 creation.
+
+        Returns:
+            Updated character list with ensemble-validated visual corrections applied.
+        """
+        if len(characters) < 2:
+            return characters
+
+        from src.story_agents.cast_ensemble_agents import (
+            CastEnsembleVisualistAgent,
+            CastEnsembleSilhouetteAgent,
+            CastEnsembleCostumeAgent,
+        )
+
+        tprint(f"\n{'='*60}")
+        tprint("CAST ENSEMBLE DEBATE: Visual Uniqueness Validation")
+        tprint(f"{'='*60}")
+        tprint(f">>> 3 agents will review {len(characters)} characters simultaneously")
+
+        # Build character text for agents
+        char_lines = []
+        for ch in characters:
+            char_lines.append(
+                f"### {ch['name']} (ID: {ch.get('character_id', 'unknown')}, Role: {ch.get('role', 'unknown')})\n"
+                f"  Body build: {ch.get('body_build', 'unset')}\n"
+                f"  Height: {ch.get('height', 'unset')}\n"
+                f"  Hair: {ch.get('hair_color', 'unset')}\n"
+                f"  Eyes: {ch.get('eye_color', 'unset')}\n"
+                f"  Ethnicity: {ch.get('ethnicity', 'unset')}\n"
+                f"  Posture: {ch.get('posture', 'unset')}\n"
+                f"  Distinguishing features: {ch.get('distinguishing_features', 'none')}\n"
+                f"  Costume: {ch.get('costume', 'not yet designed')}"
+            )
+        characters_text = "\n\n".join(char_lines)
+
+        # Initialize ensemble agents
+        visualist = CastEnsembleVisualistAgent(model=self.model)
+        silhouette = CastEnsembleSilhouetteAgent(model=self.model)
+        costume = CastEnsembleCostumeAgent(model=self.model)
+        agents = [visualist, silhouette, costume]
+
+        # ─── ROUND 1: PROPOSE ───
+        tprint(f"\n>>> Round 1: Each agent proposes corrections...")
+        from concurrent.futures import ThreadPoolExecutor
+
+        proposals: list[CastEnsembleProposal] = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {
+                executor.submit(agent.propose_corrections, characters_text): agent
+                for agent in agents
+            }
+            for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "ensemble-debate/propose"):
+                try:
+                    proposal = future.result()
+                    proposals.append(proposal)
+                    agent = futures[future]
+                    tprint(f"  {agent.name}: {len(proposal.characters)} corrections proposed")
+                except Exception as e:
+                    tprint(f"  WARNING: Proposal failed: {e}")
+
+        if not proposals:
+            tprint("  WARNING: All proposals failed, skipping ensemble debate")
+            return characters
+
+        # ─── ROUND 2: CROSS-CRITIQUE ───
+        tprint(f"\n>>> Round 2: Cross-critiques ({len(proposals)} proposals)...")
+        critiques: list[CastEnsembleCritique] = []
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            critique_futures = {}
+            for i, critic_agent in enumerate(agents):
+                for j, target_proposal in enumerate(proposals):
+                    if target_proposal.agent_name == critic_agent.name:
+                        continue  # Don't critique your own proposal
+                    critique_futures[executor.submit(
+                        critic_agent.critique_proposal,
+                        target_agent=target_proposal.agent_name,
+                        proposal=target_proposal,
+                        characters_text=characters_text,
+                    )] = (critic_agent.name, target_proposal.agent_name)
+            for future in _safe_as_completed(critique_futures, _AGENT_TIMEOUT, "ensemble-debate/critique"):
+                try:
+                    critique = future.result()
+                    critiques.append(critique)
+                    critic, target = critique_futures[future]
+                    tprint(f"  {critic} → {target}: score {critique.score}/10")
+                except Exception:
+                    pass
+
+        # ─── ROUND 3: VOTE ───
+        tprint(f"\n>>> Round 3: Voting for best correction set...")
+        votes: list[CastEnsembleVote] = []
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            vote_futures = {
+                executor.submit(agent.vote_for_best, proposals): agent
+                for agent in agents
+            }
+            for future in _safe_as_completed(vote_futures, _AGENT_TIMEOUT, "ensemble-debate/vote"):
+                try:
+                    vote = future.result()
+                    votes.append(vote)
+                    tprint(f"  {vote.voter_agent} votes for: {vote.voted_for_agent}")
+                except Exception:
+                    pass
+
+        # ─── TALLY & APPLY ───
+        if not votes:
+            tprint("  WARNING: No votes received, using first proposal")
+            winner = proposals[0]
+        else:
+            vote_counts = Counter(v.voted_for_agent for v in votes)
+            winner_name = max(vote_counts, key=vote_counts.get)
+            winner = next(
+                (p for p in proposals if p.agent_name == winner_name),
+                proposals[0]
+            )
+
+        tprint(f"\n>>> Winner: {winner.agent_name}")
+        tprint(f"  Analysis: {winner.ensemble_analysis[:150]}...")
+
+        # Apply winning corrections to character dicts
+        corrections_by_name = {c.character_name: c for c in winner.characters}
+        changes_applied = 0
+
+        for ch in characters:
+            correction = corrections_by_name.get(ch["name"])
+            if not correction or correction.changes_made == "no changes":
+                continue
+
+            ch["body_build"] = correction.body_build
+            ch["height"] = correction.height
+            ch["hair_color"] = correction.hair_color
+            ch["eye_color"] = correction.eye_color
+            ch["ethnicity"] = correction.ethnicity
+            ch["posture"] = correction.posture
+            ch["distinguishing_features"] = correction.distinguishing_features
+            if correction.costume and correction.costume != "not yet designed":
+                ch["costume"] = correction.costume
+            changes_applied += 1
+            tprint(f"  Fixed {ch['name']}: {correction.changes_made}")
+
+        if changes_applied == 0:
+            tprint(f"  No collisions found — all characters visually distinct!")
+        else:
+            tprint(f"  Applied {changes_applied} correction(s) from ensemble debate")
+
+        return characters
+
     def step1_character_creation(self, codex: dict) -> Step1Result:
         """Generate psychologically complex characters from Step 0 thematic perspectives.
 
@@ -1955,6 +2222,9 @@ Return your response with COMPLETE data."""))
                 GhostThematicAgent,
             )
 
+            # Pre-plan visual contrast matrix for the entire cast
+            contrast_matrix = self._plan_cast_contrast_matrix(perspectives, setting_prompt)
+
             characters = []
             all_character_debates = []  # Track debate history separately for metadata
             existing_names = []
@@ -1977,6 +2247,11 @@ Return your response with COMPLETE data."""))
                 with ThreadPoolExecutor(max_workers=max_workers_characters) as executor:
                     # Create wrapper function to handle name locking
                     def create_character_with_lock(idx, perspective):
+                        # Get pre-assigned visual slot from contrast matrix
+                        visual_slot = None
+                        if contrast_matrix and idx < len(contrast_matrix.characters):
+                            visual_slot = contrast_matrix.characters[idx]
+
                         # Create character
                         char, debate = self._create_character_parallel(
                             char_idx=idx,
@@ -1985,7 +2260,8 @@ Return your response with COMPLETE data."""))
                             story_prompt=story_prompt,
                             setting_prompt=setting_prompt,
                             existing_names=existing_names,
-                            codex=codex
+                            codex=codex,
+                            visual_slot=visual_slot,
                         )
 
                         # Thread-safe name registration
@@ -2020,6 +2296,11 @@ Return your response with COMPLETE data."""))
 
                 # Sequential processing (use helper method for consistency)
                 for idx, perspective in enumerate(perspectives):
+                    # Get pre-assigned visual slot from contrast matrix
+                    visual_slot = None
+                    if contrast_matrix and idx < len(contrast_matrix.characters):
+                        visual_slot = contrast_matrix.characters[idx]
+
                     char, debate = self._create_character_parallel(
                         char_idx=idx,
                         perspective=perspective,
@@ -2029,6 +2310,7 @@ Return your response with COMPLETE data."""))
                         existing_names=existing_names,
                         codex=codex,
                         existing_characters_visual=characters if characters else None,
+                        visual_slot=visual_slot,
                     )
 
                     existing_names.append(char['name'])
@@ -2040,8 +2322,8 @@ Return your response with COMPLETE data."""))
                         codex["story"] = {}
                     codex["story"]["characters"] = characters
 
-            # Validate visual uniqueness across the full cast
-            characters = self._validate_cast_visual_uniqueness(characters)
+            # Validate visual uniqueness via 3-agent ensemble debate
+            characters = self._run_cast_ensemble_debate(characters)
             # Update codex with validated characters
             if "story" not in codex:
                 codex["story"] = {}
@@ -3560,6 +3842,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         setting_prompt: str,
         existing_characters_visual: list[dict] | None = None,
         gender: str = "",
+        visual_slot: "CharacterVisualSlot | None" = None,
     ) -> dict:
         """Run 4-agent physical appearance debate.
 
@@ -3569,6 +3852,8 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 design a character that visually contrasts with existing ones.
             gender: Pre-assigned gender for this character. Passed to debate agents
                 so physical descriptions use correct pronouns.
+            visual_slot: Pre-assigned visual attributes from the contrast matrix.
+                When provided, these act as BINDING constraints for this character's design.
         """
         # Build setting context with existing character contrast info
         effective_setting = setting_prompt
@@ -3598,6 +3883,29 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 "hair color, hair style, body build, height, eye color, posture, ethnicity."
             )
             effective_setting += "\n".join(lines)
+
+        # Inject pre-assigned visual slot constraints from contrast matrix
+        if visual_slot:
+            effective_setting += (
+                "\n\n## PRE-ASSIGNED VISUAL SLOT (BINDING — you MUST use these exact attributes):\n"
+                f"- Primary body shape: {visual_slot.primary_shape}\n"
+                f"- Height: {visual_slot.height_bracket}\n"
+                f"- Build: {visual_slot.body_archetype}\n"
+                f"- Posture: {visual_slot.posture_archetype}\n"
+                f"- Hair color: {visual_slot.hair_color}\n"
+                f"- Hair style: {visual_slot.hair_style}\n"
+                f"- Hair length: {visual_slot.hair_length}\n"
+                f"- Eye color: {visual_slot.eye_color}\n"
+                f"- Eye expression: {visual_slot.eye_expression}\n"
+                f"- Dominant clothing color: {visual_slot.dominant_clothing_color}\n"
+                f"- Clothing style: {visual_slot.clothing_style}\n"
+                f"- Fabric/texture: {visual_slot.fabric_texture}\n"
+                f"- Signature accessory: {visual_slot.signature_accessory}\n"
+                f"- Color family: {visual_slot.color_family}\n\n"
+                "These visual attributes were pre-planned to maximize contrast across the full cast. "
+                "You MUST incorporate them into your physical description. You may add creative details "
+                "but CANNOT deviate from the assigned shape, height, build, hair, eyes, or costume slots."
+            )
 
         # Initialize character debate agents
         psychologist = CharacterPsychologistAgent(model=self.model)
