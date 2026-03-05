@@ -42,6 +42,7 @@ uv run python -m py_compile src/story_agents/<file>.py  # Syntax check
 - Do NOT commit unless explicitly asked. No Claude attribution in commits
 - Do NOT push to remote unless explicitly asked
 - Do NOT amend or `--force` unless explicitly asked
+- Do NOT merge PRs via CLI (`gh pr merge`) — only create PRs with `gh pr create`. User reviews and merges manually in GitHub UI
 
 ## Critical Rules
 

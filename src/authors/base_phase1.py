@@ -212,19 +212,14 @@ from src.story_schemas import (
 _AGENT_TIMEOUT = float(GLOBAL_CONFIG.get("agent_call_timeout", 300))
 
 
-def _safe_as_completed(futures_collection, timeout, label=""):
-    """Wrapper around as_completed that catches TimeoutError gracefully.
+def _safe_as_completed(futures_collection, timeout=None, label=""):
+    """Wrapper around as_completed — waits for all futures to complete.
 
-    Yields completed futures just like as_completed(). When the timeout expires,
-    logs a warning and stops iteration instead of crashing the pipeline.
-    Already-collected results are preserved.
+    Yields completed futures just like as_completed(). No timeout — every task
+    runs to completion so no data is lost.
     """
-    from concurrent.futures import as_completed, TimeoutError
-    try:
-        yield from as_completed(futures_collection, timeout=timeout)
-    except TimeoutError:
-        pending = sum(1 for f in futures_collection if not f.done())
-        tprint(f"⏰ Timeout: {pending} task(s) still pending after {timeout:.0f}s — continuing with available results [{label}]")
+    from concurrent.futures import as_completed
+    yield from as_completed(futures_collection)
 
 if TYPE_CHECKING:
     from src.authors.base_author import BaseAuthor
@@ -8373,6 +8368,9 @@ RELIGION:
         setting_prompt: str,
         chapter_outline: dict,
         step6_model: str,
+        codex: dict = None,
+        codex_path: Optional[Path] = None,
+        codex_save_lock: Optional[object] = None,
     ) -> dict:
         """Process a single chapter's narrative writing (runs in parallel thread).
 
@@ -8449,6 +8447,39 @@ RELIGION:
         for scene_data in chapter["scenes"]:
             scene_num = scene_data["scene_number"]
             scene_id = f"ch{chapter_num}_scene{scene_num}"
+
+            # --- Change 4: Skip scenes that already have prose (from prior run or first pass) ---
+            existing_prose = scene_data.get("prose", "")
+            if existing_prose and len(existing_prose.split()) > 50:
+                tprint(f"\n[Worker-{worker_id}]     SKIP: Scene {scene_num} already has prose ({len(existing_prose.split())} words)")
+                previous_scene_prose = existing_prose
+                scene_word_count = scene_data.get("word_count", len(existing_prose.split()))
+                chapter_word_count += scene_word_count
+                # Rebuild scene_narrative from existing data so chapter result is complete
+                scene_narrative = {
+                    "scene_id": scene_id, "chapter_number": chapter_num,
+                    "scene_number": scene_num,
+                    "location": scene_data.get("location", "Unknown"),
+                    "location_id": scene_data.get("location_id", ""),
+                    "pov_character": scene_data.get("pov_character", "Unknown"),
+                    "characters_present": scene_data.get("characters", []),
+                    "character_ids": scene_data.get("character_ids", []),
+                    "time_of_day": scene_data.get("time_of_day", "day"),
+                    "prose": existing_prose, "word_count": scene_word_count,
+                    "synthesis_score": scene_data.get("synthesis_score", 0),
+                    "critique_average_score": scene_data.get("critique_average_score", 0),
+                    "critique_scores": scene_data.get("critique_scores", []),
+                    "synthesis_agent": scene_data.get("synthesis_agent", "EXISTING"),
+                    "dialogue_score": scene_data.get("dialogue_score", 0),
+                    "no_tag_test_passed": scene_data.get("no_tag_test_passed", False),
+                    "sensory_selection": scene_data.get("sensory_selection", []),
+                    "opening_type": scene_data.get("opening_type", ""),
+                    "active_voice_percentage": scene_data.get("active_voice_percentage", 0),
+                    "techniques_integrated": scene_data.get("techniques_integrated", []),
+                }
+                chapter_scenes_narrative.append(scene_narrative)
+                continue
+
             scene_start = time.time()
 
             tprint(f"\n[Worker-{worker_id}]     {self._elapsed(chapter_start)} --- SCENE {scene_num} ({scene_data.get('location', 'Unknown')}) ---")
@@ -8706,7 +8737,27 @@ RELIGION:
             }
             chapter_scenes_narrative.append(scene_narrative)
 
-            # Collect codex update (applied after all threads complete)
+            # --- Change 3: Save prose per-scene to codex immediately (thread-safe) ---
+            if codex is not None and codex_path is not None and codex_save_lock is not None:
+                with codex_save_lock:
+                    for codex_ch in chapter_outline.get("chapters", []):
+                        if codex_ch.get("chapter_number") == chapter_num:
+                            for codex_sc in codex_ch.get("scenes", []):
+                                if codex_sc.get("scene_id") == scene_id or (
+                                    codex_sc.get("chapter_number") == chapter_num
+                                    and codex_sc.get("scene_number") == scene_num
+                                ):
+                                    codex_sc["prose"] = final_prose
+                                    codex_sc["word_count"] = scene_word_count
+                                    codex_sc["synthesis_score"] = synthesis_score
+                                    codex_sc["critique_average_score"] = round(avg_critique_score, 2) if critique_scores else 0
+                                    codex_sc["dialogue_score"] = dialogue_analysis.overall_dialogue_score if dialogue_analysis else 0
+                                    codex_sc["no_tag_test_passed"] = dialogue_analysis.no_tag_test_passed if dialogue_analysis else False
+                                    break
+                            break
+                    self._save_checkpoint(codex, codex_path, f"step6 {scene_id}")
+
+            # Also keep deferred updates for the chapter result assembly
             codex_updates.append({
                 "chapter_number": chapter_num,
                 "scene_id": scene_id,
@@ -8756,7 +8807,7 @@ RELIGION:
             "codex_updates": codex_updates,
         }
 
-    def step6_narrative(self, codex: dict) -> Step6Result:
+    def step6_narrative(self, codex: dict, codex_path: Optional[Path] = None) -> Step6Result:
         """Write complete narrative via 5-agent multi-agent debate.
 
         Uses 5 narrative writing agents:
@@ -8858,9 +8909,17 @@ RELIGION:
 
             tprint(f"\n>>> Parallel chapter processing: enabled={parallel_enabled}, max_workers={max_workers}, chapters={len(chapters_list)}")
 
+            # Thread-safe lock for per-scene codex saves
+            import threading
+            codex_save_lock = threading.Lock()
+
             if parallel_enabled and len(chapters_list) > 1:
-                # PARALLEL: Process all chapters concurrently
-                with ThreadPoolExecutor(max_workers=max_workers) as chapter_executor:
+                # FIRST PASS: Parallel (all chapters, with timeout)
+                _debate_timeout = float(GLOBAL_CONFIG.get("debate_timeout", 600))
+                tprint(f">>> Chapter timeout: {_debate_timeout:.0f}s (debate_timeout)")
+
+                chapter_executor = ThreadPoolExecutor(max_workers=max_workers)
+                try:
                     future_to_chapter = {
                         chapter_executor.submit(
                             self._write_chapter_narrative,
@@ -8872,19 +8931,48 @@ RELIGION:
                             setting_prompt=setting_prompt,
                             chapter_outline=chapter_outline,
                             step6_model=step6_model,
+                            codex=codex,
+                            codex_path=codex_path,
+                            codex_save_lock=codex_save_lock,
                         ): ch["chapter_number"]
                         for ch in chapters_list
                     }
 
                     chapter_results = []
-                    for future in _safe_as_completed(future_to_chapter, _AGENT_TIMEOUT, "step6/chapters"):
+                    completed_ch_nums = set()
+                    for future in _safe_as_completed(future_to_chapter, _debate_timeout, "step6/chapters"):
                         ch_num = future_to_chapter[future]
                         try:
                             result = future.result()
                             chapter_results.append(result)
+                            completed_ch_nums.add(ch_num)
                             tprint(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} completed: {result['word_count']:,} words")
                         except Exception as e:
                             tprint(f"\n>>> {self._elapsed(step6_start)} Chapter {ch_num} FAILED: {str(e)[:100]}")
+                finally:
+                    # Don't hang waiting for slow chapters — cancel pending, move on
+                    chapter_executor.shutdown(wait=False, cancel_futures=True)
+
+                tprint(f"\n>>> {self._elapsed(step6_start)} Parallel pass: {len(chapter_results)}/{len(chapters_list)} chapters completed")
+
+                # SECOND PASS: Sequential retry for incomplete chapters
+                remaining = [ch for ch in chapters_list if ch["chapter_number"] not in completed_ch_nums]
+                if remaining:
+                    tprint(f"\n>>> {self._elapsed(step6_start)} RETRY PASS: {len(remaining)} chapters incomplete, retrying sequentially...")
+                    for ch in remaining:
+                        ch_num = ch["chapter_number"]
+                        try:
+                            result = self._write_chapter_narrative(
+                                chapter=ch, characters=characters, locations=locations,
+                                world=world, ticking_clock=ticking_clock,
+                                setting_prompt=setting_prompt, chapter_outline=chapter_outline,
+                                step6_model=step6_model, codex=codex, codex_path=codex_path,
+                                codex_save_lock=codex_save_lock,
+                            )
+                            chapter_results.append(result)
+                            tprint(f"\n>>> {self._elapsed(step6_start)} Retry Chapter {ch_num} completed: {result['word_count']:,} words")
+                        except Exception as e:
+                            tprint(f"\n>>> {self._elapsed(step6_start)} Retry Chapter {ch_num} FAILED: {str(e)[:100]}")
 
                 # Sort results by chapter number and assemble
                 chapter_results.sort(key=lambda r: r["chapter_num"])
@@ -8921,6 +9009,9 @@ RELIGION:
                         setting_prompt=setting_prompt,
                         chapter_outline=chapter_outline,
                         step6_model=step6_model,
+                        codex=codex,
+                        codex_path=codex_path,
+                        codex_save_lock=codex_save_lock,
                     )
                     chapters_narrative.append(result["chapter_narrative"])
                     all_scene_narratives.extend(result["scene_narratives"])
@@ -8967,6 +9058,20 @@ RELIGION:
             tprint(f">>> Total Words: {total_word_count:,}")
             tprint(f">>> Avg Words/Scene: {avg_words:.0f}")
             tprint(f">>> Estimated Reading Time: {total_word_count // 200} minutes")
+
+            # Guard: step 6 must produce prose — 0 scenes means it failed
+            if not all_scene_narratives:
+                tprint(">>> STEP 6 FAILED: 0 scenes produced — likely a timeout or API issue")
+                return Step6Result(
+                    narrative=narrative,
+                    scene_debates=scene_debates,
+                    total_scenes_written=0,
+                    total_word_count=0,
+                    average_words_per_scene=0,
+                    success=False,
+                    error="Step 6 produced 0 scenes — chapter processing may have timed out",
+                    duration_seconds=round(duration, 2),
+                )
 
             return Step6Result(
                 narrative=narrative,
@@ -9101,7 +9206,16 @@ RELIGION:
                         {}
                     )
 
-                    # Run all 5 critics (parallel)
+                    # Run all 5 critics (parallel) with per-critic timeout
+                    _CRITIC_TIMEOUT = 120  # 2 minutes per critic
+
+                    def _get_critic(future, name):
+                        try:
+                            return future.result(timeout=_CRITIC_TIMEOUT)
+                        except Exception as e:
+                            tprint(f"    {scene_id}: {name} critic failed: {e}")
+                            return None
+
                     with ThreadPoolExecutor(max_workers=5) as crit_executor:
                         f_prose = crit_executor.submit(prose_critic.critique, prose, scene_id)
                         f_voice = crit_executor.submit(voice_critic.critique, prose, scene_chars, scene_id)
@@ -9109,38 +9223,44 @@ RELIGION:
                         f_pacing = crit_executor.submit(pacing_critic.critique, prose, scene, ticking_clock, scene_id)
                         f_emot = crit_executor.submit(emotional_critic.critique, prose, scene_id)
 
-                        prose_crit = f_prose.result()
-                        voice_crit = f_voice.result()
-                        cont_crit = f_cont.result()
-                        pacing_crit = f_pacing.result()
-                        emot_crit = f_emot.result()
+                        prose_crit = _get_critic(f_prose, "prose")
+                        voice_crit = _get_critic(f_voice, "voice")
+                        cont_crit = _get_critic(f_cont, "continuity")
+                        pacing_crit = _get_critic(f_pacing, "pacing")
+                        emot_crit = _get_critic(f_emot, "emotional")
 
-                    # Calculate average score
-                    avg_score = (
-                        prose_crit.overall_score +
-                        voice_crit.overall_voice_score +
-                        cont_crit.overall_continuity_score +
-                        pacing_crit.overall_pacing_score +
-                        emot_crit.overall_emotional_score
-                    ) / 5
+                    # If all critics failed, keep original prose
+                    critics = [prose_crit, voice_crit, cont_crit, pacing_crit, emot_crit]
+                    if all(c is None for c in critics):
+                        tprint(f"    {scene_id}: All critics failed — keeping original prose")
+                        return {"skipped": True, "scene_id": scene_id}
 
-                    tprint(f"    {scene_id}: avg {avg_score:.1f}/10 (P:{prose_crit.overall_score:.0f} V:{voice_crit.overall_voice_score:.0f} C:{cont_crit.overall_continuity_score:.0f} Pc:{pacing_crit.overall_pacing_score:.0f} E:{emot_crit.overall_emotional_score:.0f})")
+                    # Calculate average score (use 7.0 default for failed critics)
+                    _DEFAULT_SCORE = 7.0
+                    p_score = prose_crit.overall_score if prose_crit else _DEFAULT_SCORE
+                    v_score = voice_crit.overall_voice_score if voice_crit else _DEFAULT_SCORE
+                    c_score = cont_crit.overall_continuity_score if cont_crit else _DEFAULT_SCORE
+                    pc_score = pacing_crit.overall_pacing_score if pacing_crit else _DEFAULT_SCORE
+                    e_score = emot_crit.overall_emotional_score if emot_crit else _DEFAULT_SCORE
+                    avg_score = (p_score + v_score + c_score + pc_score + e_score) / 5
 
-                    # Bundle critiques
+                    tprint(f"    {scene_id}: avg {avg_score:.1f}/10 (P:{p_score:.0f} V:{v_score:.0f} C:{c_score:.0f} Pc:{pc_score:.0f} E:{e_score:.0f})")
+
+                    # Bundle critiques (None-safe)
                     critique_bundle = {
                         "scene_id": scene_id,
-                        "prose_critique": prose_crit.model_dump(),
-                        "voice_critique": voice_crit.model_dump(),
-                        "continuity_critique": cont_crit.model_dump(),
-                        "pacing_critique": pacing_crit.model_dump(),
-                        "emotional_critique": emot_crit.model_dump(),
+                        "prose_critique": prose_crit.model_dump() if prose_crit else None,
+                        "voice_critique": voice_crit.model_dump() if voice_crit else None,
+                        "continuity_critique": cont_crit.model_dump() if cont_crit else None,
+                        "pacing_critique": pacing_crit.model_dump() if pacing_crit else None,
+                        "emotional_critique": emot_crit.model_dump() if emot_crit else None,
                         "average_score": round(avg_score, 2),
                         "needs_revision": (
-                            prose_crit.needs_revision or
-                            voice_crit.needs_revision or
-                            cont_crit.needs_revision or
-                            pacing_crit.needs_revision or
-                            emot_crit.needs_revision
+                            (prose_crit.needs_revision if prose_crit else False) or
+                            (voice_crit.needs_revision if voice_crit else False) or
+                            (cont_crit.needs_revision if cont_crit else False) or
+                            (pacing_crit.needs_revision if pacing_crit else False) or
+                            (emot_crit.needs_revision if emot_crit else False)
                         ),
                     }
 
@@ -9171,25 +9291,26 @@ RELIGION:
                             for c in scene_chars
                         ])
 
-                        # Revise the scene
+                        # Revise the scene (with timeout to prevent hanging)
+                        _REVISION_TIMEOUT = 120  # 2 minutes for revision LLM call
                         try:
-                            revised = reviser.revise_scene(
-                                scene,
-                                critique_text,
-                                char_context,
-                                str(scene_loc)[:1000]
-                            )
+                            with ThreadPoolExecutor(max_workers=1) as rev_executor:
+                                rev_future = rev_executor.submit(
+                                    reviser.revise_scene,
+                                    scene, critique_text, char_context, str(scene_loc)[:1000]
+                                )
+                                revised = rev_future.result(timeout=_REVISION_TIMEOUT)
                             revised_prose = revised.to_prose()
                             scene["prose"] = revised_prose
                             scene["word_count"] = len(revised_prose.split())
                             scene["revision_notes"] = {
                                 "pass": pass_num + 1,
                                 "critics_flagged": [
-                                    "prose" if prose_crit.needs_revision else None,
-                                    "voice" if voice_crit.needs_revision else None,
-                                    "continuity" if cont_crit.needs_revision else None,
-                                    "pacing" if pacing_crit.needs_revision else None,
-                                    "emotional" if emot_crit.needs_revision else None,
+                                    name for name, crit in [
+                                        ("prose", prose_crit), ("voice", voice_crit),
+                                        ("continuity", cont_crit), ("pacing", pacing_crit),
+                                        ("emotional", emot_crit),
+                                    ] if crit and crit.needs_revision
                                 ],
                             }
                             result["revised"] = True
@@ -9201,11 +9322,11 @@ RELIGION:
                                 "prose_after": revised_prose,
                                 "score_before": round(avg_score, 2),
                                 "critiques_summary": {
-                                    "prose_score": prose_crit.overall_score,
-                                    "voice_score": voice_crit.overall_voice_score,
-                                    "continuity_score": cont_crit.overall_continuity_score,
-                                    "pacing_score": pacing_crit.overall_pacing_score,
-                                    "emotional_score": emot_crit.overall_emotional_score,
+                                    "prose_score": p_score,
+                                    "voice_score": v_score,
+                                    "continuity_score": c_score,
+                                    "pacing_score": pc_score,
+                                    "emotional_score": e_score,
                                 }
                             }
                             tprint(f"    {scene_id}: REVISED ({scene['word_count']} words)")
@@ -9249,6 +9370,20 @@ RELIGION:
                         except Exception as e:
                             scene, ch_num = futures[future]
                             tprint(f"    Scene {scene.get('scene_id', '?')} FAILED: {e}")
+
+            # Fail if zero scenes were processed (all timed out or errored)
+            if not scores_before and all_scenes:
+                return Step7Result(
+                    narrative=chapter_outline,
+                    critiques=[],
+                    scenes_revised=0,
+                    revision_passes=num_passes,
+                    average_score_before=0,
+                    average_score_after=0,
+                    success=False,
+                    error=f"All {len(all_scenes)} scene revision tasks failed or timed out.",
+                    duration_seconds=round(time.time() - start_time, 2),
+                )
 
             # Store critiques in metadata (not story)
             if "metadata" not in codex:
@@ -9315,38 +9450,39 @@ RELIGION:
 
     def _build_critique_text(
         self,
-        prose_crit: ProsePolishCritique,
-        voice_crit: CharacterVoiceCritique,
-        cont_crit: ContinuityCritique,
-        pacing_crit: PacingTensionCritique,
-        emot_crit: EmotionalResonanceCritique,
+        prose_crit: "ProsePolishCritique | None",
+        voice_crit: "CharacterVoiceCritique | None",
+        cont_crit: "ContinuityCritique | None",
+        pacing_crit: "PacingTensionCritique | None",
+        emot_crit: "EmotionalResonanceCritique | None",
         cut_aggressively: bool = False,
     ) -> str:
-        """Build critique text for the reviser agent."""
+        """Build critique text for the reviser agent. Skips None critics gracefully."""
         sections = []
 
         # Prose issues (using Pydantic model attributes)
-        if prose_crit.filter_words_found:
-            sections.append(
-                "FILTER WORDS TO REMOVE:\n" +
-                "\n".join([f"- {fw.text}" for fw in prose_crit.filter_words_found[:5]])
-            )
-        if prose_crit.cliches_found:
-            sections.append(
-                "CLICHES TO REPLACE:\n" +
-                "\n".join([f"- {c.text}" for c in prose_crit.cliches_found[:5]])
-            )
-        if prose_crit.specific_rewrites:
-            sections.append(
-                "SPECIFIC REWRITES:\n" +
-                "\n".join([
-                    f"- '{r.original}' -> '{r.suggestion}'"
-                    for r in prose_crit.specific_rewrites[:5]
-                ])
-            )
+        if prose_crit:
+            if prose_crit.filter_words_found:
+                sections.append(
+                    "FILTER WORDS TO REMOVE:\n" +
+                    "\n".join([f"- {fw.text}" for fw in prose_crit.filter_words_found[:5]])
+                )
+            if prose_crit.cliches_found:
+                sections.append(
+                    "CLICHES TO REPLACE:\n" +
+                    "\n".join([f"- {c.text}" for c in prose_crit.cliches_found[:5]])
+                )
+            if prose_crit.specific_rewrites:
+                sections.append(
+                    "SPECIFIC REWRITES:\n" +
+                    "\n".join([
+                        f"- '{r.original}' -> '{r.suggestion}'"
+                        for r in prose_crit.specific_rewrites[:5]
+                    ])
+                )
 
         # Voice issues
-        if voice_crit.dialogue_fixes:
+        if voice_crit and voice_crit.dialogue_fixes:
             sections.append(
                 "DIALOGUE FIXES:\n" +
                 "\n".join([
@@ -9356,7 +9492,7 @@ RELIGION:
             )
 
         # Continuity issues
-        if cont_crit.character_inconsistencies:
+        if cont_crit and cont_crit.character_inconsistencies:
             sections.append(
                 "CHARACTER FIXES:\n" +
                 "\n".join([
@@ -9366,28 +9502,30 @@ RELIGION:
             )
 
         # Pacing issues
-        if pacing_crit.slow_spots:
-            sections.append(
-                "SLOW SPOTS TO TIGHTEN:\n" +
-                "\n".join([
-                    f"- Paragraph {ss.paragraph}: {ss.issue}"
-                    for ss in pacing_crit.slow_spots[:3]
-                ])
-            )
-        if not pacing_crit.ticking_clock_present:
-            sections.append("ADD TICKING CLOCK: Reference the urgency/deadline")
+        if pacing_crit:
+            if pacing_crit.slow_spots:
+                sections.append(
+                    "SLOW SPOTS TO TIGHTEN:\n" +
+                    "\n".join([
+                        f"- Paragraph {ss.paragraph}: {ss.issue}"
+                        for ss in pacing_crit.slow_spots[:3]
+                    ])
+                )
+            if not pacing_crit.ticking_clock_present:
+                sections.append("ADD TICKING CLOCK: Reference the urgency/deadline")
 
         # Emotional issues
-        if emot_crit.skim_risk_areas:
-            sections.append(
-                "ENGAGEMENT FIXES:\n" +
-                "\n".join([
-                    f"- Paragraph {sr.paragraph}: {sr.issue}"
-                    for sr in emot_crit.skim_risk_areas[:3]
-                ])
-            )
-        if emot_crit.ending_resonance_type == "weak":
-            sections.append("SCENE ENDING: Add resonance (image, question, ache, or realization)")
+        if emot_crit:
+            if emot_crit.skim_risk_areas:
+                sections.append(
+                    "ENGAGEMENT FIXES:\n" +
+                    "\n".join([
+                        f"- Paragraph {sr.paragraph}: {sr.issue}"
+                        for sr in emot_crit.skim_risk_areas[:3]
+                    ])
+                )
+            if emot_crit.ending_resonance_type == "weak":
+                sections.append("SCENE ENDING: Add resonance (image, question, ache, or realization)")
 
         # Aggressive cutting instruction
         if cut_aggressively:
@@ -9663,6 +9801,74 @@ RELIGION:
             json.dump(codex, f, indent=2, ensure_ascii=False)
         tprint(f">>> Checkpoint saved ({step_label})")
 
+    def _finalize_run(
+        self,
+        codex: dict,
+        results: dict,
+        steps_completed: list[int],
+        step_timings: dict,
+        pipeline_start: float,
+        aborted_at_step: int | None = None,
+        abort_reason: str | None = None,
+    ) -> dict:
+        """Finalize a pipeline run: aggregate tokens, update metadata, return results.
+
+        Called both at normal completion and on step failure abort.
+        """
+        # Aggregate token usage across all completed steps
+        step_tokens = {}
+        total_tokens = 0
+        total_calls = 0
+        for step_name, result in results.items():
+            if hasattr(result, "token_usage") and result.token_usage:
+                step_tokens[step_name] = result.token_usage
+                total_tokens += result.token_usage.get("total_tokens", 0)
+                total_calls += result.token_usage.get("call_count", 0)
+
+        # Update metadata with phase completion info
+        codex["metadata"]["phase_1"].update({
+            "phase": 1,
+            "name": "Author-Driven Story Creation",
+            "author_id": self.author.id,
+            "author_name": self.author.name,
+            "structure_used": self.author.preferred_structure,
+            "steps_completed": steps_completed,
+            "step_timings": step_timings,
+            "step_tokens": step_tokens,
+            "total_tokens": total_tokens,
+            "total_calls": total_calls,
+        })
+
+        # Add debate metadata for completed steps
+        if "step1" in results and results["step1"].success:
+            codex["metadata"]["phase_1"]["character_debates"] = results["step1"].character_debates
+        if "step5" in results and results["step5"].success:
+            codex["metadata"]["phase_1"]["chapter_scene_debates"] = results["step5"].debates
+        if "step6" in results and results["step6"].success:
+            codex["metadata"]["phase_1"]["narrative_debates"] = results["step6"].scene_debates
+        if "step8" in results and results["step8"].success:
+            codex["metadata"]["phase_1"]["title_naming"] = {
+                "book_title": results["step8"].book_title,
+                "chapter_titles": results["step8"].chapter_titles,
+                "book_debate": results["step8"].book_debate,
+            }
+
+        if aborted_at_step is not None:
+            total_time = time.time() - pipeline_start
+            tprint(f"\n{'='*60}")
+            tprint(f"⛔ PIPELINE ABORTED at step {aborted_at_step} after {total_time:.0f}s")
+            tprint(f"   Reason: {abort_reason}")
+            tprint(f"   Steps completed: {steps_completed}")
+            tprint(f"{'='*60}")
+
+        return {
+            "steps_completed": steps_completed,
+            "step_timings": step_timings,
+            "results": results,
+            "aborted_at_step": aborted_at_step,
+            "abort_reason": abort_reason,
+        }
+
     def run(
         self,
         codex: dict,
@@ -9724,7 +9930,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 0")
                 tprint(f"{self._elapsed(pipeline_start)} Step 0 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 0 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 0 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 0 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=0, abort_reason=result.error)
 
         # Step 1: Character Creation (Theme → Characters)
         if 1 in steps_to_run:
@@ -9743,7 +9952,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 1")
                 tprint(f"{self._elapsed(pipeline_start)} Step 1 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 1 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 1 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 1 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=1, abort_reason=result.error)
 
         # Step 2: Story Shape & Genre Selection
         if 2 in steps_to_run:
@@ -9773,7 +9985,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 2")
                 tprint(f"{self._elapsed(pipeline_start)} Step 2 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 2 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 2 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 2 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=2, abort_reason=result.error)
 
         # Step 3: Plot Structure (Character Arc + Story Beats)
         if 3 in steps_to_run:
@@ -9799,7 +10014,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 3")
                 tprint(f"{self._elapsed(pipeline_start)} Step 3 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 3 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 3 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 3 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=3, abort_reason=result.error)
 
         # Step 4: World Building (World Pressure + Dynamic Major Locations)
         if 4 in steps_to_run:
@@ -9823,7 +10041,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 4")
                 tprint(f"{self._elapsed(pipeline_start)} Step 4 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 4 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 4 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 4 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=4, abort_reason=result.error)
 
         # Step 5: Chapter & Scene Breakdown
         if 5 in steps_to_run:
@@ -9889,7 +10110,10 @@ RELIGION:
                     tprint(">>> Continuing to Step 6 with original chapter outline...")
 
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 5 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 5 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 5 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=5, abort_reason=result.error)
 
         # Step 6: Scene Narrative Writing
         if 6 in steps_to_run:
@@ -9897,7 +10121,7 @@ RELIGION:
             tprint(f"{self._elapsed(pipeline_start)} STEP 6: Scene Narrative Writing (5-Agent Multi-Agent Debate)")
             tprint(f"{'='*60}")
 
-            result = self.step6_narrative(codex)
+            result = self.step6_narrative(codex, codex_path=codex_path)
             results["step6"] = result
 
             if result.success:
@@ -9949,7 +10173,10 @@ RELIGION:
                 self._save_checkpoint(codex, codex_path, "step 6")
                 tprint(f"{self._elapsed(pipeline_start)} Step 6 COMPLETE ({result.duration_seconds:.0f}s)")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 6 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 6 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 6 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=6, abort_reason=result.error)
 
         # Step 7: Narrative Revision with 5-Critic System
         if 7 in steps_to_run:
@@ -9965,7 +10192,10 @@ RELIGION:
                 step_timings["step7_revision"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 7")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 7 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 7 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 7 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=7, abort_reason=result.error)
 
         # Step 8: Book & Chapter Title Naming
         if 8 in steps_to_run:
@@ -9981,63 +10211,14 @@ RELIGION:
                 step_timings["step8_naming"] = result.duration_seconds
                 self._save_checkpoint(codex, codex_path, "step 8")
             else:
-                tprint(f"{self._elapsed(pipeline_start)} Step 8 FAILED: {result.error}")
+                tprint(f"{self._elapsed(pipeline_start)} ⛔ Step 8 FAILED: {result.error}")
+                self._save_checkpoint(codex, codex_path, "step 8 FAILED")
+                return self._finalize_run(codex, results, steps_completed, step_timings,
+                                          pipeline_start, aborted_at_step=8, abort_reason=result.error)
 
         # Steps 8-10: Add as we implement them
         for step_num in range(9, 11):
             if step_num in steps_to_run:
                 tprint(f"\n>>> Step {step_num}: Not yet implemented")
 
-        # Aggregate token usage across all completed steps
-        step_tokens = {}
-        total_tokens = 0
-        total_calls = 0
-        for step_name, result in results.items():
-            if hasattr(result, 'token_usage') and result.token_usage:
-                step_tokens[step_name] = result.token_usage
-                total_tokens += result.token_usage.get('total_tokens', 0)
-                total_calls += result.token_usage.get('call_count', 0)
-
-        # Update metadata with phase completion info
-        codex["metadata"]["phase_1"].update({
-            "phase": 1,
-            "name": "Author-Driven Story Creation",
-            "author_id": self.author.id,
-            "author_name": self.author.name,
-            "structure_used": self.author.preferred_structure,
-            "steps_completed": steps_completed,
-            "step_timings": step_timings,
-            "step_tokens": step_tokens,  # NEW: Token usage by step
-            "total_tokens": total_tokens,  # NEW: Total tokens across all steps
-            "total_calls": total_calls,  # NEW: Total LLM calls
-        })
-
-        # Add character debates to metadata (NEW Step 1)
-        if "step1" in results and results["step1"].success:
-            codex["metadata"]["phase_1"]["character_debates"] = results["step1"].character_debates
-
-        # Add scene debates to metadata (OLD Step 4 only - now skipped for NEW Step 4 World Building)
-        # if "step4" in results and results["step4"].success:
-        #     codex["metadata"]["phase_1"]["scene_debates"] = results["step4"].scene_debates
-
-        # Add chapter/scene breakdown debates to metadata (NEW Step 5)
-        if "step5" in results and results["step5"].success:
-            codex["metadata"]["phase_1"]["chapter_scene_debates"] = results["step5"].debates
-
-        # Add narrative writing debates to metadata (Step 6, formerly Step 5)
-        if "step6" in results and results["step6"].success:
-            codex["metadata"]["phase_1"]["narrative_debates"] = results["step6"].scene_debates
-
-        # Add title naming debates to metadata (Step 8, formerly Step 7)
-        if "step8" in results and results["step8"].success:
-            codex["metadata"]["phase_1"]["title_naming"] = {
-                "book_title": results["step8"].book_title,
-                "chapter_titles": results["step8"].chapter_titles,
-                "book_debate": results["step8"].book_debate,
-            }
-
-        return {
-            "steps_completed": steps_completed,
-            "step_timings": step_timings,
-            "results": results,
-        }
+        return self._finalize_run(codex, results, steps_completed, step_timings, pipeline_start)
