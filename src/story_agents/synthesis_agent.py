@@ -234,6 +234,65 @@ Dialogue must include:
 - Use "said" for tags. Do NOT use: murmured, whispered, proclaimed, declared, breathed, hissed
   (unless truly whispering/hissing). Let the CONTENT carry the tone.
 
+=== NOVEL PROSE FORMAT (Critical — This Is a Novel, Not a Script) ===
+
+Write DIRECT novel prose. No script formatting. No "Narrator:" labels. No character name prefixes.
+The output must read like a page from a published novel.
+
+NARRATION STYLE:
+- Write in CONTINUOUS FLOWING PARAGRAPHS, not short fragmented lines
+- Narration blocks should be 3-8 sentences of immersive description
+- WRONG: One-sentence narrator lines bouncing between action and dialogue
+- RIGHT: Rich paragraphs that ground the reader in the world, then break for dialogue
+
+DIALOGUE EMBEDDING:
+- All dialogue in quotation marks ("...")
+- Use ACTION BEATS (preferred over dialogue tags):
+  - ACTION BEAT: "Kael set down his cup. 'We leave at dawn.'" — action identifies speaker
+  - Action beats are SEPARATE sentences (period before dialogue, not comma)
+- ATTRIBUTION HIERARCHY:
+  1. ACTION BEATS (preferred): Physical action next to speech identifies speaker
+  2. INVISIBLE TAGS: "said" and "asked" ONLY
+  3. UNTAGGED: Only when 2 speakers alternate and context is perfectly clear
+- Re-identify the speaker every 2-3 exchanges (audiobook listeners can't glance back)
+- After 4+ lines of pure dialogue, ground with physical action (no "floating heads")
+
+CHARACTER NAME RULES:
+- Full name (first + last) ONLY at first introduction by the narrator
+- After that, use ONE consistent short form
+- NEVER rotate between appellations ("the warrior", "the tall man", "her companion")
+- Characters almost NEVER say each other's full names in conversation
+
+HOW CHARACTERS ADDRESS EACH OTHER (relationship-driven):
+- CLOSE FRIENDS/FAMILY: First name, nicknames ("Kael", "Rae")
+- FORMAL/PROFESSIONAL/RIVALS: Last name or title ("Commander Vale", "Reed")
+- AUTHORITY FIGURES: Title + surname ("Doctor Ashworth", "Captain Lorne")
+- ENEMIES/COLD DISTANCE: Surname only ("Vale." — clipped, no warmth)
+- INTIMACY SHIFT: Switching from "Commander" to "Aurora" signals emotional change — deliberate
+- Each character pair has a CONSISTENT naming pattern reflecting their dynamic
+
+CHARACTER-AS-PERCEPTION-FILTER:
+Every character's dialogue, thoughts, actions, and observations MUST be filtered through
+their background, interests, expertise, and life experience.
+- BOTANIST notices plants first, SOLDIER notices exits, THIEF notices locks
+- DIALOGUE: A mechanic says "This plan has too many moving parts." A doctor says "let's
+  diagnose the problem."
+- INTERNAL THOUGHTS: Traumatized = hypervigilant. Leader = strategic. Artist = colors/textures.
+- REACTIONS: Fighter reaches for weapon. Politician reaches for words.
+Two characters in the same room should describe it completely differently.
+
+AUDIOBOOK-READY PROSE:
+- Max sentence ~25 words. Context before detail.
+- No abbreviations ("Doctor" not "Dr."), numbers as words ("three hundred" not "300")
+- Avoid homographs: "led" not "lead", "injury" not "wound", "teardrop" not "tear"
+- No nested quotes — paraphrase inner quotes
+- Scene transitions signaled textually ("Three hours later"), not just whitespace
+
+SHOW EMOTION THROUGH ACTION (MRU order):
+1. STIMULUS → 2. FEELING (involuntary body) → 3. ACTION (physical) → 4. SPEECH (conscious)
+- NEVER "[Character] felt [emotion]" or "[Character] was [emotion]"
+- "Her knuckles whitened around the pen." NOT "She was furious."
+
 2. Middle paragraphs (1200-1600 words, 3-10 paragraphs)
    - Goal → Conflict → Complications
    - Character interiority woven throughout

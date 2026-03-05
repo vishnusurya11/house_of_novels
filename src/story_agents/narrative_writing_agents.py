@@ -26,6 +26,96 @@ from src.config import get_token_limit, get_step_config
 
 
 # =============================================================================
+# Shared Novel Prose Rules — appended to every narrative agent's system_prompt
+# =============================================================================
+
+NOVEL_PROSE_RULES = """
+
+=== NOVEL PROSE FORMAT (Critical — This Is a Novel, Not a Script) ===
+
+Write DIRECT novel prose. No script formatting. No "Narrator:" labels. No character name prefixes.
+The output must read like a page from a published novel.
+
+NARRATION STYLE:
+- Write in CONTINUOUS FLOWING PARAGRAPHS, not short fragmented lines
+- Narration blocks should be 3-8 sentences of immersive description
+- WRONG: One-sentence narrator lines bouncing between action and dialogue
+- RIGHT: Rich paragraphs that ground the reader in the world, then break for dialogue
+
+DIALOGUE EMBEDDING:
+- All dialogue in quotation marks ("...")
+- Use ACTION BEATS (preferred over dialogue tags):
+  - ACTION BEAT: "Kael set down his cup. 'We leave at dawn.'" — action identifies speaker
+  - Action beats are SEPARATE sentences (period before dialogue, not comma)
+- ATTRIBUTION HIERARCHY:
+  1. ACTION BEATS (preferred): Physical action next to speech identifies speaker
+  2. INVISIBLE TAGS: "said" and "asked" ONLY. Never: murmured, breathed, hissed, proclaimed
+  3. UNTAGGED: Only when 2 speakers alternate and context is perfectly clear
+- Re-identify the speaker every 2-3 exchanges (audiobook listeners can't glance back)
+- After 4+ lines of pure dialogue, ground with physical action (no "floating heads")
+
+CHARACTER NAME RULES:
+- Full name (first + last) ONLY at first introduction by the narrator
+- After introduction, use ONE consistent short form (first name or last name)
+- NEVER rotate between appellations ("the warrior", "the tall man", "her companion")
+- Characters almost NEVER say each other's full names in conversation
+  - WRONG: "Marcus Reed, you should see this."
+  - RIGHT: "You should see this." (with action beat showing who speaks)
+
+HOW CHARACTERS ADDRESS EACH OTHER (relationship-driven):
+- The name a character USES reveals their RELATIONSHIP:
+  - CLOSE FRIENDS/FAMILY: First name, nicknames ("Kael", "Rae")
+  - FORMAL/PROFESSIONAL/RIVALS: Last name or title ("Commander Vale", "Reed")
+  - AUTHORITY FIGURES: Title + surname ("Doctor Ashworth", "Captain Lorne")
+  - ENEMIES/COLD DISTANCE: Surname only ("Vale." — clipped, no warmth)
+  - INTIMACY SHIFT: Switching from "Commander" to "Aurora" mid-scene signals emotional change
+    — use deliberately as a character beat
+- Each character pair has a CONSISTENT naming pattern reflecting their dynamic
+- Naming can shift as relationships evolve, but it must be a DELIBERATE beat
+
+CHARACTER-AS-PERCEPTION-FILTER (Critical for authenticity):
+Every character's dialogue, internal thoughts, actions, and observations MUST be filtered
+through their background, interests, expertise, and life experience.
+
+What a character NOTICES reveals WHO THEY ARE:
+- BOTANIST in a library with plants: Notices plants FIRST ("The fern was overwatered")
+- SOLDIER in the same room: Notices exits, sightlines ("Two exits. Heavy bookend on the shelf.")
+- THIEF in the same room: Notices locks, valuables ("No alarm. Cheap lock on the desk drawer.")
+- SCHOLAR in the same room: Notices the books ("First editions. Some in unknown languages.")
+
+This applies to EVERYTHING:
+- DIALOGUE: A mechanic says "This plan has too many moving parts." A doctor says "let's diagnose
+  the problem." A sailor says "steady as she goes."
+- INTERNAL THOUGHTS: A traumatized character is hypervigilant. A leader thinks in strategy.
+  An artist thinks in colors and textures.
+- ACTIONS: An anxious character fidgets, counts things. A military character moves with economy.
+- REACTIONS: A fighter reaches for a weapon. A politician reaches for words.
+
+Two characters in the same room should describe it completely differently.
+
+AUDIOBOOK-READY PROSE:
+- Maximum sentence length: ~25 words. Longer sentences get split.
+- Context before detail: "In the market square, Kael spotted the thief"
+  NOT "The thief, whom Kael had been tracking since the harbor, was spotted in the market square."
+- No abbreviations: "Doctor" not "Dr.", "Captain" not "Capt."
+- Numbers as words: "three hundred soldiers" not "300 soldiers"
+- Avoid homographs: use "led" not "lead" (past tense), "injury" not "wound" (noun),
+  "teardrop" not "tear" (noun)
+- No nested quotes — paraphrase inner quotes
+- Scene transitions signaled textually ("Three hours later"), not just whitespace
+
+SHOW EMOTION THROUGH ACTION (Motivation-Reaction Unit order):
+1. STIMULUS: External event (what a camera would capture)
+2. FEELING: Involuntary body response (gut clench, heat in chest)
+3. ACTION: Physical response (stepping back, gripping railing)
+4. SPEECH: Conscious verbal response
+- NEVER write "[Character] felt [emotion]" or "[Character] was [emotion]"
+- "Her knuckles whitened around the pen." NOT "She was furious."
+- "He set a second plate at the table, then put it back." NOT "He missed her."
+"""
+
+
+# =============================================================================
 # Agent 1: Character Continuity Agent
 # =============================================================================
 
@@ -170,7 +260,7 @@ NEVER start a scene with these clichéd patterns:
 - "Shadows lengthened/deepened across..."
 - "The [noun] hung heavy in the air"
 - Any atmospheric weather-report opening
-Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion.""" + NOVEL_PROSE_RULES
 
     def propose_prose(
         self,
@@ -516,7 +606,7 @@ NEVER start a scene with these clichéd patterns:
 - "Shadows lengthened/deepened across..."
 - "The [noun] hung heavy in the air"
 - Any atmospheric weather-report opening
-Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion.""" + NOVEL_PROSE_RULES
 
     def propose_prose(
         self,
@@ -958,7 +1048,7 @@ NEVER start a scene with these clichéd patterns:
 - "Shadows lengthened/deepened across..."
 - "The [noun] hung heavy in the air"
 - Any atmospheric weather-report opening
-Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion.""" + NOVEL_PROSE_RULES
 
     def propose_prose(
         self,
@@ -1243,7 +1333,7 @@ NEVER start a scene with these clichéd patterns:
 - "Shadows lengthened/deepened across..."
 - "The [noun] hung heavy in the air"
 - Any atmospheric weather-report opening
-Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion.""" + NOVEL_PROSE_RULES
 
     def propose_prose(
         self,
@@ -1602,7 +1692,7 @@ NEVER start a scene with these clichéd patterns:
 - "Shadows lengthened/deepened across..."
 - "The [noun] hung heavy in the air"
 - Any atmospheric weather-report opening
-Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion."""
+Instead, vary your opening: start mid-action, with dialogue, a character doing something specific, an internal thought, a question, a close-up on an object, or a raw emotion.""" + NOVEL_PROSE_RULES
 
     def propose_prose(
         self,

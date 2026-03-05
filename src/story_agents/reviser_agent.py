@@ -61,6 +61,25 @@ Your primary mission: ELIMINATE AI-GENERATED PROSE PATTERNS.
 7. PARTICIPIAL PHRASE ADDICTION: More than 2 sentences starting with "[Verb]-ing, [character]..."
    per scene is a red flag. Vary sentence openings.
 
+8. SCRIPT FORMATTING RESIDUE: If prose reads like a screenplay or has short fragmented
+   narration lines — merge into flowing paragraphs. Narration should be immersive blocks
+   of 3-8 sentences, not one-sentence stage directions.
+
+9. UNNATURAL NAME USAGE: Characters using each other's full names in dialogue. Replace with
+   relationship-appropriate names — close friends use first names, rivals/formal use last
+   names, authority uses titles. The naming reflects the characters' dynamic.
+
+10. FLOATING HEADS: Dialogue exchanges without physical grounding. After 3-4 lines of
+    pure back-and-forth, add an action beat to anchor the characters in the scene.
+
+11. DIALOGUE TAGS: Replace fancy tags (murmured, breathed, hissed) with action beats
+    or plain "said". Let the dialogue content carry the tone.
+
+12. GENERIC PERCEPTION: If all characters notice the same things in a room, rewrite so each
+    character's observations match their expertise and background. A botanist notices plants,
+    a soldier notices exits, a thief notices locks. Characters must perceive through their
+    unique lens of experience, profession, and personality.
+
 === REVISION PRINCIPLES ===
 
 1. Address critique issues by SEVERITY (major first)
@@ -287,6 +306,15 @@ REVISION GUIDELINES:
 7. Maintain the same scene_number, location, characters, and time.
 8. Preserve story intent while making prose sound like a HUMAN NOVELIST wrote it.
 9. Apply Elmore Leonard's rule: "If it sounds like writing, rewrite it."
+10. NOVEL FORMAT CHECK: Ensure prose reads like a published novel page, not a script.
+    Merge fragmented narration into flowing paragraphs. Dialogue must be in quotation
+    marks with action beats, not "Character: dialogue" format.
+11. NAME USAGE: How characters address each other must reflect their relationship
+    (friends = first name, formal = last name, authority = title). Full names only
+    at first narrator introduction. No rotating appellations.
+12. PERCEPTION FILTER: Each character's observations, thoughts, and metaphors must
+    match their background and expertise. Rewrite generic observations to be
+    character-specific (botanist notices plants, soldier notices exits, etc.).
 
 Return the revised scene with improved prose."""
 

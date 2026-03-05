@@ -136,7 +136,13 @@ For each issue, provide:
 2. The context (surrounding words)
 3. A specific rewrite suggestion
 
-Be thorough. Miss nothing."""
+Be thorough. Miss nothing.
+
+=== SCRIPT FORMAT RESIDUE ===
+Flag narration that reads like stage directions — short one-sentence lines that should be
+merged into flowing paragraphs. Novel prose uses immersive narration blocks of 3-8 sentences,
+not rapid-fire single lines. Also flag any dialogue not properly embedded in prose (missing
+quotation marks, script-style "Character: line" format, or "Narrator:" labels)."""
 
     def critique(self, prose: str, scene_id: str = "unknown") -> ProsePolishCritique:
         """
@@ -259,7 +265,23 @@ For each issue, provide:
 1. Character name
 2. The problematic dialogue
 3. Why it doesn't match their profile
-4. A specific rewrite suggestion"""
+4. A specific rewrite suggestion
+
+=== RELATIONSHIP-DRIVEN NAMING ===
+Flag dialogue where characters use each other's FULL NAMES in normal conversation. How
+characters address each other reveals their relationship:
+- Close friends/family: First name or nickname
+- Formal/professional/rivals: Last name or title
+- Authority figures: Title + surname
+- Enemies: Surname only (clipped, cold)
+Flag any mismatch between naming and the established character relationship.
+
+=== CHARACTER PERCEPTION FILTER ===
+Flag when a character's observations, thoughts, or metaphors don't match their background
+and expertise. A botanist notices plants before books. A soldier notices exits before decor.
+A thief notices locks before artwork. Flag generic perception that could belong to ANY
+character — observations should be filtered through the character's unique lens of
+experience, profession, and personality."""
 
     def critique(
         self,
@@ -556,7 +578,13 @@ Tension should rise and fall within scene:
 - Peak moment
 - Brief release or cliffhanger
 
-Flat tension = boring scene."""
+Flat tension = boring scene.
+
+=== FLOATING HEADS / MISSING ACTION BEATS ===
+Flag dialogue sequences of 4+ ungrounded lines without physical action between them.
+Audiobook listeners lose track of who is speaking without action beats anchoring the
+exchange. Every 2-3 dialogue lines should have a physical beat (character action, gesture,
+movement, environmental detail) to keep the scene grounded and identify speakers."""
 
     def critique(
         self,
