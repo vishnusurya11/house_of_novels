@@ -2,12 +2,13 @@
 """
 Phase 2: Prompt Generation
 
-Creates AI image generation prompts for characters, locations, posters, and thumbnails.
+Creates AI image generation prompts and audio scripts for story elements.
 Step 1: Character Prompts
 Step 2: Location Prompts
 Step 3: Poster/Thumbnail Prompts (Multi-Agent with Jury Voting)
 Step 4: Scene Image Prompts (One image per scene within chapters)
 Step 5: YouTube Thumbnail Prompts (Agent Council with debate and voting)
+Step 6: Audio Scripts (LLM-generated narrator + character dialogue per scene)
 
 Usage (standalone):
     uv run python -m src.phases.phase2_prompts forge/xxx/codex.json
@@ -41,19 +42,28 @@ from src.story_agents.thumbnail_agents import generate_thumbnail_prompts_via_cou
 # from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
 # from src.story_agents.video_prompt_agents import generate_video_prompt
 from src.visual_styles import get_default_style
-from src.config import DEFAULT_MODEL
+from src.config import (
+    DEFAULT_MODEL,
+    ANNOTATION_LLM_BASE_URL,
+    ANNOTATION_LLM_MODEL,
+    ANNOTATION_LLM_API_KEY,
+    ANNOTATION_LLM_TEMPERATURE,
+    ANNOTATION_LLM_MAX_TOKENS,
+)
+from src.tts.script_generator import AudioScriptGenerator
 
 
 @dataclass
 class Phase2PromptsResult:
-    """Result of Phase 5 prompt generation."""
+    """Result of Phase 2 prompt generation."""
     codex_path: Path
     character_prompt_count: int
     location_prompt_count: int
     poster_prompt_count: int
     scene_image_prompt_count: int  # Step 4: Scene image prompts (one per scene)
     thumbnail_prompt_count: int  # Step 5: YouTube thumbnail prompts (Agent Council)
-    success: bool
+    audio_script_count: int = 0  # Step 6: Audio scripts (narrator + character dialogue)
+    success: bool = True
     error: Optional[str] = None
     step_timings: dict = field(default_factory=dict)
 
@@ -227,8 +237,8 @@ def run_phase2_prompts(
     codex = load_codex(codex_path)
     codex = normalize_codex_for_phase2(codex)
 
-    # Determine which steps to run (1-5 are active steps)
-    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5]
+    # Determine which steps to run (1-6 are active steps)
+    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5, 6]
     print(f"\n>>> Running steps: {steps_to_run}")
 
     # Get model from codex config
@@ -656,6 +666,89 @@ def run_phase2_prompts(
     else:
         print("\n>>> Step 5: Skipped (not in requested steps)")
 
+    # =========================================================================
+    # Step 6: Audio Scripts (LLM-generated narrator + character dialogue)
+    # =========================================================================
+    audio_script_count = 0
+
+    if 6 in steps_to_run and total_scenes > 0:
+        step_start = time.time()
+        print(f"\n{'='*60}")
+        print("STEP 6: Audio Script Generation")
+        print(f"{'='*60}")
+        print(f"    LLM: {ANNOTATION_LLM_MODEL} @ {ANNOTATION_LLM_BASE_URL}")
+        print(f"    Total scenes: {total_scenes}")
+
+        # Initialize the script generator with annotation LLM config
+        script_gen = AudioScriptGenerator(
+            base_url=ANNOTATION_LLM_BASE_URL,
+            model=ANNOTATION_LLM_MODEL,
+            api_key=ANNOTATION_LLM_API_KEY,
+            temperature=ANNOTATION_LLM_TEMPERATURE,
+            max_tokens=ANNOTATION_LLM_MAX_TOKENS,
+        )
+
+        # Reload codex in case earlier steps modified it
+        codex = load_codex(codex_path)
+        story = codex.get("story", {})
+        chapters_data = story.get("chapters", {})
+        chapters = chapters_data.get("chapters", [])
+        codex_characters = story.get("characters", [])
+
+        phase2_metadata["audio_scripts"] = []
+
+        scene_global_idx = 0
+        for chapter_idx, chapter in enumerate(chapters):
+            ch_num = chapter.get("chapter_number", chapter_idx + 1)
+            ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
+
+            for scene_idx, scene in enumerate(chapter.get("scenes", [])):
+                sc_num = scene.get("scene_number", scene_idx + 1)
+                scene_global_idx += 1
+
+                print(f"\n    [{scene_global_idx}/{total_scenes}] Ch{ch_num} Sc{sc_num}...")
+
+                try:
+                    audio_script = script_gen.generate_script(
+                        scene=scene,
+                        chapter_number=ch_num,
+                        scene_number=sc_num,
+                        codex_characters=codex_characters,
+                    )
+
+                    # Store audio script in the scene
+                    scene["audio_script"] = audio_script
+
+                    # Count speakers
+                    speakers = set(e["speaker"] for e in audio_script)
+                    print(f"        -> {len(audio_script)} chunks, speakers: {', '.join(sorted(speakers))}")
+
+                    phase2_metadata["audio_scripts"].append({
+                        "chapter_number": ch_num,
+                        "scene_number": sc_num,
+                        "chunk_count": len(audio_script),
+                        "speakers": sorted(speakers),
+                    })
+
+                    audio_script_count += 1
+
+                except Exception as e:
+                    print(f"        ERROR: {e}")
+                    phase2_metadata["audio_scripts"].append({
+                        "chapter_number": ch_num,
+                        "scene_number": sc_num,
+                        "error": str(e),
+                    })
+
+        # Save after Step 6
+        step_timings["step6_audio_scripts"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 6 complete: {audio_script_count} audio scripts generated ({step_timings['step6_audio_scripts']:.1f}s)")
+    elif 6 in steps_to_run:
+        print("\n>>> Step 6: No scenes found, skipping audio scripts")
+    else:
+        print("\n>>> Step 6: Skipped (not in requested steps)")
+
     # Update codex
     codex["story"]["characters"] = characters
     codex["story"]["locations"] = locations
@@ -663,12 +756,13 @@ def run_phase2_prompts(
     codex["metadata"]["phase_2"] = phase2_metadata
     save_codex(codex, codex_path)
 
-    print(f"\n>>> Phase 5 complete!")
+    print(f"\n>>> Phase 2 complete!")
     print(f"    Character prompts: {char_prompt_count}")
     print(f"    Location prompts: {loc_prompt_count}")
     print(f"    Poster prompts: {poster_prompt_count}")
     print(f"    Scene image prompts: {scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
+    print(f"    Audio scripts: {audio_script_count}")
     print(f">>> Saved to: {codex_path}")
 
     return Phase2PromptsResult(
@@ -678,6 +772,7 @@ def run_phase2_prompts(
         poster_prompt_count=poster_prompt_count,
         scene_image_prompt_count=scene_image_prompt_count,
         thumbnail_prompt_count=thumbnail_prompt_count,
+        audio_script_count=audio_script_count,
         success=True,
         step_timings=step_timings,
     )
@@ -702,8 +797,8 @@ def main():
         "--steps",
         nargs="+",
         type=int,
-        choices=[1, 2, 3, 4, 5],
-        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Chapter Images, 5: Thumbnails). Example: --steps 1 2"
+        choices=[1, 2, 3, 4, 5, 6],
+        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Scene Images, 5: Thumbnails, 6: Audio Scripts). Example: --steps 1 2"
     )
     args = parser.parse_args()
 
@@ -723,6 +818,7 @@ def main():
     print(f"    Poster prompts: {result.poster_prompt_count}")
     print(f"    Scene image prompts: {result.scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {result.thumbnail_prompt_count}")
+    print(f"    Audio scripts: {result.audio_script_count}")
 
 
 if __name__ == "__main__":

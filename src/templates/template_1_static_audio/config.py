@@ -20,7 +20,7 @@ COMFYUI_WORKFLOWS = {
 }
 
 # Default steps to run for generation phase
-DEFAULT_GENERATION_STEPS = [1, 2, 3]  # audio, static images, scene images
+DEFAULT_GENERATION_STEPS = [1, 2, 3, 4]  # locations, scenes, thumbnails, audio
 
 # Default steps to run for editing phase
 DEFAULT_EDITING_STEPS = [1, 2, 3]  # combine audio, scene videos, final video

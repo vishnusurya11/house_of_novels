@@ -20,11 +20,38 @@ dependencies = [
     "reportlab>=4.0",  # PDF/image rendering (used by svglib)
     "pyyaml>=6.0",  # Config file loading
     "diskcache>=5.6.0",  # LLM response caching for re-runs
+    # TTS support (script generation uses openai client; audio I/O uses soundfile + numpy)
+    "soundfile>=0.13.0",  # WAV audio I/O
+    "openai>=1.0.0",  # OpenAI-compatible client (Ollama, LM Studio, OpenRouter)
+    "numpy>=1.26.0",  # Audio array manipulation
     # YouTube upload (Phase 7)
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.2.0",
 ]
+
+[project.optional-dependencies]
+tts = [
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "transformers==4.57.3",  # pinned: qwen-tts 0.1.1 requires this exact version
+    "accelerate>=1.0.0",
+    "einops>=0.7.0",
+    "librosa>=0.10.0",
+    "onnxruntime>=1.17.0",
+]
+# qwen-tts must be installed separately (sox dep fails on Windows):
+#   uv pip install --no-deps qwen-tts
+
+# PyTorch CUDA 12.4 wheels (user has NVIDIA GPU)
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
 
 [dependency-groups]
 dev = [

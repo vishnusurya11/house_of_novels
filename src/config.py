@@ -230,6 +230,30 @@ GENERATION_STEPS = "111110"
 # Audio generation timeout (30 minutes per generation)
 AUDIO_GENERATION_TIMEOUT = 1800  # seconds
 
+# TTS Configuration (Qwen3-TTS direct inference)
+TTS_CONFIG = YAML_CONFIG.get("tts", {})
+TTS_NARRATION_MODE = TTS_CONFIG.get("narration_mode", "single_narrator")
+TTS_DEVICE = TTS_CONFIG.get("device", "cuda")
+TTS_PRECISION = TTS_CONFIG.get("precision", "bfloat16")
+TTS_MODEL_SIZE = TTS_CONFIG.get("model_size", "1.7B")
+TTS_NARRATOR_VOICE = TTS_CONFIG.get("narrator_voice", {"type": "custom", "speaker": "Ryan"})
+TTS_PAUSE_BETWEEN_SPEAKERS = TTS_CONFIG.get("pause_between_speakers_ms", 500)
+TTS_PAUSE_WITHIN_SPEAKER = TTS_CONFIG.get("pause_within_speaker_ms", 250)
+TTS_OUTPUT_FORMAT = TTS_CONFIG.get("output_format", "wav")
+TTS_LANGUAGE = TTS_CONFIG.get("language", "English")
+
+# Annotation LLM Configuration (for audio script generation)
+ANNOTATION_LLM_CONFIG = YAML_CONFIG.get("annotation_llm", {})
+ANNOTATION_LLM_BASE_URL = ANNOTATION_LLM_CONFIG.get("base_url", "http://localhost:11434/v1")
+ANNOTATION_LLM_MODEL = ANNOTATION_LLM_CONFIG.get("model", "gpt-oss:20b")
+_raw_annotation_key = ANNOTATION_LLM_CONFIG.get("api_key", "ollama")
+if _raw_annotation_key.startswith("env:"):
+    ANNOTATION_LLM_API_KEY = os.environ.get(_raw_annotation_key[4:], "")
+else:
+    ANNOTATION_LLM_API_KEY = _raw_annotation_key
+ANNOTATION_LLM_TEMPERATURE = ANNOTATION_LLM_CONFIG.get("temperature", 0.3)
+ANNOTATION_LLM_MAX_TOKENS = ANNOTATION_LLM_CONFIG.get("max_tokens", 4000)
+
 # YouTube Configuration for Phase 7 (Upload)
 YOUTUBE_CLIENT_SECRETS_FILE = PROJECT_ROOT / "client_secrets.json"
 YOUTUBE_TOKEN_FILE = PROJECT_ROOT / ".youtube_token.json"

@@ -124,7 +124,7 @@ steps:
     token_limits:
       prose_proposal: 16000   # Long prose needs more tokens
       prose_critique: 12000   # Increased: critiques need room for detailed analysis
-      prose_synthesis: 32000  # Max for gpt-4.1-nano; synthesis of 5 proposals needs most
+      prose_synthesis: 16000  # Reduced: actual output ~5K tokens; 32K caused reasoning token exhaustion in gpt-4.1-nano
       dialogue_analysis: 12000  # Increased: complex dialogue analysis
       dialogue_vote: 6000    # Increased: reasoning about vote needs space
       vote: 6000             # Increased: vote reasoning needs space
@@ -170,6 +170,36 @@ steps:
       debate_level: true
       max_workers_proposals: 6
       max_workers_debates: 5
+
+# Phase 2: Prompt Generation
+# TTS Configuration (Qwen3-TTS direct inference)
+tts:
+  narration_mode: "multi_cast"             # "single_narrator" or "multi_cast"
+  device: "cuda"                          # "cuda", "cpu", "auto"
+  precision: "bfloat16"                   # "bfloat16", "float16", "float32"
+  model_size: "1.7B"                      # "1.7B" or "0.6B"
+  narrator_voice:
+    type: "clone"                         # "custom" or "clone"
+    # speaker: "Ryan"                     # CustomVoice preset (Ryan, Aiden, Vivian, Serena, etc.)
+    clone_ref_audio: "audio_inputs/rowan_whitmore.mp3"
+    clone_ref_text: ""                    # Transcript of ref audio; leave empty for x_vector_only mode
+  pause_between_speakers_ms: 600          # Silence between different speakers
+  pause_within_speaker_ms: 300            # Silence between same speaker entries
+  output_format: "wav"                    # "wav" (native) or "mp3"
+  language: "English"                     # Default language for TTS
+
+# Audio Script Annotation LLM (generates audio scripts from scene metadata)
+annotation_llm:
+  provider: "openrouter"                    # "ollama", "lmstudio", "openrouter", "openai"
+  # base_url: "http://localhost:11434/v1"   # Ollama
+  # base_url: "http://localhost:1234/v1"    # LM Studio
+  base_url: "https://openrouter.ai/api/v1" # OpenRouter
+  # base_url: "https://api.openai.com/v1"  # OpenAI
+  # model: "qwen3.5:9b"                    # Local Ollama model
+  model: "openai/gpt-4.1-nano"             # Cheap, excellent at structured JSON
+  api_key: "env:OPENROUTER_API_KEY"         # "ollama" for local, "env:VAR_NAME" for env var
+  temperature: 0.3                          # Lower = more consistent scripts
+  max_tokens: 4000                          # Max output tokens per scene script
 
 # Phase 2: Prompt Generation
 phase2_scene_prompts:

@@ -65,15 +65,17 @@ Each phase runs independently. Pass the codex path from a previous run:
 uv run python -m src.phases.phase0_codex
 
 # Phase 1: Author pipeline (requires Phase 0 codex)
-uv run python -m src.phases.phase1_author forge/<ts>/codex_<ts>.json
-uv run python -m src.phases.phase1_author forge/<ts>/codex_<ts>.json --steps 0 1 2 3  # specific steps
+uv run python -m src.phases.phase1_author forge/20260304153650/codex_20260304153650.json
+uv run python -m src.phases.phase1_author forge/20260304153650/codex_20260304153650.json --steps 6  # specific steps
 
 # Phase 2: Prompt generation (requires Phase 1)
-uv run python -m src.phases.phase2_prompts forge/<ts>/codex_<ts>.json
-uv run python -m src.phases.phase2_prompts forge/<ts>/codex_<ts>.json --steps 1 2      # specific steps
+uv run python -m src.phases.phase2_prompts forge/20260304153650/codex_20260304153650.json
+uv run python -m src.phases.phase2_prompts forge/20260304153650/codex_20260304153650.json --steps 1 2      # specific steps
 
 # Phase 3: Media generation via ComfyUI (requires Phase 2)
-uv run python -m src.phases.phase3_generation forge/<ts>/codex_<ts>.json
+uv run python -m src.phases.phase3_generation forge/20260304153650/codex_20260304153650.json
+
+uv run python -m src.phases.phase3_generation forge/20260304153650/codex_20260304153650.json --steps 0 1 2
 
 # Phase 4: Audio/video editing (requires Phase 3)
 uv run python -m src.phases.phase4_editing forge/<ts>/codex_<ts>.json

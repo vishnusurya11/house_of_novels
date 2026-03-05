@@ -4,12 +4,12 @@ Template 1: Static Audio - Generation Module
 
 Generates images and media using ComfyUI based on prompts from Phase 2.
 
-Step 1: Character Portraits (1024x1024 square)
-Step 2: Location Images (1280x720 landscape)
-Step 3: Scene Images (one per scene, 1280x720 landscape)
-Step 4: Thumbnails/Posters
-Step 5: Audio (Qwen TTS Voice Clone - full scenes with sequential naming)
-Step 6: Video (future, disabled)
+Step 0: Character Portraits (1024x1024 square)
+Step 1: Location Images (1280x720 landscape)
+Step 2: Scene Images (one per scene, 1280x720 landscape)
+Step 3: Thumbnails/Posters
+Step 4: Audio (Qwen3-TTS direct inference - narrator + character voices)
+Step 5: Video (future, disabled)
 
 Usage (standalone):
     uv run python -m src.templates.template_1_static_audio.generation forge/xxx/codex.json
@@ -38,8 +38,21 @@ from src.config import (
     AUDIO_GENERATION_TIMEOUT,
     should_run_step,
     get_workflow_path,
+    TTS_NARRATION_MODE,
+    TTS_DEVICE,
+    TTS_PRECISION,
+    TTS_MODEL_SIZE,
+    TTS_NARRATOR_VOICE,
+    TTS_PAUSE_BETWEEN_SPEAKERS,
+    TTS_PAUSE_WITHIN_SPEAKER,
+    TTS_LANGUAGE,
 )
 from src.templates.base_template import GenerationResult
+from src.tts.qwen_tts_engine import (
+    QwenTTSEngine,
+    CustomVoiceConfig,
+    CloneVoiceConfig,
+)
 
 
 def load_codex(codex_path: Path) -> dict:
@@ -1009,7 +1022,7 @@ STEP_NAMES = {
     1: "Location Images",
     2: "Scene Images",
     3: "Thumbnails/Posters",
-    4: "Audio (Qwen TTS)",
+    4: "Audio (Qwen3-TTS Direct)",
     5: "Video (future)",
 }
 
@@ -1028,7 +1041,7 @@ def run_template1_generation(
     Step 1: Location Images (1280x720 landscape)
     Step 2: Scene Images (1280x720 landscape, one per scene)
     Step 3: Thumbnails/Posters
-    Step 4: Audio (Qwen TTS Voice Clone)
+    Step 4: Audio (Qwen3-TTS Direct Inference)
     Step 5: Video (future, disabled)
 
     Args:
@@ -1460,136 +1473,170 @@ def run_template1_generation(
         print(f">>> Step 3 complete ({step_timings['step3_thumbnails']:.1f}s)")
 
     # =========================================================================
-    # Step 5: Audio (Qwen TTS Voice Clone)
+    # Step 5: Audio (Qwen3-TTS Direct Inference)
     # =========================================================================
     if 4 in steps_to_run:
         step_start = time.time()
         print(f"\n{'='*60}")
-        print("STEP 4: Audio (Qwen TTS Voice Clone)")
+        print("STEP 4: Audio (Qwen3-TTS Direct Inference)")
         print(f"{'='*60}")
+        print(f"    Mode: {TTS_NARRATION_MODE}")
+        print(f"    Device: {TTS_DEVICE}, Precision: {TTS_PRECISION}")
+        print(f"    Model: Qwen3-TTS-{TTS_MODEL_SIZE}")
 
-        # Load Qwen TTS workflow
-        audio_workflow_path = str(get_workflow_path("audio"))
-        phase3_metadata["workflows_used"]["audio"] = Path(audio_workflow_path).name
+        chapters_data = codex.get("story", {}).get("chapters", {})
+        chapters = chapters_data.get("chapters", [])
+        codex_characters = codex.get("story", {}).get("characters", [])
 
-        if not Path(audio_workflow_path).exists():
-            print(f">>> ERROR: Qwen TTS workflow not found at {audio_workflow_path}")
+        # Build narrator voice config from settings
+        if TTS_NARRATOR_VOICE.get("type") == "clone":
+            narrator_config = CloneVoiceConfig(
+                ref_audio=TTS_NARRATOR_VOICE.get("clone_ref_audio", ""),
+                ref_text=TTS_NARRATOR_VOICE.get("clone_ref_text", ""),
+            )
         else:
-            with open(audio_workflow_path, "r", encoding="utf-8") as f:
-                audio_workflow = json.load(f)
+            narrator_config = CustomVoiceConfig(
+                speaker=TTS_NARRATOR_VOICE.get("speaker", "Ryan"),
+            )
 
-            chapters_data = codex.get("story", {}).get("chapters", {})
+        # Initialize TTS engine
+        tts_engine = QwenTTSEngine(
+            device=TTS_DEVICE,
+            precision=TTS_PRECISION,
+            model_size=TTS_MODEL_SIZE,
+            narrator_voice=narrator_config,
+            narration_mode=TTS_NARRATION_MODE,
+            pause_between_speakers_ms=TTS_PAUSE_BETWEEN_SPEAKERS,
+            pause_within_speaker_ms=TTS_PAUSE_WITHIN_SPEAKER,
+        )
 
-            # Build ordered list of audio items: title, chapter titles, scenes
-            audio_items = []
+        # Build voice map for all characters
+        voice_map = tts_engine.setup_voice_map(
+            characters=codex_characters,
+            narrator_config=narrator_config,
+        )
+        print(f"    Voice map: {len(voice_map)} entries")
 
-            # 1. Book title
-            book_title = chapters_data.get("title", "Untitled")
-            if book_title:
-                audio_items.append({
-                    "type": "title",
-                    "text": book_title,
-                    "label": "Book Title",
-                })
+        # Audio output directory (in forge, not ComfyUI output)
+        forge_dir = codex_path.parent
+        audio_dir = forge_dir / "audio"
+        audio_dir.mkdir(parents=True, exist_ok=True)
 
-            # 2. Chapters and scenes
-            chapters = chapters_data.get("chapters", [])
-            for ch_idx, chapter in enumerate(chapters):
-                ch_num = chapter.get("chapter_number", ch_idx + 1)
-                ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
+        # Clear stale files from previous runs
+        old_wavs = list(audio_dir.glob("*.wav"))
+        if old_wavs:
+            for old_wav in old_wavs:
+                old_wav.unlink()
+            print(f"    Cleared {len(old_wavs)} old audio files")
 
-                # Chapter title audio
-                audio_items.append({
-                    "type": "chapter_title",
-                    "chapter_number": ch_num,
-                    "text": ch_title,
-                    "label": f"Ch{ch_num} Title",
-                })
+        # Reset audio generation tracking
+        chapters_data["audio_generation"] = {"items": [], "total_generated": 0}
+        audio_generated_count = 0
+        seq_num = 0
 
-                # Scene prose (entire scene in one audio)
-                for sc_idx, scene in enumerate(chapter.get("scenes", [])):
-                    sc_num = scene.get("scene_number", sc_idx + 1)
+        # 1. Book title audio
+        book_title = chapters_data.get("title", "Untitled")
+        if book_title:
+            seq_num += 1
+            title_path = audio_dir / f"{seq_num:03d}_title.wav"
+            print(f"\n    [{seq_num}] Book Title: \"{book_title}\"")
+
+            title_script = [{"speaker": "NARRATOR", "text": book_title, "instruct": "Grand, resonant announcement with gravitas."}]
+            success, duration = tts_engine.generate_scene_audio(
+                audio_script=title_script,
+                voice_map=voice_map,
+                output_path=title_path,
+                language=TTS_LANGUAGE,
+            )
+            gen_data = {
+                "sequence": seq_num, "type": "title", "status": "completed" if success else "failed",
+                "output_path": str(title_path), "duration": duration,
+                "generated_at": datetime.now().isoformat(),
+            }
+            chapters_data["audio_generation"]["items"].append(gen_data)
+            if success:
+                audio_generated_count += 1
+
+        # 2. Chapter titles + scene audio
+        for ch_idx, chapter in enumerate(chapters):
+            ch_num = chapter.get("chapter_number", ch_idx + 1)
+            ch_title = chapter.get("chapter_title", f"Chapter {ch_num}")
+
+            # Chapter title audio
+            seq_num += 1
+            ch_title_path = audio_dir / f"{seq_num:03d}_ch{ch_num:02d}_title.wav"
+            print(f"\n    [{seq_num}] Ch{ch_num} Title: \"{ch_title}\"")
+
+            ch_script = [{"speaker": "NARRATOR", "text": f"Chapter {ch_num}. {ch_title}", "instruct": "Clear, measured chapter announcement."}]
+            success, duration = tts_engine.generate_scene_audio(
+                audio_script=ch_script,
+                voice_map=voice_map,
+                output_path=ch_title_path,
+                language=TTS_LANGUAGE,
+            )
+            gen_data = {
+                "sequence": seq_num, "type": "chapter_title", "chapter_number": ch_num,
+                "status": "completed" if success else "failed",
+                "output_path": str(ch_title_path), "duration": duration,
+                "generated_at": datetime.now().isoformat(),
+            }
+            chapters_data["audio_generation"]["items"].append(gen_data)
+            if success:
+                audio_generated_count += 1
+
+            # Scene audio (uses audio_script from Phase 2 Step 6)
+            for sc_idx, scene in enumerate(chapter.get("scenes", [])):
+                sc_num = scene.get("scene_number", sc_idx + 1)
+                audio_script = scene.get("audio_script", [])
+
+                if not audio_script:
+                    # Fallback: use prose as single narrator chunk
                     prose = scene.get("prose", "")
-
                     if prose:
-                        audio_items.append({
-                            "type": "scene",
-                            "chapter_number": ch_num,
-                            "scene_number": sc_num,
-                            "text": prose,
-                            "label": f"Ch{ch_num} Sc{sc_num}",
-                        })
+                        audio_script = [{"speaker": "NARRATOR", "text": prose, "instruct": "Neutral, even narration."}]
+                    else:
+                        print(f"\n    [skip] Ch{ch_num} Sc{sc_num}: No audio script or prose")
+                        continue
 
-            if not audio_items:
-                print(">>> No audio items found (no title/chapters/scenes)")
-            else:
-                print(f">>> Total audio items to generate: {len(audio_items)}")
-                print(f"    - 1 book title")
-                print(f"    - {len(chapters)} chapter titles")
-                print(f"    - {len([i for i in audio_items if i['type'] == 'scene'])} scenes")
-                print(f">>> Timeout: {AUDIO_GENERATION_TIMEOUT}s ({AUDIO_GENERATION_TIMEOUT // 60} minutes) per item")
+                seq_num += 1
+                scene_path = audio_dir / f"{seq_num:03d}_ch{ch_num:02d}_sc{sc_num:02d}.wav"
+                print(f"\n    [{seq_num}] Ch{ch_num} Sc{sc_num} ({len(audio_script)} chunks)")
 
-                # Reset audio generation tracking
-                chapters_data["audio_generation"] = {"items": [], "total_generated": 0}
+                success, duration = tts_engine.generate_scene_audio(
+                    audio_script=audio_script,
+                    voice_map=voice_map,
+                    output_path=scene_path,
+                    language=TTS_LANGUAGE,
+                )
 
-                audio_generated_count = 0
+                gen_data = {
+                    "sequence": seq_num, "type": "scene",
+                    "chapter_number": ch_num, "scene_number": sc_num,
+                    "status": "completed" if success else "failed",
+                    "output_path": str(scene_path), "duration": duration,
+                    "chunks": len(audio_script),
+                    "generated_at": datetime.now().isoformat(),
+                }
+                chapters_data["audio_generation"]["items"].append(gen_data)
+                if success:
+                    audio_generated_count += 1
 
-                # Generate audio with sequential numbering
-                for idx, item in enumerate(audio_items):
-                    seq_num = idx + 1
+                # Save progress after each scene
+                chapters_data["audio_generation"]["total_generated"] = audio_generated_count
+                save_codex(codex, codex_path)
 
-                    # Build filename based on type
-                    if item["type"] == "title":
-                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_title"
-                    elif item["type"] == "chapter_title":
-                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_ch{item['chapter_number']:02d}_title"
-                    else:  # scene
-                        filename_prefix = f"api/{timestamp}/audio/{seq_num:03d}_ch{item['chapter_number']:02d}_sc{item['scene_number']:02d}"
+        audio_count = audio_generated_count
+        chapters_data["audio_generation"]["total_generated"] = audio_count
 
-                    # Display progress
-                    display_text = item["text"][:60] + "..." if len(item["text"]) > 60 else item["text"]
-                    print(f"\n    [{seq_num}/{len(audio_items)}] {item['label']}")
-                    print(f"        \"{display_text}\"")
-
-                    success, gen_data = generate_audio_qwen(
-                        text=item["text"],
-                        filename_prefix=filename_prefix,
-                        label=item["label"],
-                        comfyui_url=comfyui_url,
-                        audio_workflow=audio_workflow,
-                        timeout=AUDIO_GENERATION_TIMEOUT,
-                    )
-
-                    # Store generation data
-                    gen_data["sequence"] = seq_num
-                    gen_data["type"] = item["type"]
-                    if item["type"] == "chapter_title" or item["type"] == "scene":
-                        gen_data["chapter_number"] = item["chapter_number"]
-                    if item["type"] == "scene":
-                        gen_data["scene_number"] = item["scene_number"]
-
-                    chapters_data["audio_generation"]["items"].append(gen_data)
-
-                    if success is None:
-                        # Fatal connection error - save and exit
-                        print(f"\n>>> ERROR: Cannot connect to ComfyUI at {comfyui_url}")
-                        chapters_data["audio_generation"]["total_generated"] = audio_generated_count
-                        save_codex(codex, codex_path)
-                        return _make_error_result(
-                            codex_path, f"Cannot connect to ComfyUI: {gen_data['error']}", **_counts()
-                        )
-                    elif success:
-                        audio_generated_count += 1
-
-                    # Save codex after each item to preserve progress
-                    chapters_data["audio_generation"]["total_generated"] = audio_generated_count
-                    save_codex(codex, codex_path)
-
-                audio_count = audio_generated_count
+        # Cleanup TTS engine
+        tts_engine.close()
 
         phase3_metadata["steps_executed"].append(4)
         phase3_metadata["total_audio_generated"] = audio_count
+        phase3_metadata["tts_engine"] = "qwen3-tts-direct"
+        phase3_metadata["narration_mode"] = TTS_NARRATION_MODE
         step_timings["step4_audio"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
         print(f"\n>>> Step 4 complete ({step_timings.get('step4_audio', 0):.1f}s):")
         print(f"    Audio files generated: {audio_count}")
 
