@@ -443,3 +443,12 @@ Examples:
 
 if __name__ == "__main__":
     main()
+    # Force immediate exit — Python's interpreter shutdown after a heavy
+    # langchain + httpx + CUDA session takes 30+ seconds, making the process
+    # appear stuck after "Novel generated at:" output. os._exit() skips the
+    # slow GC/module teardown. HTTP pool and disk cache are cleaned up by the
+    # atexit handler registered in base_story_agent.py (called before os._exit).
+    import atexit
+    atexit._run_exitfuncs()
+    import os
+    os._exit(0)

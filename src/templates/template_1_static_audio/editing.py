@@ -332,8 +332,14 @@ def run_template1_editing(
                         image_path = get_scene_image_path(1, 1)
                         label = "Book Title"
                     elif item_type == "chapter_title":
-                        # Chapter title → That chapter's Scene 1 image
-                        image_path = get_scene_image_path(ch_num, 1)
+                        # Chapter title → That chapter's first scene image
+                        # (scenes are globally numbered, so Ch2's first scene may be scene 4, not 1)
+                        first_sc = next(
+                            (ch["scenes"][0]["scene_number"]
+                             for ch in chapters if ch["chapter_number"] == ch_num and ch.get("scenes")),
+                            None,
+                        )
+                        image_path = get_scene_image_path(ch_num, first_sc) if first_sc else None
                         label = f"Ch{ch_num} Title"
                     else:  # scene
                         # Scene → That scene's image

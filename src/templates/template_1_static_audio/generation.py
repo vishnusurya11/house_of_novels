@@ -46,12 +46,15 @@ from src.config import (
     TTS_PAUSE_BETWEEN_SPEAKERS,
     TTS_PAUSE_WITHIN_SPEAKER,
     TTS_LANGUAGE,
+    TTS_LORA_ADAPTER_DIR,
+    TTS_LORA_FALLBACK_TO_DESIGN,
 )
 from src.templates.base_template import GenerationResult
 from src.tts.qwen_tts_engine import (
     QwenTTSEngine,
     CustomVoiceConfig,
     CloneVoiceConfig,
+    LoRAVoiceConfig,
 )
 
 
@@ -1260,8 +1263,9 @@ def run_template1_generation(
         chapters_data = codex.get("story", {}).get("chapters", {})
         chapters = chapters_data.get("chapters", [])
 
-        # --- Collect scene jobs ---
+        # --- Collect scene jobs (skip already-completed) ---
         # Each job: (ch_num, sc_num, scene_prompt_data, prompt_type)
+        skipped_scenes = 0
         layered_jobs: list[tuple[int, int, dict]] = []
         flat_jobs: list[tuple[int, int, dict]] = []
         for ch_idx, chapter in enumerate(chapters):
@@ -1269,11 +1273,21 @@ def run_template1_generation(
             for sc_idx, scene in enumerate(chapter.get("scenes", [])):
                 sc_num = scene.get("scene_number", sc_idx + 1)
                 scene_prompt_data = scene.get("scene_image_prompt", {})
+
+                # Skip scenes that already have a completed image
+                gen = scene_prompt_data.get("generation", {})
+                if gen.get("status") == "completed" and gen.get("output_path"):
+                    skipped_scenes += 1
+                    continue
+
                 prompt_type = scene_prompt_data.get("prompt_type", "")
                 if prompt_type == "layered":
                     layered_jobs.append((ch_num, sc_num, scene_prompt_data))
                 elif scene_prompt_data.get("prompt"):
                     flat_jobs.append((ch_num, sc_num, scene_prompt_data))
+
+        if skipped_scenes:
+            print(f">>> Skipping {skipped_scenes} scenes with existing images")
 
         total_scenes = len(layered_jobs) + len(flat_jobs)
 
@@ -1511,27 +1525,33 @@ def run_template1_generation(
         )
 
         # Build voice map for all characters
+        forge_dir = codex_path.parent
+        lora_dir = (TTS_LORA_ADAPTER_DIR or str(forge_dir / "lora_adapters")) if TTS_NARRATION_MODE == "lora" else None
         voice_map = tts_engine.setup_voice_map(
             characters=codex_characters,
             narrator_config=narrator_config,
+            lora_adapter_dir=lora_dir,
+            fallback_to_design=TTS_LORA_FALLBACK_TO_DESIGN,
         )
         print(f"    Voice map: {len(voice_map)} entries")
+        if TTS_NARRATION_MODE == "lora":
+            lora_count = sum(1 for v in voice_map.values() if isinstance(v, LoRAVoiceConfig))
+            design_fallback = sum(1 for k, v in voice_map.items() if k != "NARRATOR" and not isinstance(v, LoRAVoiceConfig))
+            print(f"    LoRA voices: {lora_count}, Design fallback: {design_fallback}")
 
         # Audio output directory (in forge, not ComfyUI output)
-        forge_dir = codex_path.parent
         audio_dir = forge_dir / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
 
-        # Clear stale files from previous runs
-        old_wavs = list(audio_dir.glob("*.wav"))
-        if old_wavs:
-            for old_wav in old_wavs:
-                old_wav.unlink()
-            print(f"    Cleared {len(old_wavs)} old audio files")
+        # Resume support: detect existing audio files to skip on re-run
+        existing_wavs = {f.name for f in audio_dir.glob("*.wav") if f.stat().st_size > 0}
+        if existing_wavs:
+            print(f"    Found {len(existing_wavs)} existing audio files (will skip)")
 
         # Reset audio generation tracking
         chapters_data["audio_generation"] = {"items": [], "total_generated": 0}
         audio_generated_count = 0
+        skipped_count = 0
         seq_num = 0
 
         # 1. Book title audio
@@ -1539,15 +1559,28 @@ def run_template1_generation(
         if book_title:
             seq_num += 1
             title_path = audio_dir / f"{seq_num:03d}_title.wav"
-            print(f"\n    [{seq_num}] Book Title: \"{book_title}\"")
 
-            title_script = [{"speaker": "NARRATOR", "text": book_title, "instruct": "Grand, resonant announcement with gravitas."}]
-            success, duration = tts_engine.generate_scene_audio(
-                audio_script=title_script,
-                voice_map=voice_map,
-                output_path=title_path,
-                language=TTS_LANGUAGE,
-            )
+            if title_path.name in existing_wavs:
+                print(f"\n    [{seq_num}] Book Title: \"{book_title}\" (skip - exists)")
+                duration = 0.0
+                try:
+                    import soundfile as _sf
+                    info = _sf.info(str(title_path))
+                    duration = info.duration
+                except Exception:
+                    pass
+                success = True
+                skipped_count += 1
+            else:
+                print(f"\n    [{seq_num}] Book Title: \"{book_title}\"")
+                title_script = [{"speaker": "NARRATOR", "text": book_title, "instruct": "Grand, resonant announcement with gravitas."}]
+                success, duration = tts_engine.generate_scene_audio(
+                    audio_script=title_script,
+                    voice_map=voice_map,
+                    output_path=title_path,
+                    language=TTS_LANGUAGE,
+                )
+
             gen_data = {
                 "sequence": seq_num, "type": "title", "status": "completed" if success else "failed",
                 "output_path": str(title_path), "duration": duration,
@@ -1565,15 +1598,28 @@ def run_template1_generation(
             # Chapter title audio
             seq_num += 1
             ch_title_path = audio_dir / f"{seq_num:03d}_ch{ch_num:02d}_title.wav"
-            print(f"\n    [{seq_num}] Ch{ch_num} Title: \"{ch_title}\"")
 
-            ch_script = [{"speaker": "NARRATOR", "text": f"Chapter {ch_num}. {ch_title}", "instruct": "Clear, measured chapter announcement."}]
-            success, duration = tts_engine.generate_scene_audio(
-                audio_script=ch_script,
-                voice_map=voice_map,
-                output_path=ch_title_path,
-                language=TTS_LANGUAGE,
-            )
+            if ch_title_path.name in existing_wavs:
+                print(f"\n    [{seq_num}] Ch{ch_num} Title: \"{ch_title}\" (skip - exists)")
+                duration = 0.0
+                try:
+                    import soundfile as _sf
+                    info = _sf.info(str(ch_title_path))
+                    duration = info.duration
+                except Exception:
+                    pass
+                success = True
+                skipped_count += 1
+            else:
+                print(f"\n    [{seq_num}] Ch{ch_num} Title: \"{ch_title}\"")
+                ch_script = [{"speaker": "NARRATOR", "text": f"Chapter {ch_num}. {ch_title}", "instruct": "Clear, measured chapter announcement."}]
+                success, duration = tts_engine.generate_scene_audio(
+                    audio_script=ch_script,
+                    voice_map=voice_map,
+                    output_path=ch_title_path,
+                    language=TTS_LANGUAGE,
+                )
+
             gen_data = {
                 "sequence": seq_num, "type": "chapter_title", "chapter_number": ch_num,
                 "status": "completed" if success else "failed",
@@ -1593,21 +1639,33 @@ def run_template1_generation(
                     # Fallback: use prose as single narrator chunk
                     prose = scene.get("prose", "")
                     if prose:
-                        audio_script = [{"speaker": "NARRATOR", "text": prose, "instruct": "Neutral, even narration."}]
+                        audio_script = [{"speaker": "NARRATOR", "text": prose, "instruct": "Grounded, deliberate narration."}]
                     else:
                         print(f"\n    [skip] Ch{ch_num} Sc{sc_num}: No audio script or prose")
                         continue
 
                 seq_num += 1
                 scene_path = audio_dir / f"{seq_num:03d}_ch{ch_num:02d}_sc{sc_num:02d}.wav"
-                print(f"\n    [{seq_num}] Ch{ch_num} Sc{sc_num} ({len(audio_script)} chunks)")
 
-                success, duration = tts_engine.generate_scene_audio(
-                    audio_script=audio_script,
-                    voice_map=voice_map,
-                    output_path=scene_path,
-                    language=TTS_LANGUAGE,
-                )
+                if scene_path.name in existing_wavs:
+                    print(f"\n    [{seq_num}] Ch{ch_num} Sc{sc_num} (skip - exists)")
+                    duration = 0.0
+                    try:
+                        import soundfile as _sf
+                        info = _sf.info(str(scene_path))
+                        duration = info.duration
+                    except Exception:
+                        pass
+                    success = True
+                    skipped_count += 1
+                else:
+                    print(f"\n    [{seq_num}] Ch{ch_num} Sc{sc_num} ({len(audio_script)} chunks)")
+                    success, duration = tts_engine.generate_scene_audio(
+                        audio_script=audio_script,
+                        voice_map=voice_map,
+                        output_path=scene_path,
+                        language=TTS_LANGUAGE,
+                    )
 
                 gen_data = {
                     "sequence": seq_num, "type": "scene",
@@ -1624,6 +1682,9 @@ def run_template1_generation(
                 # Save progress after each scene
                 chapters_data["audio_generation"]["total_generated"] = audio_generated_count
                 save_codex(codex, codex_path)
+
+        if skipped_count:
+            print(f"\n    Skipped {skipped_count} existing files, generated {audio_generated_count - skipped_count} new")
 
         audio_count = audio_generated_count
         chapters_data["audio_generation"]["total_generated"] = audio_count

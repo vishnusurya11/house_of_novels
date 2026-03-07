@@ -12,6 +12,8 @@ import threading
 import random
 import string
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -213,13 +215,36 @@ _AGENT_TIMEOUT = float(GLOBAL_CONFIG.get("agent_call_timeout", 300))
 
 
 def _safe_as_completed(futures_collection, timeout=None, label=""):
-    """Wrapper around as_completed — waits for all futures to complete.
+    """Wrapper around as_completed with timeout support.
 
-    Yields completed futures just like as_completed(). No timeout — every task
-    runs to completion so no data is lost.
+    Yields completed futures. If timeout is reached, logs which futures
+    timed out and skips them (callers get fewer results than submitted).
     """
-    from concurrent.futures import as_completed
-    yield from as_completed(futures_collection)
+    from concurrent.futures import as_completed, TimeoutError
+
+    try:
+        yield from as_completed(futures_collection, timeout=timeout)
+    except TimeoutError:
+        timed_out = [f for f in futures_collection if not f.done()]
+        if timed_out:
+            tprint(f"  ⏰ {label}: {len(timed_out)} future(s) timed out after {timeout:.0f}s")
+            for f in timed_out:
+                f.cancel()
+
+
+@contextmanager
+def _timeout_executor(max_workers: int):
+    """ThreadPoolExecutor that won't hang on exit if futures timed out.
+
+    Uses shutdown(wait=False, cancel_futures=True) so already-running
+    threads that missed their timeout don't block the main thread.
+    """
+    executor = ThreadPoolExecutor(max_workers=max_workers)
+    try:
+        yield executor
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
 
 if TYPE_CHECKING:
     from src.authors.base_author import BaseAuthor
@@ -833,7 +858,7 @@ Return your response with COMPLETE data."""))
         results = [None] * len(agents)
         worker_id = self._get_worker_id()
 
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+        with _timeout_executor(len(agents)) as executor:
             futures = {}
             for i, agent in enumerate(agents):
                 method = getattr(agent, method_name)
@@ -1112,7 +1137,7 @@ Return your response with COMPLETE data."""))
                 )
 
             perspective_proposals = [None] * len(perspective_agents)
-            with ThreadPoolExecutor(max_workers=len(perspective_agents)) as executor:
+            with _timeout_executor(len(perspective_agents)) as executor:
                 futures = {executor.submit(_propose_perspective, a): i for i, a in enumerate(perspective_agents)}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step0/perspective-proposals"):
                     idx = futures[future]
@@ -1138,7 +1163,7 @@ Return your response with COMPLETE data."""))
                 )
 
             all_perspective_critiques = []
-            with ThreadPoolExecutor(max_workers=len(perspective_agents)) as executor:
+            with _timeout_executor(len(perspective_agents)) as executor:
                 futures = {executor.submit(_critique_perspective, a): i for i, a in enumerate(perspective_agents)}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step0/perspective-critiques"):
                     try:
@@ -2042,7 +2067,7 @@ RULES:
         from concurrent.futures import ThreadPoolExecutor
 
         proposals: list[CastEnsembleProposal] = []
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with _timeout_executor(3) as executor:
             futures = {
                 executor.submit(agent.propose_corrections, characters_text): agent
                 for agent in agents
@@ -2063,7 +2088,7 @@ RULES:
         # ─── ROUND 2: CROSS-CRITIQUE ───
         tprint(f"\n>>> Round 2: Cross-critiques ({len(proposals)} proposals)...")
         critiques: list[CastEnsembleCritique] = []
-        with ThreadPoolExecutor(max_workers=6) as executor:
+        with _timeout_executor(6) as executor:
             critique_futures = {}
             for i, critic_agent in enumerate(agents):
                 for j, target_proposal in enumerate(proposals):
@@ -2087,7 +2112,7 @@ RULES:
         # ─── ROUND 3: VOTE ───
         tprint(f"\n>>> Round 3: Voting for best correction set...")
         votes: list[CastEnsembleVote] = []
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with _timeout_executor(3) as executor:
             vote_futures = {
                 executor.submit(agent.vote_for_best, proposals): agent
                 for agent in agents
@@ -2239,7 +2264,7 @@ RULES:
                 name_lock = threading.Lock()  # Thread-safe name list management
 
                 # Submit all character creation tasks
-                with ThreadPoolExecutor(max_workers=max_workers_characters) as executor:
+                with _timeout_executor(max_workers_characters) as executor:
                     # Create wrapper function to handle name locking
                     def create_character_with_lock(idx, perspective):
                         # Get pre-assigned visual slot from contrast matrix
@@ -2732,7 +2757,7 @@ RULES:
 
                 from concurrent.futures import ThreadPoolExecutor
 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                with _timeout_executor(max_workers) as executor:
                     # Submit all debate tasks
                     future_shape = executor.submit(
                         self._run_story_shape_debate,
@@ -3661,6 +3686,15 @@ RULES:
                 "stakes": "",
             })
 
+        # Enrich characters with suggested_role from Step 0 perspectives
+        perspectives = outline.get("perspectives", [])
+        for i, char in enumerate(characters):
+            if i < len(perspectives):
+                p = perspectives[i] if isinstance(perspectives[i], dict) else {}
+                role_hint = p.get("suggested_role", "")
+                if role_hint:
+                    char["suggested_role"] = role_hint
+
         return characters
 
     def _run_name_debate(
@@ -3724,7 +3758,7 @@ Propose a character name that:
                 }
 
         proposals = [None] * len(agents)
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+        with _timeout_executor(len(agents)) as executor:
             futures = {executor.submit(_name_propose, agent): i for i, agent in enumerate(agents)}
             for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/proposals"):
                 proposals[futures[future]] = future.result()
@@ -3763,7 +3797,7 @@ Critique ALL proposals. Score each 1-10."""
                     "reviews": [{"proposal": i, "score": 5} for i in range(3)]
                 }
 
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+        with _timeout_executor(len(agents)) as executor:
             futures = {executor.submit(_name_critique, agent): i for i, agent in enumerate(agents)}
             for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/critiques"):
                 critiques[futures[future]] = future.result()
@@ -3790,7 +3824,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
             except Exception:
                 return agent.name, (i + 1) % 3
 
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+        with _timeout_executor(len(agents)) as executor:
             futures = [executor.submit(_name_vote, i, agent) for i, agent in enumerate(agents)]
             for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "name-debate/votes"):
                 name, voted_for = future.result()
@@ -3927,7 +3961,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
         tprint(f"      Gathering critiques (parallel)...")
         from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
         critiques = []
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with _timeout_executor(3) as executor:
             futures = {}
             for i, agent in enumerate(agents[:3]):
                 target_idx = (i + 1) % len(proposals)
@@ -4137,7 +4171,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 )
 
         critiques = []
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with _timeout_executor(2) as executor:
             futures = {}
             for i, agent in enumerate(agents[:2]):
                 target_idx = (i + 1) % len(proposals)
@@ -4168,7 +4202,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                 )
 
         votes = []
-        with ThreadPoolExecutor(max_workers=len(agents)) as executor:
+        with _timeout_executor(len(agents)) as executor:
             futures = {executor.submit(_costume_vote, agent): agent for agent in agents}
             for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "costume-debate/votes"):
                 try:
@@ -4315,6 +4349,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                         structure_beats=structure_beats,
                         setting=setting_prompt,
                         gender=gender,
+                        suggested_role=char_info.get("suggested_role", ""),
                     )
                     backstory_points = backstory_result.backstory_points
                     motivation = backstory_result.motivation
@@ -4364,6 +4399,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     backstory_points=backstory_points,
                     motivation=motivation,
                     arc=arc,
+                    occupation=char_info.get("suggested_role", ""),
                 )
 
                 characters.append(character.model_dump())
@@ -4587,7 +4623,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
                     return agent.propose_beats(story_shape, save_the_cat_type, theme_question, story_prompt)
 
             stc_proposals = [None] * len(stc_agents)
-            with ThreadPoolExecutor(max_workers=len(stc_agents)) as executor:
+            with _timeout_executor(len(stc_agents)) as executor:
                 futures = {executor.submit(_stc_propose, agent): i for i, agent in enumerate(stc_agents)}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step2/stc-proposals"):
                     idx = futures[future]
@@ -4604,7 +4640,7 @@ Agent positions: NAME_CREATIVE=0, NAME_AUTHENTIC=1, NAME_DISTINCTIVE=2"""
 
             all_stc_critiques = []
             critique_results = [None] * len(stc_agents)
-            with ThreadPoolExecutor(max_workers=len(stc_agents)) as executor:
+            with _timeout_executor(len(stc_agents)) as executor:
                 futures = {executor.submit(_stc_critique, agent): i for i, agent in enumerate(stc_agents)}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step2/stc-critiques"):
                     idx = futures[future]
@@ -5089,7 +5125,7 @@ Theme: {outline.get('theme', '')}
                 tprint(f"    Gathering critiques (parallel)...")
                 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
                 critiques = []
-                with ThreadPoolExecutor(max_workers=3) as executor:
+                with _timeout_executor(3) as executor:
                     futures = {}
                     for i, agent in enumerate(location_agents[:3]):
                         target_idx = (i + 1) % len(proposals)
@@ -5619,7 +5655,7 @@ Theme: {outline.get('theme', '')}
                 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
                 location_results = []
-                with ThreadPoolExecutor(max_workers=max_workers_locations) as executor:
+                with _timeout_executor(max_workers_locations) as executor:
                     future_to_location = {
                         executor.submit(
                             self._create_location_parallel,
@@ -7404,7 +7440,7 @@ RELIGION:
                 # We'll process sequentially but generate in parallel
                 chapter_results = []
 
-                with ThreadPoolExecutor(max_workers=max_workers_chapters) as executor:
+                with _timeout_executor(max_workers_chapters) as executor:
                     # Submit all chapters
                     future_to_chapter = {}
                     for chapter_skeleton in winning_skeleton['chapters']:
@@ -7517,6 +7553,24 @@ RELIGION:
             }
 
             total_scenes = sum(len(ch['scenes']) for ch in chapter_outline['chapters'])
+
+            # Validate minimum 2 characters per scene — auto-fix by adding protagonist
+            protagonist_name = characters[0]["name"] if characters else ""
+            for ch in chapter_outline['chapters']:
+                for scene in ch['scenes']:
+                    chars = scene.get("characters_present", [])
+                    if len(chars) < 2 and protagonist_name:
+                        if protagonist_name not in chars:
+                            chars.append(protagonist_name)
+                        # If still only 1 (protagonist was the solo char), add a second character
+                        if len(chars) < 2 and len(characters) > 1:
+                            for c in characters[1:]:
+                                if c["name"] not in chars:
+                                    chars.append(c["name"])
+                                    break
+                        scene["characters_present"] = chars
+                        tprint(f"    ⚠ Scene {scene.get('scene_number', '?')}: auto-added characters → {chars}")
+
             duration = time.time() - start_time
 
             # Collect Stage 2 timing
@@ -7655,7 +7709,7 @@ RELIGION:
                     if analysis['agent_name'] != agent.name:
                         critique_tasks.append((agent, analysis))
 
-            with ThreadPoolExecutor(max_workers=len(critique_tasks)) as executor:
+            with _timeout_executor(len(critique_tasks)) as executor:
                 futures = {executor.submit(_foreshadow_critique, a, an): (a, an) for a, an in critique_tasks}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step5b/foreshadowing-critiques"):
                     agent, analysis = futures[future]
@@ -7969,7 +8023,7 @@ RELIGION:
                 from concurrent.futures import ThreadPoolExecutor
                 import threading
 
-                with ThreadPoolExecutor(max_workers=max_workers_analysis) as executor:
+                with _timeout_executor(max_workers_analysis) as executor:
                     # Submit all 6 agent tasks
                     def run_causality():
                         worker_id = self._get_worker_id()
@@ -8166,7 +8220,7 @@ RELIGION:
 
                 if fix_tasks:
                     tprint(f"\n  Fixing {len(fix_tasks)} scenes in parallel ({max_workers_scenes} workers)...")
-                    with ThreadPoolExecutor(max_workers=max_workers_scenes) as executor:
+                    with _timeout_executor(max_workers_scenes) as executor:
                         futures = []
                         for fix_type, scene_ref in fix_tasks:
                             if fix_type == 'causality':
@@ -8527,7 +8581,7 @@ RELIGION:
                         previous_prose=_previous_prose, ticking_clock=_ticking_clock,
                     )
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with _timeout_executor(5) as executor:
                 futures = {executor.submit(_propose_worker, agent): agent for agent in all_agents}
                 for future in _safe_as_completed(futures, _AGENT_TIMEOUT, "step6/prose-proposals"):
                     agent = futures[future]
@@ -8578,7 +8632,7 @@ RELIGION:
                 )
                 return agent, target_proposal, critique
 
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with _timeout_executor(5) as executor:
                 futures = {}
                 for i, agent in enumerate(all_agents):
                     target_idx = (i + 1) % len(proposals)
@@ -8651,7 +8705,15 @@ RELIGION:
                     previous_scenes_senses=previous_scenes_senses,
                     opening_type=selected_opening,
                 )
-                final_prose = synthesis.to_prose()
+                from src.story_agents.prose_postprocess import prose_postprocess
+                pov_name = scene_data.get("pov_character", "")
+                pov_char = next((c for c in characters if c.get("name") == pov_name), {})
+                chars_present = scene_data.get("characters_present", scene_data.get("characters", []))
+                final_prose = prose_postprocess(
+                    synthesis.to_prose(),
+                    pov_gender=pov_char.get("gender", ""),
+                    characters_present=chars_present if isinstance(chars_present, list) else [],
+                )
                 scene_word_count = len(final_prose.split())
                 synthesis_score = synthesis.synthesis_score
                 tprint(f"[Worker-{worker_id}]       Synthesis: {scene_word_count} words, score {synthesis_score:.1f}/10")
@@ -8685,17 +8747,17 @@ RELIGION:
             )
 
             try:
-                with ThreadPoolExecutor(max_workers=5) as crit_executor:
+                with _timeout_executor(5) as crit_executor:
                     f_prose = crit_executor.submit(prose_critic.critique, final_prose, scene_id)
                     f_voice = crit_executor.submit(voice_critic.critique, final_prose, scene_chars, scene_id)
                     f_cont = crit_executor.submit(continuity_critic.critique, final_prose, scene_chars, scene_loc, world, scene_id, ticking_clock)
                     f_pacing = crit_executor.submit(pacing_critic.critique, final_prose, scene_data, ticking_clock, scene_id)
                     f_emot = crit_executor.submit(emotional_critic.critique, final_prose, scene_id)
-                    prose_crit = f_prose.result()
-                    voice_crit = f_voice.result()
-                    cont_crit = f_cont.result()
-                    pacing_crit = f_pacing.result()
-                    emot_crit = f_emot.result()
+                    prose_crit = f_prose.result(timeout=_AGENT_TIMEOUT)
+                    voice_crit = f_voice.result(timeout=_AGENT_TIMEOUT)
+                    cont_crit = f_cont.result(timeout=_AGENT_TIMEOUT)
+                    pacing_crit = f_pacing.result(timeout=_AGENT_TIMEOUT)
+                    emot_crit = f_emot.result(timeout=_AGENT_TIMEOUT)
 
                 avg_critique_score = (
                     prose_crit.overall_score + voice_crit.overall_voice_score +
@@ -9213,10 +9275,10 @@ RELIGION:
                         try:
                             return future.result(timeout=_CRITIC_TIMEOUT)
                         except Exception as e:
-                            tprint(f"    {scene_id}: {name} critic failed: {e}")
+                            tprint(f"    {scene_id}: {name} critic failed: {type(e).__name__}: {e or f'timeout after {_CRITIC_TIMEOUT}s'}")
                             return None
 
-                    with ThreadPoolExecutor(max_workers=5) as crit_executor:
+                    with _timeout_executor(5) as crit_executor:
                         f_prose = crit_executor.submit(prose_critic.critique, prose, scene_id)
                         f_voice = crit_executor.submit(voice_critic.critique, prose, scene_chars, scene_id)
                         f_cont = crit_executor.submit(continuity_critic.critique, prose, scene_chars, scene_loc, world, scene_id, ticking_clock)
@@ -9294,13 +9356,21 @@ RELIGION:
                         # Revise the scene (with timeout to prevent hanging)
                         _REVISION_TIMEOUT = 120  # 2 minutes for revision LLM call
                         try:
-                            with ThreadPoolExecutor(max_workers=1) as rev_executor:
+                            with _timeout_executor(1) as rev_executor:
                                 rev_future = rev_executor.submit(
                                     reviser.revise_scene,
                                     scene, critique_text, char_context, str(scene_loc)[:1000]
                                 )
                                 revised = rev_future.result(timeout=_REVISION_TIMEOUT)
-                            revised_prose = revised.to_prose()
+                            from src.story_agents.prose_postprocess import prose_postprocess
+                            pov_name = scene.get("pov_character", "")
+                            pov_char = next((c for c in scene_chars if c.get("name") == pov_name), {})
+                            chars_present = scene.get("characters_present", scene.get("characters", []))
+                            revised_prose = prose_postprocess(
+                                revised.to_prose(),
+                                pov_gender=pov_char.get("gender", ""),
+                                characters_present=chars_present if isinstance(chars_present, list) else [],
+                            )
                             scene["prose"] = revised_prose
                             scene["word_count"] = len(revised_prose.split())
                             scene["revision_notes"] = {
@@ -9350,7 +9420,7 @@ RELIGION:
                 rev_max_workers = step7_cfg.get("parallel_processing", {}).get("max_workers", 6)
                 tprint(f"\n  Processing {len(all_scenes)} scenes in parallel (max_workers={rev_max_workers})...")
 
-                with ThreadPoolExecutor(max_workers=rev_max_workers) as scene_executor:
+                with _timeout_executor(rev_max_workers) as scene_executor:
                     futures = {
                         scene_executor.submit(_process_scene, scene, ch_num): (scene, ch_num)
                         for scene, ch_num in all_scenes
@@ -9681,7 +9751,7 @@ RELIGION:
 
                 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
-                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                with _timeout_executor(max_workers) as executor:
                     # Submit all chapter title debates in parallel
                     chapter_futures = []
                     for chapter in narrative_chapters:

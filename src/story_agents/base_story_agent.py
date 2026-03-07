@@ -2,6 +2,7 @@
 Base class for story builder agents with OpenRouter integration.
 """
 
+import atexit
 import hashlib
 import inspect
 import json
@@ -43,6 +44,16 @@ except ImportError:
     _LLM_CACHE = None
 
 
+def _cleanup():
+    """Close global resources at exit to prevent process hang."""
+    _SHARED_HTTP_CLIENT.close()
+    if _LLM_CACHE is not None:
+        _LLM_CACHE.close()
+
+
+atexit.register(_cleanup)
+
+
 def _cache_key(prompt: str, system_prompt: str, model: str, schema_name: str, max_tokens: int) -> str:
     """Generate a deterministic cache key from prompt + model + schema."""
     content = f"{model}:{schema_name}:{max_tokens}:{system_prompt}:{prompt}"
@@ -56,6 +67,8 @@ class BaseStoryAgent(ABC):
     # Format: {step_name: {banned_model1, banned_model2, ...}}
     _step_banned_models: dict = {}
     _ban_lock = threading.Lock()  # Thread-safe access to _step_banned_models
+    # Track announced fallbacks to avoid log spam (step:model combos already printed)
+    _announced_fallbacks: set = set()
 
     def __init__(self, model: str = DEFAULT_MODEL, temperature: float = 0.7):
         self.model_name = model
@@ -195,7 +208,10 @@ class BaseStoryAgent(ABC):
         for model_index, current_model in enumerate(models_to_try):
             # Create LLM instance for current model
             if current_model != self.model_name:
-                print(f"\n🔄 Switching to fallback model: {current_model}")
+                _fb_key = f"{step_context}:{current_model}"
+                if _fb_key not in BaseStoryAgent._announced_fallbacks:
+                    BaseStoryAgent._announced_fallbacks.add(_fb_key)
+                    print(f"\n🔄 Switching to fallback model: {current_model} (for {step_context})")
                 current_llm = ChatOpenAI(
                     model=current_model,
                     api_key=OPENROUTER_API_KEY,
@@ -262,10 +278,6 @@ Try again with complete data for every field."""))
                         else:
                             # Failed all retries with this model
                             break
-
-                    # Success! Log if we used a fallback
-                    if current_model != self.model_name:
-                        print(f"✅ SUCCESS with fallback model: {current_model}")
 
                     # Extract token usage from raw message and track it
                     usage_dict = self._extract_token_usage(raw_message, current_model)
