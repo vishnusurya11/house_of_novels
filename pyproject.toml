@@ -15,19 +15,21 @@ dependencies = [
     "moviepy>=2.0.0",
     "pydub>=0.25.1",
     "audioop-lts>=0.2.1",
-    "Pillow>=11.0.0",  # Image compositing (AI stamp overlay)
-    "svglib>=0.9.0",  # SVG → ReportLab drawing (pure Python)
-    "reportlab>=4.0",  # PDF/image rendering (used by svglib)
-    "pyyaml>=6.0",  # Config file loading
-    "diskcache>=5.6.0",  # LLM response caching for re-runs
+    "Pillow>=11.0.0", # Image compositing (AI stamp overlay)
+    "svglib>=0.9.0", # SVG → ReportLab drawing (pure Python)
+    "reportlab>=4.0", # PDF/image rendering (used by svglib)
+    "pyyaml>=6.0", # Config file loading
+    "diskcache>=5.6.0", # LLM response caching for re-runs
     # TTS support (script generation uses openai client; audio I/O uses soundfile + numpy)
-    "soundfile>=0.13.0",  # WAV audio I/O
-    "openai>=1.0.0",  # OpenAI-compatible client (Ollama, LM Studio, OpenRouter)
-    "numpy>=1.26.0",  # Audio array manipulation
+    "soundfile>=0.13.0", # WAV audio I/O
+    "openai>=1.0.0", # OpenAI-compatible client (Ollama, LM Studio, OpenRouter)
+    "numpy>=1.26.0", # Audio array manipulation
     # YouTube upload (Phase 7)
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
     "google-auth-httplib2>=0.2.0",
+    "peft>=0.18.1",
+    "librosa>=0.11.0",
 ]
 
 [project.optional-dependencies]

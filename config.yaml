@@ -187,6 +187,17 @@ tts:
   pause_within_speaker_ms: 300            # Silence between same speaker entries
   output_format: "wav"                    # "wav" (native) or "mp3"
   language: "English"                     # Default language for TTS
+  # LoRA-specific settings (only used when narration_mode: "lora")
+  lora:
+    adapter_dir: ""                       # Root dir for adapters; empty = forge/{ts}/lora_adapters/
+    fallback_to_design: true              # If adapter missing, fall back to VoiceDesign
+    training:
+      samples_per_character: 12           # Training samples to generate per character
+      epochs: 12                          # LoRA training epochs
+      learning_rate: 5.0e-6               # LoRA learning rate
+      lora_rank: 32                       # LoRA rank (r)
+      lora_alpha: 128                     # LoRA alpha scaling
+      max_audio_duration_sec: 30          # Max audio duration for training samples
 
 # Audio Script Annotation LLM (generates audio scripts from scene metadata)
 annotation_llm:
@@ -197,7 +208,7 @@ annotation_llm:
   # base_url: "https://api.openai.com/v1"  # OpenAI
   # model: "qwen3.5:9b"                    # Local Ollama model
   model: "openai/gpt-4.1-nano"             # Cheap, excellent at structured JSON
-  api_key: "env:OPENROUTER_API_KEY"         # "ollama" for local, "env:VAR_NAME" for env var
+  api_key: "env:OPR_ROUTER_API_KEY"         # "ollama" for local, "env:VAR_NAME" for env var
   temperature: 0.3                          # Lower = more consistent scripts
   max_tokens: 4000                          # Max output tokens per scene script
 

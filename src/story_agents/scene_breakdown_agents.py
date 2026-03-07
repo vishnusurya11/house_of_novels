@@ -277,12 +277,16 @@ Requirements for each scene:
 3. scene_summary: What happens in this scene (KEEP CONCISE: 1-2 sentences, ~40 words max)
 4. pov_character: Whose perspective we experience this scene through
 5. location: Choose from available locations
-6. characters_present: List of character names in this scene
+6. characters_present: List of character names in this scene (MINIMUM 2 — no solo scenes)
 7. tropes_manifesting: Choose 1-2 tropes from the story's tropes list that are actively shown in this scene
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
 11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
+
+RULE: Every scene MUST have at least 2 characters in characters_present.
+No solo/introspection-only scenes. Even reflective moments need another
+character present to create tension through dialogue or interaction.
 
 Focus on beat distribution and trope integration across all scenes.
 Create {chapter_skeleton.get('num_scenes')} scenes that execute the chapter plan effectively.
@@ -672,12 +676,16 @@ Requirements for each scene:
 3. scene_summary: What happens (CONCISE: 1-2 sentences, ~40 words max)
 4. pov_character: Whose perspective
 5. location: From available locations
-6. characters_present: List of character names
+6. characters_present: List of character names (MINIMUM 2 — no solo scenes)
 7. tropes_manifesting: Choose 1-2 tropes from the story's tropes list that are actively shown in this scene
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
 11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
+
+RULE: Every scene MUST have at least 2 characters in characters_present.
+No solo/introspection-only scenes. Even reflective moments need another
+character present to create tension through dialogue or interaction.
 
 Focus on scene type variety and word count pacing for maximum reader engagement.
 Vary scene types and intensities to maintain engagement.
@@ -1026,12 +1034,16 @@ Requirements for each scene:
 3. scene_summary: What happens (CONCISE: 1-2 sentences, ~40 words max)
 4. pov_character: Whose perspective (choose the character most affected by this scene)
 5. location: From available locations
-6. characters_present: List of character names in this scene
+6. characters_present: List of character names in this scene (MINIMUM 2 — no solo scenes)
 7. tropes_manifesting: Choose 1-2 tropes from the story's tropes list that are actively shown in this scene
 8. character_arc_progression: For EACH character in characters_present, provide their emotional/arc state (use character arcs from beat details above): {{character_name: "arc state in ~10 words", ...}}
 9. scene_type: Categorize the scene (action, dialogue, introspection, confrontation, revelation, transition)
 10. estimated_word_count: Based on scene_type and importance (use word count targets above)
 11. time_of_day: When this scene takes place ('dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night') - maintain continuity with previous scenes
+
+RULE: Every scene MUST have at least 2 characters in characters_present.
+No solo/introspection-only scenes. Even reflective moments need another
+character present to create tension through dialogue or interaction.
 
 Focus on character arc progression and POV choice for maximum character development.
 Assign POV strategically - whose perspective best serves each scene?

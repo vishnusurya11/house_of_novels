@@ -809,33 +809,39 @@ class PerspectiveDiversityAgent(BaseStoryAgent):
 
     @property
     def system_prompt(self) -> str:
-        return """You are a perspective diversity specialist who creates distinct, memorable character worldviews.
+        return """You are a perspective diversity specialist who creates distinct, setting-grounded character worldviews.
 
 Your approach:
 - Ensure each perspective is GENUINELY DIFFERENT (not just variations)
 - Cover at least 3 corners of the thematic square (must include POSITIVE and CONTRADICTORY)
-- Give each perspective a MEMORABLE NAME that captures its essence
-- Make each perspective sound like a REAL PERSON'S belief system
+- Give each perspective a SETTING-GROUNDED ROLE NAME that implies occupation or social position
+  NOT abstract archetypes like "The Burned Idealist" or "The Shapeshifter"
+- Each perspective must include a suggested_role (occupation/position in the story world)
+- Make each perspective sound like a REAL PERSON shaped by their profession and daily life
 
-Example for "Is authenticity worth the cost?" with a square about truth vs. deception:
+Example for "Is authenticity worth the cost?" set in a hospital:
 
-1. "The Unmasked Warrior" (POSITIVE)
+1. "The Attending Surgeon" (POSITIVE)
    - Position: "Truth is the only path to genuine connection"
-   - Belief: "I'd rather be hated for who I am than loved for who I'm not"
+   - Belief: "I'd rather lose my career than lie to a patient's family"
+   - Suggested role: attending surgeon
 
-2. "The Protective Phantom" (CONTRADICTORY)
-   - Position: "Masks protect you and others from painful truths"
-   - Belief: "Showing your real self just gives people ammunition to hurt you"
+2. "The Hospital Administrator" (CONTRADICTORY)
+   - Position: "Controlled information protects everyone"
+   - Belief: "Full transparency would destroy this institution overnight"
+   - Suggested role: hospital administrator
 
-3. "The Burned Idealist" (CONTRARY)
-   - Position: "I believed in honesty and it cost me everything"
-   - Belief: "Authenticity sounds noble until you lose everyone you love"
+3. "The Night-Shift Nurse" (CONTRARY)
+   - Position: "I've seen honesty destroy families at 3 AM"
+   - Belief: "Sometimes the kindest thing is a gentle lie"
+   - Suggested role: night-shift nurse
 
-4. "The Shapeshifter" (NEGATION)
-   - Position: "Identity itself is a lie - be whoever gets you what you need"
-   - Belief: "There is no 'real me' - we're all just playing roles"
+4. "The Pharmaceutical Rep" (NEGATION)
+   - Position: "Truth is whatever sells — sincerity is just another pitch"
+   - Belief: "Everyone lies. I'm just better at it"
+   - Suggested role: pharmaceutical sales representative
 
-Create DIVERSE perspectives that will CLASH dramatically.
+Create DIVERSE perspectives grounded in specific occupations that will CLASH dramatically.
 """
 
     def propose_perspectives(self, central_question: str, top_squares: list[ThematicSquareSchema]) -> PerspectiveSetProposal:
@@ -856,13 +862,16 @@ THEMATIC SQUARE:
 
 Create 4 character perspectives that:
 1. Cover at least 3 corners (MUST include POSITIVE and CONTRADICTORY)
-2. Have memorable, evocative names (e.g., "The Unmasked Warrior", "The Protective Phantom")
+2. Have SETTING-GROUNDED role names that imply occupation or social position
+   (e.g., "The Night-Shift Nurse", "The Defense Attorney", "The Street Vendor")
+   NOT abstract archetypes like "The Burned Idealist" or "The Shapeshifter"
 3. State a clear position on the central question
 4. Include an example belief a character might hold
-5. Are GENUINELY DISTINCT from each other
+5. Include a suggested_role: a specific occupation or social role for this character
+6. Are GENUINELY DISTINCT from each other
 
 In your response, provide:
-1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief)
+1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief, suggested_role)
 2. reasoning: WHY this set of perspectives best serves the story's thematic needs
 
 Return proposal in JSON format specified by PerspectiveSetProposal.
@@ -962,11 +971,12 @@ Example: If logline is "An impostor wants to save a life with a document":
 NOT generic like:
 - "The Truth Seeker" - "Truth is always better"
 
-Instead story-specific like:
-- "The Forged Identity" - "I've lived this lie so long, maybe it's true enough to do real good"
-- "The Document Keeper" - "The truth is written - anything else is poison"
+Instead story-specific with OCCUPATION-GROUNDED roles:
+- "The Forged Identity" (suggested_role: identity forger) - "I've lived this lie so long, maybe it's true enough to do real good"
+- "The Records Clerk" (suggested_role: county records clerk) - "The truth is written - anything else is poison"
 
 Create perspectives that emerge from THIS STORY'S unique situation.
+Each perspective MUST include a suggested_role (occupation or social position).
 """
 
     def propose_perspectives(self, central_question: str, top_squares: list[ThematicSquareSchema], logline: str = "") -> PerspectiveSetProposal:
@@ -992,9 +1002,11 @@ Create 4 perspectives that:
 2. Reference the situation/world from the logline
 3. Feel natural to THIS premise (not generic)
 4. Will create conflicts specific to this story
+5. Have SETTING-GROUNDED role names implying occupation or social position
+6. Include a suggested_role: a specific occupation or social role for this character
 
 In your response, provide:
-1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief)
+1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief, suggested_role)
 2. reasoning: WHY this set of perspectives best serves the story's thematic needs
 
 Return proposal in JSON format specified by PerspectiveSetProposal.
@@ -1126,9 +1138,11 @@ Ensure:
 - No two perspectives are redundant
 - The set covers philosophical range
 - Each serves a distinct narrative function
+- Each has a SETTING-GROUNDED role name implying occupation or social position
+- Each includes a suggested_role: a specific occupation or social role
 
 In your response, provide:
-1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief)
+1. perspectives: A list of 4 character perspectives (each with perspective_name, position, corner, example_belief, suggested_role)
 2. reasoning: WHY this set of perspectives best serves the story's thematic needs
 
 Return proposal in JSON format specified by PerspectiveSetProposal.

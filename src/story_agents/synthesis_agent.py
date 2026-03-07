@@ -349,6 +349,20 @@ Return NarrativeProseSynthesis with:
         char_context = self._build_character_context(characters, scene_context)
         sensory_guidance = self._build_sensory_guidance(previous_scenes_senses, characters, scene_context)
 
+        # Extract scene_data for proper key access
+        scene_data = scene_context.get("scene_data", scene_context)
+
+        # Build POV gender/pronoun info
+        pov_name = scene_data.get("pov_character", "")
+        pov_char = next((c for c in characters if c.get("name") == pov_name), {})
+        pov_gender = pov_char.get("gender", "unknown")
+        if pov_gender == "female":
+            pov_pronouns = "she/her/hers"
+        elif pov_gender == "male":
+            pov_pronouns = "he/him/his"
+        else:
+            pov_pronouns = "they/them/theirs"
+
         # Build opening type guidance
         opening_guidance = ""
         if opening_type:
@@ -382,13 +396,23 @@ Your opening_paragraph MUST follow this type. This is NON-NEGOTIABLE. Do NOT def
 {sensory_guidance}
 
 === SCENE CONTEXT ===
-Scene: {scene_context.get('scene_summary', 'N/A')}
-Characters present: {', '.join(scene_context.get('characters', []))}
-Location: {scene_context.get('location', 'N/A')}
-Goal: {scene_context.get('goal', 'N/A')}
-Conflict: {scene_context.get('conflict', 'N/A')}
-Disaster/Resolution: {scene_context.get('disaster_or_resolution', 'N/A')}
-Ticking Clock: {scene_context.get('ticking_clock', 'N/A')}
+Scene: {scene_data.get('scene_summary', scene_data.get('happens', 'N/A'))}
+Characters present: {', '.join(scene_data.get('characters', []) if isinstance(scene_data.get('characters', []), list) and all(isinstance(c, str) for c in scene_data.get('characters', [])) else [c.get('name', '?') if isinstance(c, dict) else str(c) for c in scene_data.get('characters', [])])}
+Location: {scene_data.get('location', 'N/A')}
+Goal: {scene_data.get('goal', 'N/A')}
+Conflict: {scene_data.get('conflict', 'N/A')}
+Disaster/Resolution: {scene_data.get('disaster_or_resolution', 'N/A')}
+Ticking Clock: {scene_data.get('ticking_clock', 'N/A')}
+
+=== POV CHARACTER & PRONOUNS ===
+POV: {pov_name} ({pov_gender})
+Pronouns: {pov_pronouns}
+ALL narration pronouns for this character MUST be {pov_pronouns}. Do NOT switch between he/she for the same character.
+
+=== CHARACTER ROSTER (STRICT) ===
+ONLY these characters may appear in the scene: {', '.join(scene_data.get('characters', []) if isinstance(scene_data.get('characters', []), list) and all(isinstance(c, str) for c in scene_data.get('characters', [])) else [c.get('name', '?') if isinstance(c, dict) else str(c) for c in scene_data.get('characters', [])])}
+Do NOT invent, reference, or name any character not in this list.
+All dialogue MUST be spoken by characters in this roster. No exceptions.
 
 {opening_guidance}=== YOUR SYNTHESIS TASK ===
 
@@ -552,7 +576,13 @@ Analysis of {dialogue_analysis.proposal_analyzed}:
         scene_context: dict,
     ) -> str:
         """Build character context for synthesis."""
-        chars_present = scene_context.get("characters", [])
+        scene_data = scene_context.get("scene_data", scene_context)
+        # chars_present may be list[str] (from scene_data) or list[dict] (from top-level)
+        raw_present = scene_data.get("characters", [])
+        if raw_present and isinstance(raw_present[0], dict):
+            chars_present = [c.get("name", "") for c in raw_present]
+        else:
+            chars_present = raw_present
         context = []
 
         for char in characters:
@@ -567,8 +597,17 @@ Analysis of {dialogue_analysis.proposal_analyzed}:
             else:
                 personality_str = str(personality)
 
+            gender = char.get("gender", "unknown")
+            if gender == "female":
+                pronouns = "she/her/hers"
+            elif gender == "male":
+                pronouns = "he/him/his"
+            else:
+                pronouns = "they/them/theirs"
+
             context.append(f"""
-{char_name}:
+{char_name} ({gender}):
+- Pronouns: {pronouns}
 - Personality: {personality_str}
 - Current goal: {char.get('want_vs_need', {}).get('want', 'N/A')}
 - Emotional state: {char.get('emotional_state', 'N/A')}
@@ -600,7 +639,8 @@ Analysis of {dialogue_analysis.proposal_analyzed}:
         suggested = random.sample(available_senses, min(2, len(available_senses)))
 
         # Get POV character for perception filter
-        pov_char_name = scene_context.get("pov_character", "")
+        scene_data = scene_context.get("scene_data", scene_context)
+        pov_char_name = scene_data.get("pov_character", "")
         pov_char = next((c for c in characters if c.get("name") == pov_char_name), None)
 
         profession = ""

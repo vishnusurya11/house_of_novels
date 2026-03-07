@@ -242,6 +242,12 @@ TTS_PAUSE_WITHIN_SPEAKER = TTS_CONFIG.get("pause_within_speaker_ms", 250)
 TTS_OUTPUT_FORMAT = TTS_CONFIG.get("output_format", "wav")
 TTS_LANGUAGE = TTS_CONFIG.get("language", "English")
 
+# LoRA TTS Configuration
+TTS_LORA_CONFIG = TTS_CONFIG.get("lora", {})
+TTS_LORA_ADAPTER_DIR = TTS_LORA_CONFIG.get("adapter_dir", "")
+TTS_LORA_FALLBACK_TO_DESIGN = TTS_LORA_CONFIG.get("fallback_to_design", True)
+TTS_LORA_TRAINING_CONFIG = TTS_LORA_CONFIG.get("training", {})
+
 # Annotation LLM Configuration (for audio script generation)
 ANNOTATION_LLM_CONFIG = YAML_CONFIG.get("annotation_llm", {})
 ANNOTATION_LLM_BASE_URL = ANNOTATION_LLM_CONFIG.get("base_url", "http://localhost:11434/v1")

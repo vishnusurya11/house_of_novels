@@ -38,10 +38,11 @@ class TestSceneSchemaValidation:
             scene_summary="Protagonist at work",
             pov_character="Hero",
             location="Office",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
             scene_type="action",
+            time_of_day="morning",
             # LLM returns None for unknown fields:
             active_plot_threads=None,  # ✅ Now works after fix
             character_arc_beats=None   # ✅ Now works after fix
@@ -58,10 +59,11 @@ class TestSceneSchemaValidation:
             scene_summary="Protagonist at work",
             pov_character="Hero",
             location="Office",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
-            scene_type="action"
+            scene_type="action",
+            time_of_day="morning"
             # Step 5C fields omitted - should use defaults
         )
 
@@ -79,10 +81,11 @@ class TestSceneSchemaValidation:
             scene_summary="Protagonist at work",
             pov_character="Hero",
             location="Office",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
             scene_type="action",
+            time_of_day="morning",
             active_plot_threads=[],  # ✅ Valid
             character_arc_beats=[]   # ✅ Valid
         )
@@ -103,10 +106,11 @@ class TestSceneSchemaWithOptionalFix:
             scene_summary="Protagonist at work",
             pov_character="Hero",
             location="Office",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
             scene_type="action",
+            time_of_day="morning",
             active_plot_threads=None,  # ✅ Should work after fix
             character_arc_beats=None   # ✅ Should work after fix
         )
@@ -151,10 +155,11 @@ class TestStep5CPopulation:
             "scene_summary": "Hero at work",
             "pov_character": "Hero",
             "location": "Office",
-            "characters_present": ["Hero"],
+            "characters_present": ["Hero", "Mentor"],
             "tropes_manifesting": ["Reluctant Hero"],
             "estimated_word_count": 1000,
             "scene_type": "action",
+            "time_of_day": "morning",
             "active_plot_threads": None,
             "character_arc_beats": None
         }
@@ -205,10 +210,11 @@ class TestBackwardCompatibility:
             "scene_summary": "Hero introduction",
             "pov_character": "Hero",
             "location": "Home",
-            "characters_present": ["Hero"],
+            "characters_present": ["Hero", "Mentor"],
             "tropes_manifesting": ["Reluctant Hero"],
             "estimated_word_count": 1200,
             "scene_type": "introspection",
+            "time_of_day": "morning",
             "setup_payoff_tracking": []
             # NO Step 5C fields at all
         }
@@ -228,10 +234,11 @@ class TestBackwardCompatibility:
             "scene_summary": "Hero introduction",
             "pov_character": "Hero",
             "location": "Home",
-            "characters_present": ["Hero"],
+            "characters_present": ["Hero", "Mentor"],
             "tropes_manifesting": ["Reluctant Hero"],
             "estimated_word_count": 1200,
             "scene_type": "introspection",
+            "time_of_day": "morning",
             "scene_causality": {
                 "caused_by": "Story opening",
                 "causes_next": "Ch1 Scene 2: Mentor arrives",
@@ -299,6 +306,7 @@ class TestPipelineIntegration:
             "tropes_manifesting": ["Reluctant Hero"],
             "estimated_word_count": 1500,
             "scene_type": "action",
+            "time_of_day": "morning",
             "character_arc_progression": {"Caelum": "Content but unfulfilled"},
             "active_plot_threads": None,  # LLM returns None
             "character_arc_beats": None,
@@ -366,10 +374,11 @@ class TestSemanticMeaning:
             scene_summary="Introduction",
             pov_character="Hero",
             location="Home",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
             scene_type="action",
+            time_of_day="morning",
             active_plot_threads=None  # Not analyzed yet
         )
 
@@ -392,10 +401,11 @@ class TestSemanticMeaning:
             scene_summary="Introduction",
             pov_character="Hero",
             location="Home",
-            characters_present=["Hero"],
+            characters_present=["Hero", "Mentor"],
             tropes_manifesting=["Reluctant Hero"],
             estimated_word_count=1000,
             scene_type="action",
+            time_of_day="morning",
             active_plot_threads=[]  # Analyzed, but no threads
         )
 

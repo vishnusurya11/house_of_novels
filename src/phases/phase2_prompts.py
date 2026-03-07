@@ -695,6 +695,19 @@ def run_phase2_prompts(
         chapters = chapters_data.get("chapters", [])
         codex_characters = story.get("characters", [])
 
+        # Generate voice designs for all characters (single LLM call)
+        print("    Generating voice designs for characters...")
+        voice_designs = script_gen.generate_voice_descriptions(codex_characters)
+        for char in codex_characters:
+            char_id = char.get("character_id", "")
+            if char_id in voice_designs:
+                char["voice_design"] = voice_designs[char_id]
+        # Store narrator voice design in chapters metadata
+        narrator_vd = voice_designs.get("NARRATOR", "")
+        if narrator_vd:
+            chapters_data["narrator_voice_design"] = narrator_vd
+        print(f"    -> {len(voice_designs)} voice designs generated")
+
         phase2_metadata["audio_scripts"] = []
 
         scene_global_idx = 0

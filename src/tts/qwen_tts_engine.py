@@ -2,17 +2,20 @@
 Qwen3-TTS Engine — Direct local GPU inference for audiobook narration.
 
 Replaces ComfyUI-based TTS with direct Python calls to the qwen-tts library.
-Supports three voice modes:
+Supports four voice modes:
 - CustomVoice: 9 preset voices with instruct-based emotion/tone control
 - VoiceDesign: Generate unlimited unique voices from text descriptions
 - VoiceClone: Clone any voice from a 3-60 second reference audio file
+- LoRA: Fine-tuned LoRA adapters for maximum voice consistency
 
 Architecture:
 - Models are loaded once and reused across all generations
 - Voice clone prompts are cached per character for consistency
 - Audio chunks are concatenated with configurable pauses between speakers
+- LoRA mode uses two-pass batched generation to minimize adapter swaps
 """
 
+import json
 import time
 from pathlib import Path
 from typing import Optional
@@ -20,10 +23,11 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
-# Lazy imports for heavy dependencies (torch, qwen_tts)
+# Lazy imports for heavy dependencies (torch, qwen_tts, peft)
 # These are imported at model load time to avoid slow startup
 _Qwen3TTSModel = None
 _torch = None
+_PeftModel = None
 
 
 def _lazy_import():
@@ -34,6 +38,14 @@ def _lazy_import():
         from qwen_tts import Qwen3TTSModel
         _Qwen3TTSModel = Qwen3TTSModel
         _torch = torch
+
+
+def _lazy_import_peft():
+    """Lazy-import peft to avoid slow startup when not using LoRA."""
+    global _PeftModel
+    if _PeftModel is None:
+        from peft import PeftModel
+        _PeftModel = PeftModel
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +83,28 @@ class DesignVoiceConfig(VoiceConfig):
         self.sample_text = sample_text or "Hello, welcome to the story."
 
 
+class LoRAVoiceConfig(VoiceConfig):
+    """LoRA fine-tuned adapter + reference audio for maximum voice consistency.
+
+    The adapter is applied to the Base model's talker, then a clone prompt
+    is created from the reference audio. All generation happens through
+    the LoRA-modified model, producing more consistent character voices.
+    """
+
+    def __init__(
+        self,
+        adapter_path: str,
+        ref_audio: str,
+        ref_text: str = "",
+        character_style: str = "",
+    ):
+        self.type = "lora"
+        self.adapter_path = adapter_path
+        self.ref_audio = ref_audio
+        self.ref_text = ref_text
+        self.character_style = character_style
+
+
 # ---------------------------------------------------------------------------
 # Main TTS Engine
 # ---------------------------------------------------------------------------
@@ -96,7 +130,7 @@ class QwenTTSEngine:
             precision: "bfloat16", "float16", or "float32"
             model_size: "1.7B" or "0.6B"
             narrator_voice: Voice config for the narrator
-            narration_mode: "single_narrator" or "multi_cast"
+            narration_mode: "single_narrator", "multi_cast", or "lora"
             pause_between_speakers_ms: Silence between different speakers
             pause_within_speaker_ms: Silence between same speaker entries
         """
@@ -115,6 +149,11 @@ class QwenTTSEngine:
 
         # Voice cache: character name -> clone prompt
         self._voice_cache: dict[str, object] = {}
+
+        # LoRA state
+        self._lora_model = None
+        self._lora_clone_cache: dict[str, object] = {}
+        self._current_lora_speaker: str | None = None
 
         # Sample rate (set after first generation)
         self._sample_rate: int = 24000  # Qwen3-TTS default
@@ -285,6 +324,98 @@ class QwenTTSEngine:
         self._sample_rate = sr
         return wavs[0], sr
 
+    def _load_lora_for_speaker(
+        self,
+        speaker: str,
+        config: "LoRAVoiceConfig",
+    ) -> object:
+        """Load a LoRA adapter for a speaker and create their clone prompt.
+
+        If this speaker's clone prompt is already cached, returns it directly.
+        Otherwise loads the adapter, creates the prompt, and caches it.
+
+        Returns:
+            Reusable voice_clone_prompt object
+        """
+        if speaker in self._lora_clone_cache:
+            return self._lora_clone_cache[speaker]
+
+        _lazy_import()
+        _lazy_import_peft()
+
+        adapter_path = Path(config.adapter_path)
+        if not (adapter_path / "adapter_config.json").exists():
+            raise FileNotFoundError(
+                f"No LoRA adapter found at {adapter_path}. "
+                f"Train adapters first with: uv run python -m src.tts.lora_trainer"
+            )
+
+        # Load fresh base model if switching speakers
+        if self._lora_model is not None and self._current_lora_speaker != speaker:
+            del self._lora_model
+            if self.device == "cuda":
+                _torch.cuda.empty_cache()
+            self._lora_model = None
+
+        if self._lora_model is None:
+            print(f"        Loading Base model for LoRA ({speaker})...")
+            device_map = f"{self.device}:0" if self.device == "cuda" else self.device
+            self._lora_model = _Qwen3TTSModel.from_pretrained(
+                self._get_model_id("Base"),
+                device_map=device_map,
+                dtype=self._get_dtype(),
+                attn_implementation=self._get_attn_impl(),
+            )
+
+            # Apply LoRA adapter to the talker (model.model is the inner wrapper)
+            print(f"        Applying LoRA adapter: {adapter_path.name}")
+            self._lora_model.model.talker = _PeftModel.from_pretrained(
+                self._lora_model.model.talker, str(adapter_path),
+            )
+            self._lora_model.model.talker.eval()
+            self._current_lora_speaker = speaker
+
+        # Create clone prompt from reference audio
+        ref_text = config.ref_text.strip() if config.ref_text else ""
+        use_xvec_only = not ref_text
+        if use_xvec_only:
+            print(f"        [lora-clone] No ref_text — x_vector_only mode")
+
+        clone_prompt = self._lora_model.create_voice_clone_prompt(
+            ref_audio=config.ref_audio,
+            ref_text=ref_text if not use_xvec_only else None,
+            x_vector_only_mode=use_xvec_only,
+        )
+
+        self._lora_clone_cache[speaker] = clone_prompt
+        return clone_prompt
+
+    def _generate_lora_chunk(
+        self,
+        text: str,
+        speaker: str,
+        config: "LoRAVoiceConfig",
+        language: str = "English",
+    ) -> tuple[np.ndarray, int]:
+        """Generate a single audio chunk using LoRA-adapted model."""
+        clone_prompt = self._load_lora_for_speaker(speaker, config)
+        wavs, sr = self._lora_model.generate_voice_clone(
+            text=text,
+            language=language,
+            voice_clone_prompt=clone_prompt,
+        )
+        self._sample_rate = sr
+        return wavs[0], sr
+
+    def _unload_lora(self):
+        """Free LoRA model VRAM."""
+        if self._lora_model is not None:
+            del self._lora_model
+            self._lora_model = None
+            self._current_lora_speaker = None
+            if _torch is not None:
+                _torch.cuda.empty_cache()
+
     def generate_chunk(
         self,
         text: str,
@@ -300,7 +431,7 @@ class QwenTTSEngine:
             text: Text to synthesize
             speaker: Speaker name (for logging)
             instruct: Voice direction for TTS
-            voice_config: Voice configuration (Custom, Clone, or Design)
+            voice_config: Voice configuration (Custom, Clone, Design, or LoRA)
             language: Language for generation
 
         Returns:
@@ -324,6 +455,13 @@ class QwenTTSEngine:
             return self._generate_clone_chunk(
                 text=text,
                 clone_prompt=self._voice_cache[cache_key],
+                language=language,
+            )
+        elif isinstance(voice_config, LoRAVoiceConfig):
+            return self._generate_lora_chunk(
+                text=text,
+                speaker=speaker,
+                config=voice_config,
                 language=language,
             )
         else:
@@ -375,6 +513,8 @@ class QwenTTSEngine:
         self,
         characters: list[dict],
         narrator_config: Optional[VoiceConfig] = None,
+        lora_adapter_dir: Optional[str] = None,
+        fallback_to_design: bool = True,
     ) -> dict[str, VoiceConfig]:
         """
         Build a voice map for all characters based on narration mode.
@@ -382,6 +522,8 @@ class QwenTTSEngine:
         Args:
             characters: Character list from codex
             narrator_config: Override narrator voice config
+            lora_adapter_dir: Root directory for LoRA adapters (lora mode only)
+            fallback_to_design: If LoRA adapter missing, fall back to VoiceDesign
 
         Returns:
             Dict mapping character_id (or NARRATOR) -> VoiceConfig
@@ -395,51 +537,102 @@ class QwenTTSEngine:
                 char_key = char.get("character_id", char.get("name", "").upper().replace(" ", "_"))
                 if char_key:
                     voice_map[char_key] = narrator
-        else:
-            # multi_cast: design unique voices per character
-            # Voice descriptions follow Alexandria formula: [register] + [tonal character]
-            # Minimal, acoustically-precise descriptions produce more consistent voices.
+
+        elif self.narration_mode == "lora":
+            # LoRA: use pre-trained adapters, fall back to VoiceDesign if missing
+            adapter_root = Path(lora_adapter_dir) if lora_adapter_dir else Path("forge/lora_adapters")
             for char in characters:
                 char_key = char.get("character_id", char.get("name", "").upper().replace(" ", "_"))
                 if not char_key:
                     continue
 
-                # Check for explicit voice description in codex
-                phys = char.get("physical_appearance", char.get("physical", {}))
-                voice_desc = ""
-                if isinstance(phys, dict):
-                    voice_desc = phys.get("voice", "")
+                adapter_path = adapter_root / char_key.lower()
+                has_adapter = (adapter_path / "adapter_config.json").exists()
 
-                if not voice_desc:
-                    # Build from character data: [gender register] + [tonal character]
-                    gender = char.get("gender", "").lower()
-                    role = char.get("role", char.get("role_in_story", "")).lower()
+                if has_adapter:
+                    # Load metadata for character_style if available
+                    ref_audio = str(adapter_path / "ref_sample.wav")
+                    ref_text = ""
+                    character_style = ""
 
-                    # Map gender to vocal register
-                    if gender == "male":
-                        register = "male baritone"
-                    elif gender == "female":
-                        register = "female mezzo-soprano"
-                    else:
-                        register = "androgynous mid-range"
+                    ref_text_path = adapter_path / "ref_text.txt"
+                    if ref_text_path.exists():
+                        ref_text = ref_text_path.read_text("utf-8").strip()
 
-                    # Map role to tonal character
-                    if "antagonist" in role or "villain" in role:
-                        tone = "dark, commanding edge"
-                    elif "protagonist" in role:
-                        tone = "grounded, firm presence"
-                    else:
-                        tone = "clear, balanced delivery"
+                    meta_path = adapter_path / "training_meta.json"
+                    if meta_path.exists():
+                        try:
+                            meta = json.loads(meta_path.read_text("utf-8"))
+                            character_style = meta.get("character_style", "")
+                        except (json.JSONDecodeError, OSError):
+                            pass
 
-                    voice_desc = f"{register}, {tone}"
+                    voice_map[char_key] = LoRAVoiceConfig(
+                        adapter_path=str(adapter_path),
+                        ref_audio=ref_audio,
+                        ref_text=ref_text,
+                        character_style=character_style,
+                    )
+                elif fallback_to_design:
+                    # No adapter — fall back to VoiceDesign (same as multi_cast)
+                    voice_desc = self._get_voice_description(char)
+                    voice_map[char_key] = DesignVoiceConfig(
+                        description=voice_desc,
+                        sample_text=f"Hello, my name is {char.get('name', 'unknown')}.",
+                    )
+                    print(f"    WARNING: No LoRA adapter for {char_key}, using VoiceDesign fallback")
+                else:
+                    print(f"    WARNING: No LoRA adapter for {char_key}, skipping")
 
-                # Create a design config (will be converted to clone at first use)
+        else:
+            # multi_cast (default): design unique voices per character
+            # Voice descriptions follow Alexandria formula: [register] + [tonal character]
+            for char in characters:
+                char_key = char.get("character_id", char.get("name", "").upper().replace(" ", "_"))
+                if not char_key:
+                    continue
+
+                voice_desc = self._get_voice_description(char)
                 voice_map[char_key] = DesignVoiceConfig(
                     description=voice_desc,
                     sample_text=f"Hello, my name is {char.get('name', 'unknown')}.",
                 )
 
         return voice_map
+
+    def _get_voice_description(self, char: dict) -> str:
+        """Extract or generate a voice description for a character.
+
+        Priority: voice_design (LLM-generated) > physical.voice > auto-generated.
+        """
+        voice_desc = char.get("voice_design", "")
+
+        if not voice_desc:
+            phys = char.get("physical_appearance", char.get("physical", {}))
+            if isinstance(phys, dict):
+                voice_desc = phys.get("voice", "")
+
+        if not voice_desc:
+            gender = char.get("gender", "").lower()
+            role = char.get("role", char.get("role_in_story", "")).lower()
+
+            if gender == "male":
+                register = "male baritone"
+            elif gender == "female":
+                register = "female mezzo-soprano"
+            else:
+                register = "androgynous mid-range"
+
+            if "antagonist" in role or "villain" in role:
+                tone = "dark, commanding edge"
+            elif "protagonist" in role:
+                tone = "grounded, firm presence"
+            else:
+                tone = "clear, balanced delivery"
+
+            voice_desc = f"{register}, {tone}"
+
+        return voice_desc
 
     def _resolve_voice(
         self,
@@ -476,8 +669,8 @@ class QwenTTSEngine:
         """
         Generate audio for an entire scene from its audio script.
 
-        Iterates through script chunks, generates audio for each,
-        adds appropriate pauses, and concatenates into a single file.
+        For scenes with LoRA speakers, uses two-pass batched generation to
+        minimize adapter swaps. Otherwise iterates sequentially.
 
         Args:
             audio_script: List of {speaker, text, instruct} dicts
@@ -491,6 +684,28 @@ class QwenTTSEngine:
         if not audio_script:
             return False, 0.0
 
+        # Auto-detect LoRA speakers and use batched generation
+        has_lora = any(
+            isinstance(voice_map.get(chunk["speaker"]), LoRAVoiceConfig)
+            for chunk in audio_script
+        )
+        if has_lora:
+            return self._generate_scene_audio_batched(
+                audio_script, voice_map, output_path, language,
+            )
+
+        return self._generate_scene_audio_sequential(
+            audio_script, voice_map, output_path, language,
+        )
+
+    def _generate_scene_audio_sequential(
+        self,
+        audio_script: list[dict],
+        voice_map: dict[str, VoiceConfig],
+        output_path: Path,
+        language: str = "English",
+    ) -> tuple[bool, float]:
+        """Generate scene audio sequentially (no LoRA — simple path)."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -562,30 +777,168 @@ class QwenTTSEngine:
 
             prev_speaker = speaker
 
+        return self._finalize_scene(audio_segments, total_chunks, output_path)
+
+    def _generate_scene_audio_batched(
+        self,
+        audio_script: list[dict],
+        voice_map: dict[str, VoiceConfig],
+        output_path: Path,
+        language: str = "English",
+    ) -> tuple[bool, float]:
+        """Generate scene audio with LoRA speakers batched to minimize adapter swaps.
+
+        Strategy:
+        1. Generate all non-LoRA chunks first (sequential, using engine models)
+        2. For each LoRA speaker: load adapter -> generate all their chunks -> unload
+        3. Stitch all chunks together in original script order with pauses
+        """
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        total_chunks = len(audio_script)
+
+        # Pre-allocate results indexed by script position
+        chunk_audio: list[np.ndarray | None] = [None] * total_chunks
+
+        # --- Pass 1: Generate non-LoRA chunks ---
+        non_lora_indices = [
+            i for i, chunk in enumerate(audio_script)
+            if not isinstance(voice_map.get(chunk["speaker"]), LoRAVoiceConfig)
+        ]
+        if non_lora_indices:
+            print(f"        Pass 1: {len(non_lora_indices)} non-LoRA chunks...")
+
+        for idx in non_lora_indices:
+            chunk = audio_script[idx]
+            speaker = chunk["speaker"]
+            text = chunk["text"]
+            instruct = chunk.get("instruct", "Neutral, even narration.")
+
+            voice_config = voice_map.get(speaker, voice_map.get("NARRATOR", self.narrator_voice))
+            voice_config = self._resolve_voice(speaker, voice_config)
+
+            try:
+                if isinstance(voice_config, DesignVoiceConfig):
+                    cache_key = f"design:{speaker}"
+                    if cache_key in self._voice_cache:
+                        wav, sr = self._generate_clone_chunk(
+                            text=text,
+                            clone_prompt=self._voice_cache[cache_key],
+                            language=language,
+                        )
+                    else:
+                        wav, sr = self._generate_custom_voice_chunk(
+                            text=text, speaker="Ryan", instruct=instruct, language=language,
+                        )
+                else:
+                    wav, sr = self.generate_chunk(
+                        text=text, speaker=speaker, instruct=instruct,
+                        voice_config=voice_config, language=language,
+                    )
+                wav = self._trim_silence(wav)
+                wav = self._apply_edge_fade(wav)
+                wav = self._normalize_chunk(wav)
+                print(f"        [{idx + 1}/{total_chunks}] {speaker}: {len(text)} chars -> {len(wav) / sr:.1f}s")
+            except Exception as e:
+                print(f"        [{idx + 1}/{total_chunks}] {speaker}: ERROR - {e}")
+                wav = np.zeros(int(self._sample_rate * 0.5), dtype=np.float32)
+
+            chunk_audio[idx] = wav
+
+        # --- Pass 2: Generate LoRA chunks, batched by speaker ---
+        lora_speakers: dict[str, LoRAVoiceConfig] = {}
+        for chunk in audio_script:
+            spk = chunk["speaker"]
+            cfg = voice_map.get(spk)
+            if isinstance(cfg, LoRAVoiceConfig) and spk not in lora_speakers:
+                lora_speakers[spk] = cfg
+
+        for speaker, lora_config in lora_speakers.items():
+            speaker_indices = [
+                i for i, chunk in enumerate(audio_script)
+                if chunk["speaker"] == speaker
+            ]
+            if not speaker_indices:
+                continue
+
+            print(f"\n        Pass 2: {len(speaker_indices)} chunks for {speaker} (LoRA)...")
+
+            for idx in speaker_indices:
+                chunk = audio_script[idx]
+                text = chunk["text"]
+
+                print(f"        [{idx + 1}/{total_chunks}] {speaker}: {text[:40]}...")
+                start = time.time()
+
+                try:
+                    wav, sr = self._generate_lora_chunk(
+                        text=text, speaker=speaker, config=lora_config, language=language,
+                    )
+                    wav = self._trim_silence(wav)
+                    wav = self._apply_edge_fade(wav)
+                    wav = self._normalize_chunk(wav)
+                except Exception as e:
+                    print(f"          ERROR: {e}")
+                    wav = np.zeros(int(self._sample_rate * 0.5), dtype=np.float32)
+
+                chunk_audio[idx] = wav
+                print(f"          -> {len(wav) / self._sample_rate:.1f}s ({time.time() - start:.1f}s)")
+
+            # Free LoRA model after processing this speaker
+            self._unload_lora()
+
+        # --- Stitch all chunks in original order ---
+        all_segments: list[np.ndarray] = []
+        prev_speaker = None
+
+        for idx, chunk in enumerate(audio_script):
+            speaker = chunk["speaker"]
+            wav = chunk_audio[idx]
+            if wav is None:
+                wav = np.zeros(int(self._sample_rate * 0.5), dtype=np.float32)
+
+            if prev_speaker is not None:
+                pause_ms = (
+                    self.pause_between_speakers_ms if speaker != prev_speaker
+                    else self.pause_within_speaker_ms
+                )
+                all_segments.append(self._create_silence(pause_ms))
+
+            all_segments.append(wav)
+            prev_speaker = speaker
+
+        return self._finalize_scene(all_segments, total_chunks, output_path)
+
+    def _finalize_scene(
+        self,
+        audio_segments: list[np.ndarray],
+        total_chunks: int,
+        output_path: Path,
+    ) -> tuple[bool, float]:
+        """Concatenate segments, validate, and write the output WAV."""
         if not audio_segments:
             return False, 0.0
 
-        # Check if we got any real audio (not just error silence placeholders)
         real_chunks = sum(1 for seg in audio_segments if np.max(np.abs(seg)) > 1e-6)
         if real_chunks == 0:
             print(f"        All {total_chunks} chunks failed — no audio generated")
             return False, 0.0
 
-        # Concatenate all segments
         combined = np.concatenate(audio_segments)
         duration = len(combined) / self._sample_rate
 
-        # Write WAV file
         sf.write(str(output_path), combined, self._sample_rate)
         print(f"        -> {output_path.name} ({duration:.1f}s)")
 
         return True, duration
 
     def close(self):
-        """Unload models to free VRAM."""
+        """Unload all models to free VRAM."""
         self._custom_voice_model = None
         self._base_model = None
         self._design_model = None
         self._voice_cache.clear()
+        self._unload_lora()
+        self._lora_clone_cache.clear()
         if _torch is not None:
             _torch.cuda.empty_cache()

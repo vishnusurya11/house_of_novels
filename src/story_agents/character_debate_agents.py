@@ -737,6 +737,7 @@ Each character is their own person with their own history."""
         structure_beats: dict,
         setting: str,
         gender: str = "",
+        suggested_role: str = "",
     ) -> CharacterBackstoryProposal:
         """Generate backstory bullet points from story outline."""
 
@@ -765,6 +766,10 @@ STORY CONTEXT:
 {beats_text}
 
 WORLD SETTING: {setting}
+{f"SUGGESTED OCCUPATION/ROLE: {suggested_role}" if suggested_role else ""}
+{("If a suggested role is provided above, ground this character's backstory, speech patterns, "
+  "and qualities in this specific profession/position. Their expertise, daily routines, "
+  "and professional vocabulary should inform who they are.") if suggested_role else ""}
 
 ═══════════════════════════════════════════════════════════════
 GENERATE FOR "{role.upper()}" (NOT the protagonist unless this IS the protagonist):

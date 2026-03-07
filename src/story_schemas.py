@@ -375,6 +375,10 @@ class CharacterSheetSchema(BaseModel):
     )
     motivation: str = Field(..., description="Core motivation driving the character")
     arc: str = Field(..., description="Character's transformation arc (from hook to resolution)")
+    occupation: str = Field(
+        default="",
+        description="Character's occupation or social role (e.g., 'attending surgeon', 'homicide detective')"
+    )
 
 
 class LocationSchema(BaseModel):
@@ -2162,7 +2166,7 @@ class SceneNarrativeSchema(BaseModel):
     location: str = Field(..., description="Location name")
     location_id: str = Field(default="", description="Location ID")
     pov_character: str = Field(..., description="POV character name")
-    characters_present: list[str] = Field(..., description="All characters in scene")
+    characters_present: list[str] = Field(..., min_length=2, description="All characters in scene (minimum 2)")
     character_ids: list[str] = Field(default=[], description="Character IDs (e.g., 'char_001')")
     time_of_day: str = Field(..., description="Time of day")
 
@@ -2737,6 +2741,10 @@ class ThematicPerspectiveSchema(BaseModel):
     example_belief: str = Field(
         ...,
         description="An example belief this perspective might hold"
+    )
+    suggested_role: str = Field(
+        default="",
+        description="Setting-grounded occupation or social role (e.g., 'attending surgeon', 'night-shift nurse')"
     )
 
 
@@ -3505,7 +3513,7 @@ class Scene(BaseModel):
     pov_character_id: str = Field(default="", description="ID of POV character for easy lookup")
     location: str = Field(..., description="Where this scene takes place (from Step 4 locations)")
     location_id: str = Field(default="", description="ID of location for easy lookup and matching")
-    characters_present: list[str] = Field(..., description="Names of characters in this scene")
+    characters_present: list[str] = Field(..., min_length=2, description="Names of characters in this scene (minimum 2 — no solo scenes)")
     character_ids: list[str] = Field(default_factory=list, description="IDs of all characters present for easy lookup")
     tropes_manifesting: list[str] = Field(
         ...,

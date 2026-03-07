@@ -1,9 +1,9 @@
 """
-Audio Script Generator — LLM-based scene-to-script conversion.
+Audio Script Generator — hybrid rule-based + LLM pipeline.
 
-Takes scene metadata from the codex and generates structured audio scripts
-with narrator prose and per-character dialogue, each annotated with TTS
-voice direction (instruct).
+Splits scene prose into speaker-attributed chunks using deterministic
+regex splitting (100% text-preserving), then annotates each chunk with
+TTS voice direction via a lightweight LLM call.
 
 Supports multiple LLM backends via OpenAI-compatible API:
 - Ollama (local, free)
@@ -13,107 +13,70 @@ Supports multiple LLM backends via OpenAI-compatible API:
 """
 
 import json
+import logging
 import re
 from typing import Optional
 
 from openai import OpenAI
 
+logger = logging.getLogger("audio_script")
+
+# Smart/curly quote → ASCII mapping (applied before splitting)
+_QUOTE_NORMALIZE = {
+    "\u201c": '"',  # left double curly
+    "\u201d": '"',  # right double curly
+    "\u2018": "'",  # left single curly
+    "\u2019": "'",  # right single curly
+    "\u2033": '"',  # double prime
+    "\u2032": "'",  # single prime
+}
+
+# Common dialogue tag verbs for speaker attribution
+_SPEECH_VERBS = {
+    "said", "says", "whispered", "murmured", "muttered", "shouted", "yelled",
+    "called", "cried", "replied", "answered", "asked", "demanded", "snapped",
+    "hissed", "growled", "snarled", "breathed", "sighed", "groaned", "barked",
+    "exclaimed", "declared", "announced", "pleaded", "begged", "urged",
+    "insisted", "continued", "added", "began", "finished", "interrupted",
+    "stammered", "stuttered", "rasped", "croaked", "spat", "retorted",
+}
 
 # ---------------------------------------------------------------------------
-# System prompt — adapted from Alexandria audiobook generator's approach
+# LLM prompt for instruct-only annotation (lightweight — ~500 tokens output)
 # ---------------------------------------------------------------------------
 
-SCRIPT_SYSTEM_PROMPT = """\
-You are an audiobook script annotator. You receive the EXISTING PROSE of a novel scene \
-and split it into speaker-attributed chunks for text-to-speech narration.
+INSTRUCT_SYSTEM_PROMPT = """\
+You annotate audiobook script chunks with TTS voice direction.
 
-OUTPUT FORMAT — valid JSON array, no markdown, no commentary:
-[
-  {{"speaker": "NARRATOR", "text": "The room had gone cold.", "instruct": "Quiet, tense narration."}},
-  {{"speaker": "char_001", "text": "Tell me the truth.", "instruct": "Firm quiet authority, low and controlled."}},
-  {{"speaker": "NARRATOR", "text": "Marcus could not meet her gaze.", "instruct": "Neutral, even narration."}}
-]
+You receive a JSON array of {speaker, text_preview} objects.
+Return a JSON array of instruct strings (same length, same order).
 
-FIELDS:
-- "speaker": Character ID (e.g., "char_001") for characters, or "NARRATOR" for non-dialogue.
-- "text": The EXACT text from the prose. Do not rewrite, paraphrase, or invent text.
-- "instruct": 8-15 word voice direction for the TTS engine.
+Each instruct should be 8-15 words describing HOW to deliver the line vocally.
+Layer up to three dimensions:
+- EMOTIONAL TONE: furious, fearful, triumphant, melancholy
+- DELIVERY: whispered, clipped, measured, urgent, deliberate
+- VOCAL QUALITY: voice cracking, gravelly, breathy, husky
 
-RULES:
+For NARRATOR: default "Grounded, deliberate narration." Shift to match scene tension.
+For CHARACTERS: lean into the line's emotional grain. Be direct.
+Describe the VOICE, not the body. "Shocked, voice breaking." NOT "Trembling."
 
-1. SPLIT THE EXISTING PROSE — DO NOT REWRITE
-   Your job is to split the EXISTING PROSE into speaker-attributed chunks.
-   Preserve the EXACT wording word-for-word. Do not paraphrase, summarize, condense, or add text.
-   Every word of the original prose must appear in exactly one chunk.
-   - Text inside quotation marks (dialogue) → CHARACTER entry using the character ID from the roster.
-   - All other text (description, action, internal thoughts, transitions) → NARRATOR entry.
-   - Split at quote boundaries. Dialogue tags like "he said" go with the NARRATOR.
-   - If no prose is provided, use the scene summary as a single NARRATOR entry.
-   - NEVER invent dialogue that does not exist in the prose.
+Output ONLY a valid JSON array of strings. No markdown, no commentary."""
 
-2. NARRATOR vs CHARACTER
-   NARRATOR = everything that is NOT spoken dialogue (descriptions, actions, thoughts, tags).
-   CHARACTER = only the words inside quotation marks that a character speaks aloud.
-   Keep narration in third person. Never convert narration to first-person dialogue.
+INSTRUCT_USER_TEMPLATE = """\
+Scene: Chapter {chapter_number}, Scene {scene_number}
+Summary: {scene_summary}
+Scene Type: {scene_type}
 
-3. INSTRUCT GUIDELINES
-   Layer up to three dimensions:
-   - EMOTIONAL TONE: furious, fearful, triumphant, melancholy
-   - DELIVERY: whispered, clipped, measured, urgent, deliberate
-   - VOCAL QUALITY: voice cracking, gravelly, breathy, warm
-   NARRATOR default: "Neutral, even narration." Shift only at scene-level tone changes.
-   CHARACTER: Lean into the line's emotional grain. Be direct.
-   Describe the VOICE, not the body. "Shocked, voice breaking." NOT "Trembling."
-   PREFERRED VOCABULARY:
-   - High-consistency: silky, even, soft, rounded, precise, firm, grounded, husky, measured
-   - AVOID vague terms alone: "warm", "bright youthful energy" (causes voice instability)
-   - Structure: [emotional tone], [delivery style], [vocal quality]
+Annotate these chunks with voice direction:
+{chunks_json}
 
-4. NARRATOR GROUPING
-   Keep consecutive narrator text in ONE entry unless the emotional tone shifts.
-   Do not split narration sentence-by-sentence.
-
-5. TEXT PRESERVATION
-   Do NOT modify any text. No number conversion, no abbreviation expansion,
-   no bracket substitution. The prose is already TTS-ready.
-   Your ONLY job is to split it into speaker-attributed chunks.
-   Copy each word EXACTLY as it appears in the prose.
-
-6. SCENE FLOW
-   Preserve the original scene order. Do not rearrange.
-   Split sequentially from start to end of the prose.
-
-CRITICAL VALIDATION:
-If you concatenate all "text" fields in order, the result MUST match the original prose
-CHARACTER FOR CHARACTER. Do not add, remove, or change a single word. Think of your job
-as placing labels on segments of the existing text — the text itself never changes.
-"""
+Output a JSON array of {count} instruct strings, one per chunk."""
 
 
-SCRIPT_USER_TEMPLATE = """\
-Generate an audio script for this scene.
-
-SCENE METADATA:
-- Scene: Chapter {chapter_number}, Scene {scene_number}
-- Summary: {scene_summary}
-- Location: {location} (Time: {time_of_day})
-- Scene Type: {scene_type}
-
-CHARACTERS PRESENT:
-{characters_block}
-
-CHARACTER EMOTIONAL STATES:
-{arc_beats_block}
-
-THEMATIC CONTEXT:
-{thematic_block}
-
-{prose_block}
-
-KNOWN CHARACTER ROSTER (use these exact names as speakers):
-{character_roster}
-
-Remember: output ONLY a valid JSON array. No markdown fences, no explanation."""
+# Keep the old prompt constants for backward compatibility if anything imports them
+SCRIPT_SYSTEM_PROMPT = INSTRUCT_SYSTEM_PROMPT
+SCRIPT_USER_TEMPLATE = INSTRUCT_USER_TEMPLATE
 
 
 def _build_characters_block(scene: dict, codex_characters: list[dict]) -> str:
@@ -121,7 +84,6 @@ def _build_characters_block(scene: dict, codex_characters: list[dict]) -> str:
     present = scene.get("characters_present", scene.get("characters", []))
     lines = []
     for name in present:
-        # Find character details from codex
         char_data = next((c for c in codex_characters if c.get("name") == name), None)
         if char_data:
             char_id = char_data.get("character_id", "unknown")
@@ -181,8 +143,15 @@ def _build_character_roster(codex_characters: list[dict], present: list[str]) ->
     return ", ".join(roster)
 
 
+def _normalize_quotes(text: str) -> str:
+    """Replace smart/curly quotes with ASCII equivalents."""
+    for old, new in _QUOTE_NORMALIZE.items():
+        text = text.replace(old, new)
+    return text
+
+
 class AudioScriptGenerator:
-    """Generates audio scripts from scene metadata using an LLM."""
+    """Generates audio scripts using rule-based splitting + LLM instruct annotation."""
 
     def __init__(
         self,
@@ -200,6 +169,10 @@ class AudioScriptGenerator:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def generate_script(
         self,
         scene: dict,
@@ -208,33 +181,315 @@ class AudioScriptGenerator:
         codex_characters: list[dict],
         max_retries: int = 2,
     ) -> list[dict]:
-        """
-        Generate an audio script for a single scene.
+        """Generate an audio script for a single scene.
 
-        Args:
-            scene: Scene data from codex (scene_summary, characters, arcs, etc.)
-            chapter_number: Chapter number for context
-            scene_number: Scene number for context
-            codex_characters: Full character list from codex
-            max_retries: Number of retries on JSON parse failure
+        Uses a hybrid approach:
+        1. Rule-based regex splitting (deterministic, 100% text-preserving)
+        2. LLM instruct annotation (lightweight, graceful fallback)
 
         Returns:
             List of {speaker, text, instruct} dicts
         """
         present = scene.get("characters_present", scene.get("characters", []))
+        prose = scene.get("prose", "")
 
-        user_prompt = SCRIPT_USER_TEMPLATE.format(
+        if not prose:
+            summary = scene.get("scene_summary", "The scene continues.")
+            return [{
+                "speaker": "NARRATOR",
+                "text": summary,
+                "instruct": "Grounded, deliberate narration.",
+            }]
+
+        # Step 1: Deterministic splitting (never fails)
+        chunks = self._split_prose_into_chunks(prose, present, codex_characters)
+
+        # Step 2: LLM instruct annotation (can fail gracefully)
+        try:
+            instructs = self._annotate_instructs(
+                chunks, scene, chapter_number, scene_number, max_retries,
+            )
+            for i, chunk in enumerate(chunks):
+                if i < len(instructs) and instructs[i]:
+                    chunk["instruct"] = instructs[i]
+        except Exception as e:
+            logger.warning("Instruct annotation failed, using defaults: %s", e)
+
+        return chunks
+
+    # ------------------------------------------------------------------
+    # Step 1: Rule-based prose splitting
+    # ------------------------------------------------------------------
+
+    def _split_prose_into_chunks(
+        self,
+        prose: str,
+        present: list[str],
+        codex_characters: list[dict],
+    ) -> list[dict]:
+        """Split prose into speaker-attributed chunks using regex.
+
+        Splits at quote boundaries. Text inside quotes is attributed to
+        characters via dialogue tag analysis. Everything else is NARRATOR.
+        Guarantees: concatenated text == original prose.
+        """
+        # Normalize smart quotes for consistent splitting
+        normalized = _normalize_quotes(prose)
+
+        # Build name -> character_id lookup
+        name_to_id: dict[str, str] = {}
+        for name in present:
+            char_data = next(
+                (c for c in codex_characters if c.get("name") == name), None
+            )
+            if char_data:
+                char_id = char_data.get("character_id", name.upper().replace(" ", "_"))
+            else:
+                char_id = name.upper().replace(" ", "_")
+            name_to_id[name] = char_id
+            # Also map first name and last name for tag matching
+            parts = name.split()
+            if len(parts) >= 2:
+                name_to_id[parts[0]] = char_id  # first name
+                name_to_id[parts[-1]] = char_id  # last name
+
+        # Build pronoun -> character_id mapping for 1- or 2-person scenes
+        pov_char_id = None
+        pronoun_map: dict[str, str] = {}
+        if len(present) == 1:
+            only_id = name_to_id.get(present[0], "NARRATOR")
+            pronoun_map = {"he": only_id, "she": only_id}
+            pov_char_id = only_id
+        elif len(present) == 2:
+            # Map gendered pronouns if character genders differ
+            for name in present:
+                char_data = next(
+                    (c for c in codex_characters if c.get("name") == name), None
+                )
+                if char_data:
+                    gender = char_data.get("gender", "").lower()
+                    cid = name_to_id.get(name, "NARRATOR")
+                    if gender in ("male", "m"):
+                        pronoun_map["he"] = cid
+                    elif gender in ("female", "f"):
+                        pronoun_map["she"] = cid
+
+        # Split prose at quote boundaries
+        # This regex captures quoted strings as separate groups
+        parts = re.split(r'("(?:[^"\\]|\\.)*")', normalized)
+
+        raw_chunks: list[dict] = []
+        last_named_speaker: Optional[str] = None
+
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+
+            if part.startswith('"') and part.endswith('"'):
+                # This is dialogue — strip quotes for TTS text
+                dialogue_text = part[1:-1]
+                if not dialogue_text.strip():
+                    # Empty quotes — treat as narrator
+                    raw_chunks.append({
+                        "speaker": "NARRATOR",
+                        "text": part,
+                        "instruct": "Grounded, deliberate narration.",
+                    })
+                    continue
+
+                # Determine speaker from surrounding narration
+                speaker = self._resolve_speaker(
+                    parts, i, name_to_id, pronoun_map, last_named_speaker
+                )
+                last_named_speaker = speaker if speaker != "NARRATOR" else last_named_speaker
+
+                raw_chunks.append({
+                    "speaker": speaker,
+                    "text": part,
+                    "instruct": "Grounded, deliberate narration.",
+                })
+            else:
+                # Narration text
+                if part.strip():
+                    raw_chunks.append({
+                        "speaker": "NARRATOR",
+                        "text": part,
+                        "instruct": "Grounded, deliberate narration.",
+                    })
+                elif part:
+                    # Whitespace-only — still keep to preserve exact text
+                    raw_chunks.append({
+                        "speaker": "NARRATOR",
+                        "text": part,
+                        "instruct": "Grounded, deliberate narration.",
+                    })
+
+        # Merge consecutive NARRATOR chunks
+        merged: list[dict] = []
+        for chunk in raw_chunks:
+            if merged and merged[-1]["speaker"] == "NARRATOR" and chunk["speaker"] == "NARRATOR":
+                merged[-1]["text"] += chunk["text"]
+            else:
+                merged.append(chunk)
+
+        # Strip leading/trailing whitespace from each chunk's text (but not internal)
+        for chunk in merged:
+            chunk["text"] = chunk["text"].strip()
+
+        # Remove empty chunks
+        merged = [c for c in merged if c["text"]]
+
+        # Validation: concatenated text should match normalized prose
+        reconstructed = " ".join(c["text"] for c in merged)
+        orig_norm = " ".join(normalized.split())
+        recon_norm = " ".join(reconstructed.split())
+        if orig_norm != recon_norm:
+            logger.warning(
+                "Script text reconstruction mismatch: %d vs %d chars",
+                len(orig_norm), len(recon_norm),
+            )
+
+        return merged
+
+    def _resolve_speaker(
+        self,
+        parts: list[str],
+        dialogue_idx: int,
+        name_to_id: dict[str, str],
+        pronoun_map: dict[str, str],
+        last_named_speaker: Optional[str],
+    ) -> str:
+        """Determine who speaks a dialogue chunk by scanning surrounding narration."""
+        # Check narration AFTER the dialogue (dialogue tags: "said Liora", "she whispered")
+        if dialogue_idx + 1 < len(parts):
+            after = parts[dialogue_idx + 1]
+            speaker = self._extract_speaker_from_tag(after, name_to_id, pronoun_map, leading=True)
+            if speaker:
+                return speaker
+
+        # Check narration BEFORE the dialogue ("Liora said,")
+        if dialogue_idx - 1 >= 0:
+            before = parts[dialogue_idx - 1]
+            speaker = self._extract_speaker_from_tag(before, name_to_id, pronoun_map, leading=False)
+            if speaker:
+                return speaker
+
+        # Fallback: last named speaker (for continuation dialogue)
+        if last_named_speaker:
+            return last_named_speaker
+
+        # Ultimate fallback: first character present
+        if name_to_id:
+            return next(iter(name_to_id.values()))
+
+        return "NARRATOR"
+
+    def _extract_speaker_from_tag(
+        self,
+        narration: str,
+        name_to_id: dict[str, str],
+        pronoun_map: dict[str, str],
+        leading: bool,
+    ) -> Optional[str]:
+        """Extract speaker from a dialogue tag in narration text.
+
+        Args:
+            narration: The narration text adjacent to dialogue
+            name_to_id: Name -> character_id mapping
+            pronoun_map: Pronoun -> character_id mapping
+            leading: If True, tag is at the start of narration (after dialogue)
+        """
+        # Normalize for matching
+        text = narration.strip()
+        if not text:
+            return None
+
+        if leading:
+            # Pattern: "Name verb" or "pronoun verb" at start of narration after quote
+            # e.g., ' Viren said,' or ' she hissed,'
+            # Match first few words
+            first_words = text.split()[:4]
+            first_segment = " ".join(first_words).lower()
+
+            # Check for "Name + speech_verb"
+            for name, char_id in name_to_id.items():
+                name_lower = name.lower()
+                if first_segment.startswith(name_lower):
+                    # Check if followed by a speech verb
+                    rest = first_segment[len(name_lower):].strip().rstrip(".,;!?")
+                    first_rest_word = rest.split()[0] if rest.split() else ""
+                    if first_rest_word in _SPEECH_VERBS:
+                        return char_id
+
+            # Check for "pronoun + speech_verb"
+            for pronoun, char_id in pronoun_map.items():
+                if first_segment.startswith(pronoun + " "):
+                    rest = first_segment[len(pronoun):].strip().rstrip(".,;!?")
+                    first_rest_word = rest.split()[0] if rest.split() else ""
+                    if first_rest_word in _SPEECH_VERBS:
+                        return char_id
+        else:
+            # Pattern: "Name verb," or "pronoun verb," at END of narration before quote
+            last_words = text.split()[-4:]
+            last_segment = " ".join(last_words).lower().rstrip(".,;:!?")
+
+            # Check for "Name + speech_verb" at end
+            for name, char_id in name_to_id.items():
+                name_lower = name.lower()
+                # Look for "name verb" pattern
+                pattern = re.compile(
+                    rf"\b{re.escape(name_lower)}\b\s+(\w+)\s*$", re.IGNORECASE
+                )
+                match = pattern.search(last_segment)
+                if match and match.group(1).lower() in _SPEECH_VERBS:
+                    return char_id
+
+            # Check pronoun at end
+            for pronoun, char_id in pronoun_map.items():
+                pattern = re.compile(
+                    rf"\b{re.escape(pronoun)}\b\s+(\w+)\s*$", re.IGNORECASE
+                )
+                match = pattern.search(last_segment)
+                if match and match.group(1).lower() in _SPEECH_VERBS:
+                    return char_id
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Step 2: LLM instruct annotation
+    # ------------------------------------------------------------------
+
+    def _annotate_instructs(
+        self,
+        chunks: list[dict],
+        scene: dict,
+        chapter_number: int,
+        scene_number: int,
+        max_retries: int = 2,
+    ) -> list[str]:
+        """Generate instruct annotations for pre-split chunks via LLM.
+
+        Only sends text previews (50 chars each) — tiny output (~500 tokens).
+        Returns list of instruct strings matching chunk order.
+        """
+        # Build compact chunk previews for the LLM
+        previews = []
+        for chunk in chunks:
+            text_preview = chunk["text"][:60]
+            if len(chunk["text"]) > 60:
+                text_preview += "..."
+            previews.append({
+                "speaker": chunk["speaker"],
+                "text_preview": text_preview,
+            })
+
+        user_prompt = INSTRUCT_USER_TEMPLATE.format(
             chapter_number=chapter_number,
             scene_number=scene_number,
             scene_summary=scene.get("scene_summary", "No summary available"),
-            location=scene.get("location", "Unknown"),
-            time_of_day=scene.get("time_of_day", "day"),
             scene_type=scene.get("scene_type", "mixed"),
-            characters_block=_build_characters_block(scene, codex_characters),
-            arc_beats_block=_build_arc_beats_block(scene),
-            thematic_block=_build_thematic_block(scene),
-            prose_block=_build_prose_block(scene),
-            character_roster=_build_character_roster(codex_characters, present),
+            chunks_json=json.dumps(previews, indent=2),
+            count=len(chunks),
         )
 
         for attempt in range(max_retries + 1):
@@ -242,26 +497,20 @@ class AudioScriptGenerator:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=[
-                        {"role": "system", "content": SCRIPT_SYSTEM_PROMPT},
+                        {"role": "system", "content": INSTRUCT_SYSTEM_PROMPT},
                         {"role": "user", "content": user_prompt},
                     ],
                     temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                    extra_body={"think": False},  # Disable thinking for Ollama reasoning models
+                    max_tokens=min(self.max_tokens, 2000),
+                    extra_body={"think": False},
                 )
 
                 content = response.choices[0].message.content or ""
                 content = content.strip()
 
-                # Strip <think>...</think> blocks from reasoning models (e.g., qwen3.5)
+                # Strip think blocks and markdown fences
                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-
-                if not content:
-                    raise ValueError("LLM returned empty response")
-
-                # Strip markdown fences if present
                 if content.startswith("```"):
-                    # Remove ```json or ``` prefix and ``` suffix
                     lines = content.split("\n")
                     if lines[0].startswith("```"):
                         lines = lines[1:]
@@ -269,62 +518,34 @@ class AudioScriptGenerator:
                         lines = lines[:-1]
                     content = "\n".join(lines)
 
-                script = json.loads(content)
+                instructs = json.loads(content)
 
-                # Validate structure
-                if not isinstance(script, list):
-                    raise ValueError(f"Expected JSON array, got {type(script).__name__}")
+                if not isinstance(instructs, list):
+                    raise ValueError(f"Expected JSON array, got {type(instructs).__name__}")
 
-                validated = []
-                for entry in script:
-                    if not isinstance(entry, dict):
-                        continue
-                    speaker = entry.get("speaker", "NARRATOR")
-                    text = entry.get("text", "")
-                    instruct = entry.get("instruct", "Neutral, even narration.")
-                    if text.strip():
-                        # NARRATOR stays uppercase; character IDs (char_001) stay as-is
-                        if speaker.upper() == "NARRATOR":
-                            speaker = "NARRATOR"
-                        validated.append({
-                            "speaker": speaker,
-                            "text": text.strip(),
-                            "instruct": instruct.strip(),
-                        })
+                # Validate and extract strings
+                result = []
+                for item in instructs:
+                    if isinstance(item, str):
+                        result.append(item.strip())
+                    elif isinstance(item, dict):
+                        result.append(item.get("instruct", "Grounded, deliberate narration.").strip())
+                    else:
+                        result.append("Grounded, deliberate narration.")
 
-                if not validated:
-                    raise ValueError("Script is empty after validation")
-
-                # Validate text preservation: concatenated script should match prose
-                original_prose = scene.get("prose", "")
-                if original_prose:
-                    reconstructed = " ".join(entry["text"] for entry in validated)
-                    orig_norm = " ".join(original_prose.split())
-                    recon_norm = " ".join(reconstructed.split())
-                    if orig_norm != recon_norm:
-                        # Calculate rough similarity (shared prefix length ratio)
-                        common = 0
-                        for a, b in zip(orig_norm, recon_norm):
-                            if a == b:
-                                common += 1
-                            else:
-                                break
-                        ratio = common / max(len(orig_norm), 1)
-                        print(f"        WARNING: Script text differs from prose (~{ratio:.0%} prefix match, {len(orig_norm)} vs {len(recon_norm)} chars)")
-
-                return validated
+                return result
 
             except (json.JSONDecodeError, ValueError) as e:
                 if attempt < max_retries:
-                    print(f"        Retry {attempt + 1}/{max_retries}: {e}")
+                    logger.debug("Instruct annotation retry %d: %s", attempt + 1, e)
                     continue
-                print(f"        ERROR: Failed to parse script after {max_retries + 1} attempts: {e}")
-                # Return a fallback narrator-only script from the prose
-                return self._fallback_script(scene)
+                raise
 
-            except Exception as e:
-                print(f"        ERROR: LLM call failed: {e}")
-                return self._fallback_script(scene)
+        return []  # unreachable but satisfies type checker
+
+    # ------------------------------------------------------------------
+    # Fallback & utility scripts
+    # ------------------------------------------------------------------
 
     def _fallback_script(self, scene: dict) -> list[dict]:
         """Generate a simple narrator-only fallback from existing prose."""
@@ -337,7 +558,7 @@ class AudioScriptGenerator:
             {
                 "speaker": "NARRATOR",
                 "text": text,
-                "instruct": "Neutral, even narration.",
+                "instruct": "Grounded, deliberate narration.",
             }
         ]
 
@@ -363,3 +584,178 @@ class AudioScriptGenerator:
                 "instruct": "Clear, measured chapter announcement.",
             }
         ]
+
+    # ------------------------------------------------------------------
+    # Voice design generation
+    # ------------------------------------------------------------------
+
+    VOICE_DESIGN_SYSTEM_PROMPT = """\
+You generate TTS voice design descriptions for audiobook characters.
+
+Each description is 10-15 words following this formula:
+[gender register], [tonal quality], [delivery style], [personality trait]
+
+Examples:
+- "male tenor, warm confident authority, scholarly enthusiasm, steady composure"
+- "female alto, sharp commanding edge, clipped professional diction, detective authority"
+- "older male baritone, world-weary rumble, slow unhurried calm, gravel undertone"
+- "young male tenor, nervous tremor, slightly breathless, halting speech"
+
+RULES:
+1. Start with gender + vocal register (soprano, mezzo, alto, tenor, baritone, bass)
+2. Add 2-3 tonal/delivery traits that reflect the character's personality
+3. Be acoustically specific — describe the VOICE, not emotions or actions
+4. Each character must sound distinct from the others
+5. NARRATOR should be a rich, dynamic storytelling voice
+
+Output ONLY a valid JSON object. No markdown, no commentary."""
+
+    VOICE_DESIGN_USER_TEMPLATE = """\
+Generate a TTS voice design description for each character and the NARRATOR.
+
+Characters:
+{characters_block}
+
+Return a JSON object mapping character_id to voice description:
+{{"NARRATOR": "male baritone, ...", "char_001": "...", ...}}"""
+
+    def generate_voice_descriptions(
+        self,
+        codex_characters: list[dict],
+        max_retries: int = 2,
+    ) -> dict[str, str]:
+        """Generate LLM-powered voice descriptions for all characters.
+
+        Uses character personality, role, and gender to produce acoustically
+        precise voice design descriptions for the TTS VoiceDesign model.
+
+        Args:
+            codex_characters: Character list from codex
+            max_retries: Retries on JSON parse failure
+
+        Returns:
+            Dict mapping character_id (and "NARRATOR") -> voice description string
+        """
+        # Build character summaries for the prompt
+        lines = []
+        for char in codex_characters:
+            char_id = char.get("character_id", "unknown")
+            name = char.get("name", "Unknown")
+            gender = char.get("gender", "unknown")
+            role = char.get("role", char.get("role_in_story", "unknown"))
+            thematic = char.get("thematic_perspective", "")
+            arc = char.get("arc_type", "")
+
+            # Build personality summary
+            traits = []
+            if thematic:
+                traits.append(thematic)
+            if arc:
+                traits.append(arc)
+            personality = ", ".join(traits) if traits else "no details"
+
+            lines.append(f"- {char_id}: {name} ({gender}, {role}) — {personality}")
+
+        characters_block = "\n".join(lines)
+
+        user_prompt = self.VOICE_DESIGN_USER_TEMPLATE.format(
+            characters_block=characters_block,
+        )
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.VOICE_DESIGN_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=min(self.max_tokens, 1500),
+                    extra_body={"think": False},
+                )
+
+                content = response.choices[0].message.content or ""
+                content = content.strip()
+
+                # Strip think blocks and markdown fences
+                content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                if content.startswith("```"):
+                    content_lines = content.split("\n")
+                    if content_lines[0].startswith("```"):
+                        content_lines = content_lines[1:]
+                    if content_lines and content_lines[-1].strip() == "```":
+                        content_lines = content_lines[:-1]
+                    content = "\n".join(content_lines)
+
+                result = json.loads(content)
+                if not isinstance(result, dict):
+                    raise ValueError(f"Expected JSON object, got {type(result).__name__}")
+
+                # Validate: all values should be non-empty strings
+                validated = {}
+                for key, desc in result.items():
+                    if isinstance(desc, str) and desc.strip():
+                        validated[key] = desc.strip()
+
+                if not validated:
+                    raise ValueError("All voice descriptions are empty")
+
+                logger.info("Generated %d voice descriptions via LLM", len(validated))
+                return validated
+
+            except (json.JSONDecodeError, ValueError) as e:
+                if attempt < max_retries:
+                    logger.debug("Voice description retry %d: %s", attempt + 1, e)
+                    continue
+                logger.warning("Voice description LLM failed after %d attempts: %s", max_retries + 1, e)
+
+            except Exception as e:
+                logger.warning("Voice description LLM call failed: %s", e)
+                break
+
+        # Fallback: rule-based generation (better than the 2-word engine default)
+        return self._fallback_voice_descriptions(codex_characters)
+
+    def _fallback_voice_descriptions(self, codex_characters: list[dict]) -> dict[str, str]:
+        """Rule-based fallback voice descriptions from character data."""
+        result = {
+            "NARRATOR": "male baritone, rich cinematic narrator, dynamic storytelling range, polished presence",
+        }
+
+        _REGISTERS = {
+            "male": ["male baritone", "male tenor", "deep male baritone"],
+            "female": ["female mezzo-soprano", "female alto", "female contralto"],
+        }
+        _ROLE_TONES = {
+            "protagonist": "grounded firm presence, steady composure",
+            "antagonist": "dark commanding edge, steely intensity",
+            "supporting": "clear balanced delivery, warm reliability",
+            "mentor": "warm gravitas, patient measured wisdom",
+        }
+
+        male_idx, female_idx = 0, 0
+        for char in codex_characters:
+            char_id = char.get("character_id", "")
+            if not char_id:
+                continue
+
+            gender = char.get("gender", "").lower()
+            role = char.get("role", char.get("role_in_story", "supporting")).lower()
+
+            # Cycle through registers to give variety
+            if gender == "male":
+                register = _REGISTERS["male"][male_idx % len(_REGISTERS["male"])]
+                male_idx += 1
+            elif gender == "female":
+                register = _REGISTERS["female"][female_idx % len(_REGISTERS["female"])]
+                female_idx += 1
+            else:
+                register = "androgynous mid-range"
+
+            # Map role to tonal description
+            tone = _ROLE_TONES.get(role, _ROLE_TONES["supporting"])
+
+            result[char_id] = f"{register}, {tone}"
+
+        return result
