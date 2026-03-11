@@ -802,7 +802,38 @@ GENERATE FOR "{role.upper()}" (NOT the protagonist unless this IS the protagonis
    - e.g., "obsessively counts things", "speaks in metaphors", "never makes eye contact"
    - "always arrives early", "hums when thinking", "collects odd trinkets"
 
-7. GENDER: This character's gender is '{gender}'
+7. TAGS & TRAITS (Butcher technique — mandatory per character):
+   These create instant reader recognition. Once assigned, these EXACT words/items recur in every scene.
+   - APPEARANCE TAGS (2-3 vivid words): Repeated every time this character appears. EXCLUSIVE — never
+     use another character's tag words. E.g., "gaunt, iron-gray, weathered" or "wiry, sun-darkened, hawk-nosed"
+   - PROP TRAITS (1-2 signature items): Objects always associated with them.
+     E.g., "fur-lined cloak", "bone-handled knife", "cracked leather satchel"
+   - MANNERISM TRAIT: One recurring physical behavior. E.g., "cracks knuckles one by one"
+   - SPEECH FINGERPRINT: Sentence length tendency + formality + metaphor source in one line.
+     E.g., "terse, casual, military metaphors" or "verbose, formal, botanical analogies"
+
+8. BEHAVIORAL SIGNATURE (one unique answer per category — these MUST be specific to THIS character):
+   Each category needs a CONCRETE, OBSERVABLE behavior — not abstract descriptions.
+   These will be used by prose agents to write consistent, character-specific actions throughout the story.
+
+   - STRESS TELL: Involuntary physical reaction under pressure
+     (e.g., "cracks knuckles one by one", "jaw clenches, neck vein pulses", "picks at cuticles")
+   - IDLE HABIT: What they do when thinking or waiting — MUST differ from other characters
+     (e.g., "turns ring. Twice.", "taps index finger in morse rhythm", "traces figure-eights on nearest surface")
+   - DIALOGUE AVOIDANCE: How they dodge emotional conversations
+     (e.g., "deflects with sarcasm", "changes subject to logistics", "answers a question with a question")
+   - COMFORT ACTION: Self-soothing gesture tied to their backstory
+     (e.g., "touches locket at throat", "runs thumb along blade handle", "presses thumb into opposite palm")
+   - STACCATO PATTERN: Example of their inner thought rhythm under duress (write an actual example)
+     (e.g., "The door. Locked. No — jammed.", "Three guards. Two exits. One chance.")
+   - ENVIRONMENTAL DISPLACEMENT: How they express emotion by noticing objects instead of feelings
+     (e.g., "The coffee had gone cold.", "The flowers needed water.", "Someone had left the window open.")
+   - SENSORY BIAS: Which sense they default to AND WHY from backstory (must connect to their history)
+     (e.g., "sound-first — grew up blind until age 8", "smell-first — trained as perfumer", "touch-first — worked leather since childhood")
+   - EXPERIENCE TELLS: Casual competence that implies backstory without stating it
+     (e.g., "checked the exits before sitting", "counted the guards without looking up", "tested the rope with two sharp tugs")
+
+9. GENDER: This character's gender is '{gender}'
    - Use this exact gender assignment
 
 RULES:

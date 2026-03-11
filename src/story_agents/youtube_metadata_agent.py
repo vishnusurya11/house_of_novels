@@ -106,6 +106,51 @@ Description should be 500-1000 characters with hashtags at the end (#Story #Fict
         return self.invoke_structured(prompt, YouTubeMetadata, max_tokens=8000)
 
 
+def generate_chapter_youtube_metadata(
+    story_title: str,
+    logline: str,
+    chapter_number: int,
+    total_chapters: int,
+    chapter_title: str = "",
+) -> YouTubeMetadata:
+    """Generate YouTube metadata for a single chapter upload (programmatic, no LLM).
+
+    Args:
+        story_title: The story's title.
+        logline: One-line story summary.
+        chapter_number: 1-based chapter number.
+        total_chapters: Total number of chapters in the book.
+        chapter_title: Optional chapter title for description context.
+
+    Returns:
+        YouTubeMetadata with part-numbered title, description, and tags.
+    """
+    # Title: "Story Title - Part X of Y"
+    part_label = f"Part {chapter_number} of {total_chapters}"
+    title = f"{story_title} - {part_label}"
+    if len(title) > 100:
+        # Truncate story title to fit, keep part label
+        max_story = 100 - len(f" - {part_label}") - 3
+        title = f"{story_title[:max_story]}... - {part_label}"
+
+    # Description
+    chapter_info = f" - {chapter_title}" if chapter_title else ""
+    description = (
+        f"{story_title} | {part_label}{chapter_info}\n\n"
+        f"{logline}\n\n"
+        f"Listen to the full audiobook by subscribing and following the playlist.\n\n"
+        f"#Audiobook #Story #Fiction #ShortStory #Storytelling"
+    )
+
+    # Tags
+    tags = [
+        "audiobook", "story", "fiction", "storytelling", "narrative",
+        part_label.lower(), story_title[:30],
+    ]
+
+    return YouTubeMetadata(title=title, description=description, tags=tags)
+
+
 def generate_youtube_metadata(
     story_title: str,
     logline: str,

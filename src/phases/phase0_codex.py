@@ -179,6 +179,29 @@ def run_phase0_codex(
     print("\n>>> Deck of Worlds")
     dow_prompts, dow_metadata = generate_for_configs(world_configs)
 
+    # Rich Plot Expansion: expand seed + microsetting into multi-genre plots
+    rich_plot_data = None
+    plot_expansion_metadata = {}
+    raw_seed = se_prompts[0].get("prompt", "") if se_prompts else ""
+    raw_microsetting = dow_prompts[0].get("prompt", "") if dow_prompts else ""
+
+    if raw_seed:
+        try:
+            from src.story_agents.plot_expansion_agents import expand_seed_to_plots
+
+            print("\n>>> Plot Expansion (generating genre interpretations)...")
+            rich_plot_data = expand_seed_to_plots(
+                seed=raw_seed,
+                microsetting=raw_microsetting,
+            )
+            plot_expansion_metadata = rich_plot_data.get("debate_metadata", {})
+            print(f"    Winner: {rich_plot_data['winning_genre']} — \"{rich_plot_data['winning_plot']['title']}\"")
+        except Exception as e:
+            print(f"\n    WARNING: Plot expansion failed, falling back to raw seed: {e}")
+            rich_plot_data = None
+    else:
+        print("\n    SKIP: No story seed for plot expansion")
+
     # Build codex data - core inputs at ROOT level, processing metadata separate
     codex_data = {
         "generated_at": datetime.now().isoformat(),
@@ -200,6 +223,7 @@ def run_phase0_codex(
         },
         "story_engine": {
             "prompts": se_prompts,
+            **({"rich_plot": rich_plot_data} if rich_plot_data else {}),
         },
         "deck_of_worlds": {
             "prompts": dow_prompts,
@@ -209,13 +233,17 @@ def run_phase0_codex(
             "phase_0": {
                 "story_engine": se_metadata,
                 "deck_of_worlds": dow_metadata,
+                **({"plot_expansion": plot_expansion_metadata} if plot_expansion_metadata else {}),
             }
         },
         "story": {},  # Will be populated by phase 1+
     }
 
-    # Extract prompts for return value
-    story_prompt = se_prompts[0].get("prompt", "") if se_prompts else ""
+    # Extract prompts for return value (prefer rich plot if available)
+    if rich_plot_data and rich_plot_data.get("winning_plot"):
+        story_prompt = rich_plot_data["winning_plot"]["plot"]
+    else:
+        story_prompt = se_prompts[0].get("prompt", "") if se_prompts else ""
     setting_prompt = dow_prompts[0].get("prompt", "") if dow_prompts else ""
 
     # Save codex with timestamp in filename

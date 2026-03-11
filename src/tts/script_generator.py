@@ -332,6 +332,19 @@ class AudioScriptGenerator:
             else:
                 merged.append(chunk)
 
+        # Split long NARRATOR chunks at paragraph boundaries
+        merged = self._split_long_narrator_chunks(merged)
+
+        # Log warning if dialogue ratio is low
+        total_words = sum(len(c["text"].split()) for c in merged)
+        dialogue_chunks = [c for c in merged if c["speaker"] != "NARRATOR"]
+        if total_words > 200 and len(dialogue_chunks) < total_words / 150:
+            logger.warning(
+                "Low dialogue ratio: %d dialogue chunks in %d words (expected ~%d). "
+                "Scene may sound monotonous.",
+                len(dialogue_chunks), total_words, total_words // 150,
+            )
+
         # Strip leading/trailing whitespace from each chunk's text (but not internal)
         for chunk in merged:
             chunk["text"] = chunk["text"].strip()
@@ -350,6 +363,47 @@ class AudioScriptGenerator:
             )
 
         return merged
+
+    # Max words per narrator chunk (~40 seconds of speech at ~230 WPM)
+    MAX_NARRATOR_WORDS = 150
+
+    def _split_long_narrator_chunks(self, chunks: list[dict]) -> list[dict]:
+        """Split NARRATOR chunks that exceed MAX_NARRATOR_WORDS at paragraph boundaries.
+
+        Ensures no single TTS narrator segment is too long, which causes
+        listener fatigue and monotonous audio. Splits at \\n\\n (paragraph
+        breaks) to maintain natural pacing.
+        """
+        result: list[dict] = []
+        for chunk in chunks:
+            if chunk["speaker"] != "NARRATOR" or len(chunk["text"].split()) <= self.MAX_NARRATOR_WORDS:
+                result.append(chunk)
+                continue
+
+            # Split at paragraph boundaries
+            paragraphs = chunk["text"].split("\n\n")
+            current_text = ""
+            for para in paragraphs:
+                candidate = (current_text + "\n\n" + para).strip() if current_text else para
+                if current_text and len(candidate.split()) > self.MAX_NARRATOR_WORDS:
+                    # Flush current accumulator
+                    result.append({
+                        "speaker": "NARRATOR",
+                        "text": current_text.strip(),
+                        "instruct": chunk["instruct"],
+                    })
+                    current_text = para
+                else:
+                    current_text = candidate
+
+            if current_text.strip():
+                result.append({
+                    "speaker": "NARRATOR",
+                    "text": current_text.strip(),
+                    "instruct": chunk["instruct"],
+                })
+
+        return result
 
     def _resolve_speaker(
         self,

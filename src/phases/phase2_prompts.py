@@ -38,6 +38,10 @@ from src.story_agents.image_prompt_agents import (
 from src.story_agents.scene_image_prompt_agents import generate_scene_image_prompt  # noqa: F401
 from src.story_agents.scene_image_prompt_agents import generate_layered_scene_image_prompt
 from src.story_agents.chapter_image_prompt_agents import generate_chapter_image_prompt
+from src.story_agents.chapter_title_card_agents import (
+    generate_chapter_card_template_prompt,
+    generate_per_chapter_edit_prompts,
+)
 from src.story_agents.thumbnail_agents import generate_thumbnail_prompts_via_council
 # from src.story_agents.shot_frame_prompt_agents import generate_shot_frame_prompts
 # from src.story_agents.video_prompt_agents import generate_video_prompt
@@ -63,6 +67,7 @@ class Phase2PromptsResult:
     scene_image_prompt_count: int  # Step 4: Scene image prompts (one per scene)
     thumbnail_prompt_count: int  # Step 5: YouTube thumbnail prompts (Agent Council)
     audio_script_count: int = 0  # Step 6: Audio scripts (narrator + character dialogue)
+    chapter_title_card_count: int = 0  # Step 7: Chapter title card prompts
     success: bool = True
     error: Optional[str] = None
     step_timings: dict = field(default_factory=dict)
@@ -238,7 +243,7 @@ def run_phase2_prompts(
     codex = normalize_codex_for_phase2(codex)
 
     # Determine which steps to run (1-6 are active steps)
-    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5, 6]
+    steps_to_run = steps if steps is not None else [1, 2, 3, 4, 5, 6, 7]
     print(f"\n>>> Running steps: {steps_to_run}")
 
     # Get model from codex config
@@ -762,6 +767,75 @@ def run_phase2_prompts(
     else:
         print("\n>>> Step 6: Skipped (not in requested steps)")
 
+    # =========================================================================
+    # Step 7: Chapter Title Card Prompts
+    # =========================================================================
+    chapter_title_card_count = 0
+
+    if 7 in steps_to_run and total_scenes > 0:
+        step_start = time.time()
+        print(f"\n{'='*60}")
+        print("STEP 7: Chapter Title Card Prompts (E3 Template Approach)")
+        print(f"{'='*60}")
+
+        # Reload codex in case earlier steps modified it
+        codex = load_codex(codex_path)
+        story = codex.get("story", {})
+        chapters_data = story.get("chapters", {})
+        chapters = chapters_data.get("chapters", [])
+
+        genre = detect_genre(codex)
+        print(f"    Genre: {genre}")
+        print(f"    Chapters: {len(chapters)}")
+
+        # Part A: Generate ONE shared template prompt (LLM call)
+        try:
+            template_result = generate_chapter_card_template_prompt(
+                codex=codex,
+                visual_style=visual_style,
+                genre=genre,
+                model=model,
+                max_revisions=2,
+            )
+            chapters_data["chapter_card_template"] = template_result
+            avg_score = template_result.get("final_scores", {}).get("overall", 0)
+            print(f"      Template score: {avg_score:.1f}/10 (revisions: {template_result.get('revision_count', 0)})")
+
+            phase2_metadata["chapter_card_template"] = {
+                "mood": template_result.get("mood", ""),
+                "revision_count": template_result.get("revision_count", 0),
+                "final_scores": template_result.get("final_scores", {}),
+            }
+        except Exception as e:
+            print(f"      ERROR generating template: {e}")
+            phase2_metadata["chapter_card_template"] = {"error": str(e)}
+
+        # Part B: Generate per-chapter edit prompts (programmatic, no LLM)
+        print(f"\n    Generating per-chapter edit prompts...")
+        edit_results = generate_per_chapter_edit_prompts(chapters)
+
+        for edit_data in edit_results:
+            ch_num = edit_data["chapter_number"]
+            # Find the matching chapter and store edit prompt
+            for chapter in chapters:
+                if chapter.get("chapter_number") == ch_num:
+                    chapter["chapter_title_card"] = {
+                        "qwen_edit_prompt": edit_data["qwen_edit_prompt"],
+                        "chapter_number": ch_num,
+                        "chapter_title": edit_data["chapter_title"],
+                    }
+                    chapter_title_card_count += 1
+                    print(f"      Ch{ch_num}: {edit_data['qwen_edit_prompt'][:60]}...")
+                    break
+
+        step_timings["step7_chapter_title_cards"] = round(time.time() - step_start, 2)
+        save_codex(codex, codex_path)
+        print(f"\n>>> Step 7 complete: 1 template + {chapter_title_card_count} chapter edits ({step_timings['step7_chapter_title_cards']:.1f}s)")
+    elif 7 in steps_to_run:
+        print("\n>>> Step 7: No scenes found, skipping chapter title cards")
+    else:
+        print("\n>>> Step 7: Skipped (not in requested steps)")
+
     # Update codex
     codex["story"]["characters"] = characters
     codex["story"]["locations"] = locations
@@ -776,6 +850,7 @@ def run_phase2_prompts(
     print(f"    Scene image prompts: {scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {thumbnail_prompt_count}")
     print(f"    Audio scripts: {audio_script_count}")
+    print(f"    Chapter title cards: {chapter_title_card_count}")
     print(f">>> Saved to: {codex_path}")
 
     return Phase2PromptsResult(
@@ -786,6 +861,7 @@ def run_phase2_prompts(
         scene_image_prompt_count=scene_image_prompt_count,
         thumbnail_prompt_count=thumbnail_prompt_count,
         audio_script_count=audio_script_count,
+        chapter_title_card_count=chapter_title_card_count,
         success=True,
         step_timings=step_timings,
     )
@@ -810,8 +886,8 @@ def main():
         "--steps",
         nargs="+",
         type=int,
-        choices=[1, 2, 3, 4, 5, 6],
-        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Scene Images, 5: Thumbnails, 6: Audio Scripts). Example: --steps 1 2"
+        choices=[1, 2, 3, 4, 5, 6, 7],
+        help="Run specific steps (1: Characters, 2: Locations, 3: Posters, 4: Scene Images, 5: Thumbnails, 6: Audio Scripts, 7: Chapter Title Cards). Example: --steps 1 2"
     )
     args = parser.parse_args()
 
@@ -832,6 +908,7 @@ def main():
     print(f"    Scene image prompts: {result.scene_image_prompt_count}")
     print(f"    Thumbnail prompts: {result.thumbnail_prompt_count}")
     print(f"    Audio scripts: {result.audio_script_count}")
+    print(f"    Chapter title cards: {result.chapter_title_card_count}")
 
 
 if __name__ == "__main__":

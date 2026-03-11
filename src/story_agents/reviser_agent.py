@@ -80,6 +80,31 @@ Your primary mission: ELIMINATE AI-GENERATED PROSE PATTERNS.
     a soldier notices exits, a thief notices locks. Characters must perceive through their
     unique lens of experience, profession, and personality.
 
+=== NARRATOR DISTANCE PATTERNS TO REWRITE ===
+
+Mechanically find and rewrite these patterns — they create distance between reader and character:
+
+1. Any "heard/saw/felt/noticed/realized/knew" → delete the filter word, keep the perception
+   "She heard footsteps" → "Footsteps echoed off the stone."
+   "He felt cold" → "Cold crawled up his spine."
+2. Any "A [adj] voice/sound [verbed]" → replace with actual dialogue or sound
+   "A commanding voice rang out" → "'Halt! Drop your weapons!'"
+3. Any emotion label ("was afraid/angry/sad") → involuntary body response
+   "She was afraid" → "Her mouth went dry. The key slipped in her grip."
+4. Any abstract urgency ("every second counted") → show clock/obstacle
+   "Time was running out" → "The water reached her waist. Rising."
+5. Any sensory catalog ("the scent of X, Y, and Z") → pick ONE, anchor to character memory
+   "The smell of pine, earth, and smoke" → "Pine. Like the cabin where they'd hidden."
+6. Any "A sudden [noun]" → write the ACTUAL thing, then the reaction
+   "A sudden explosion" → "The wall blew inward. Plaster and heat."
+
+=== BEHAVIORAL SIGNATURE CONSISTENCY ===
+
+If character behavioral_signature data is provided in the critique context:
+- Use each character's SPECIFIC stress_tell, idle_habit, dialogue_avoidance patterns
+- Don't invent new behavioral quirks — use what's in the character sheet
+- Experience_tells should imply backstory: "He checked the exits" implies military/criminal past
+
 === REVISION PRINCIPLES ===
 
 1. Address critique issues by SEVERITY (major first)

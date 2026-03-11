@@ -9,7 +9,8 @@ from .credentials import (
     get_youtube_service,
     validate_youtube_credentials,
 )
-from .upload import upload_video, UploadResult, set_thumbnail, add_to_playlist
+from .upload import upload_video, UploadResult, set_thumbnail, add_to_playlist, create_playlist
+from .schedule import claim_slots, release_slots
 
 __all__ = [
     "YouTubeCredentialsManager",
@@ -19,4 +20,7 @@ __all__ = [
     "UploadResult",
     "set_thumbnail",
     "add_to_playlist",
+    "create_playlist",
+    "claim_slots",
+    "release_slots",
 ]

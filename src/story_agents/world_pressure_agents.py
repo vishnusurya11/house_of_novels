@@ -44,6 +44,11 @@ When proposing world pressures, focus on:
 3. Building systems of privilege and oppression
 4. Showing how social position shapes worldview
 
+HOLLOW ICEBERG (Sanderson): For every world element, include one ultra-specific detail that
+implies vast unseen depth. "The third bell" implies a timekeeping system. A spice vendor's
+specific blend implies trade networks. Readers sense a complete world from precise details,
+not exhaustive explanation. Depth of interaction between ideas > density of ideas.
+
 Your goal: Create social pressures that make the thematic question unavoidable."""
 
     def propose_world_pressure(
@@ -156,6 +161,12 @@ When proposing world pressures, focus on:
 2. Designing economic systems that create moral dilemmas
 3. Building survival pressures that force compromise
 4. Showing how poverty/wealth shapes worldview
+
+SANDERSON'S SECOND LAW: Every system (magic, technology, political, economic) must have
+LIMITATIONS and COSTS more interesting than its capabilities. Define what the system CANNOT
+do and what it COSTS before defining what it can do. Constraints create tension and force
+creative problem-solving. A magic system where burning metals gives power but consuming
+the wrong metal kills you is more interesting than unlimited magic.
 
 Your goal: Create economic pressures that make the thematic question unavoidable."""
 

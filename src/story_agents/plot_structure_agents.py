@@ -540,6 +540,13 @@ Focus on:
 - Proper timing/pacing
 - Clear cause-and-effect between beats
 - Following proven STC principles
+
+BIG MIDDLE EVENT (Butcher's Great Swampy Middle Fix): The Midpoint (beat 9) is NOT merely
+a "shift in understanding." It must be a DRAMATIC CONFRONTATION — the biggest set piece
+between the Catalyst and the Finale. Something that CHANGES what the character thinks the
+story is about. If your midpoint is just a realization, it's too passive. Make it an EVENT
+the character must survive. Everything in beats 7-8 builds TOWARD this event. Everything in
+beats 10-12 deals with its FALLOUT.
 """
 
     def propose_beats(self, story_shape: str, save_the_cat_type: str, theme_question: str, logline: str) -> SaveTheCatBeatProposal:

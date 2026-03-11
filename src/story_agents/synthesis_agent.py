@@ -165,6 +165,27 @@ Your synthesized prose must be 1500-2000 words, structured as:
    - Sensory + character state
    - Scene goal established
 
+=== MICE OPENING PATTERN (First 2-3 Sentences) ===
+
+Establish WHO, WHERE, and GENRE/MOOD within the first 2-3 sentences. Bonus if you can do it in one.
+The ORDER signals the dominant MICE thread type for this scene:
+
+MILIEU scenes -> WHERE first. Ground in sensory environment before introducing character.
+  "The market stretched three levels deep into the canyon, each tier louder than the last."
+
+INQUIRY scenes -> QUESTION or anomaly first. Create the "Huh?" that pulls reader in.
+  "The door was unlocked. It was never unlocked."
+
+CHARACTER scenes -> WHO + internal state first. Reader expects transformation.
+  "Marcus hadn't slept in four days, and he was starting to prefer it that way."
+
+EVENT scenes -> ACTION or disruption first. Reader expects crisis response.
+  "The bridge gave way at midday, taking six cars into the river."
+
+For WHO: Show character via ACTION (what they're doing) + ATTITUDE (how they feel about it).
+For WHERE: Sensory detail, NOT just a label. "Thrum of engines through her feet" not "She stood in the engine room."
+For GENRE: Something SPECIFIC and UNIQUE to this world. "Warp core drive" vs just "engines."
+
 === ANTI-REPETITION: SCENE OPENINGS ===
 
 BANNED PATTERNS for opening paragraph:
@@ -208,6 +229,20 @@ End every scene with ONE of these (rotate, never repeat same type twice in a row
 NEVER end with: thematic summary, rhetorical question about meaning, abstract emotional resolution,
 "And in that moment, [character] understood that...", "This was what it meant to...", or any
 sentence containing the word "reminder".
+
+=== MICE CLOSING MIRROR (Endings Must Mirror Openings) ===
+
+The closing paragraph MUST mirror an element from the opening to show what changed.
+This is how the reader sees the story moved -- by comparing where we started to where we are.
+
+- Reference the SAME sensory detail, location, or action from the opening
+- Show how the character's RELATIONSHIP to it has SHIFTED
+- The mood should reflect the outcome: YES_BUT = uneasy, NO_AND = darkening, YES_AND = earned relief
+
+MILIEU: Close with spatial change. Character's relationship to the environment shifted.
+INQUIRY: Close with information shift. Question answered, deepened, or redirected.
+CHARACTER: Close with internal shift. Even small -- a new feeling, a changed belief, a decision.
+EVENT: Close with status change. Crisis resolved, escalated, or transformed.
 
 === PARAGRAPH & SENTENCE RHYTHM ===
 
@@ -293,8 +328,156 @@ SHOW EMOTION THROUGH ACTION (MRU order):
 - NEVER "[Character] felt [emotion]" or "[Character] was [emotion]"
 - "Her knuckles whitened around the pen." NOT "She was furious."
 
+=== EXPANDED EMOTION PALETTE (Beyond Involuntary Body) ===
+
+Use the character's BEHAVIORAL SIGNATURE fields for consistent, character-specific reactions:
+- STRESS TELL: Use their specific stress_tell (e.g., "cracks knuckles one by one")
+- IDLE HABIT: Use their idle_habit when thinking/waiting (e.g., "turns ring. Twice.")
+- DIALOGUE AVOIDANCE: Use their dialogue_avoidance pattern to dodge emotional topics
+  "'How are you?' 'Did you check the engine mounts?'" — dodging via logistics
+- COMFORT ACTION: Use their comfort_micro_action for self-soothing
+- STACCATO UNDER STRESS: Use their staccato_pattern for internal pressure
+  "The door. Locked. No — jammed."
+- ENVIRONMENTAL DISPLACEMENT: Use their environmental_displacement to show emotion
+  through noticing objects: "The coffee had gone cold." (implies passage of worried time)
+- BEHAVIORAL CHOICES: What they DO reveals what they FEEL
+  "He walked past the phone without picking it up." — avoidance IS the emotion
+
+=== FILTER WORD ELIMINATION TABLE ===
+
+Mechanically replace these narrator-distance patterns:
+"[Char] heard X" → Write X directly: "Footsteps echoed off the stone."
+"[Char] felt X" → Write the sensation: "Cold crawled up her spine."
+"[Char] saw X" → Write the visual: "The blade glinted in the torchlight."
+"[Char] realized X" → Show insight landing as fragments: "The lock. Same make as the vault."
+"[Char] knew X" → State as narration: "The north gate would be unguarded."
+"[Char] wondered X" → Ask directly, no attribution: "Why now? Why here?"
+"[Char] remembered X" → Drop into the memory: "Last time, the rope had snapped."
+"[Char] noticed X" → Write X: "A scratch on the doorframe. Fresh."
+
+=== CONCRETE OVER ABSTRACT ===
+
+NEVER write abstract narration when concrete dramatization is possible:
+"A [adj] voice [verbed]" → Write what was SAID: "'Drop your weapons!'"
+"The scent of [list]" → ONE specific smell anchored to character: "Lamp oil. Like Father's workshop."
+"Every second counted" → Show the clock/obstacle: "The water reached her waist. Rising."
+"Tension filled [space]" → Show what hands/eyes/feet are doing
+"A sudden shout" → Write the ACTUAL shout, then the reaction: "'Contact!' — and the door splintered."
+
+=== EARNED PERCEPTION (Character's sensory_bias + experience_tells) ===
+
+If a character notices something specific, their sensory_bias and experience_tells
+MUST justify WHY they'd notice it. This implies backstory without stating it:
+- WRONG: "Kael noticed the lock was a Thorsen Mark III." (why would they know this?)
+- RIGHT: "Thorsen Mark III. Same as the vault in Redmere." (implies they've broken in before)
+- WRONG: "She heard the bird call was wrong." (generic skill)
+- RIGHT: "Three notes. Wrens don't sing three notes." (implies specific knowledge, earns the reader's trust)
+
+This builds suspense: competence implies experience, experience implies danger survived.
+
+=== OPINIONATED DESCRIPTIONS ===
+
+Every description carries the POV character's ATTITUDE — no neutral narration:
+- WRONG: "The room was large and well-furnished."
+- RIGHT (cynical): "The room was the size of my entire apartment. Twice."
+- RIGHT (anxious): "Too many corners. Too many places to hide."
+- RIGHT (envious): "Crystal decanters. The good kind. Not the swill she served at home."
+
+=== DIALOGUE CRAFT ===
+
+- Five-word default line length — people speak in fragments, not paragraphs
+- Every line does 2+ jobs: advance plot + reveal character + create humor OR tension
+- Action beats over tags: "Kael set down his cup. 'We leave at dawn.'"
+- At least 1 subtext mismatch per scene: character says X, means Y
+- Small dialogue reveals character quirks: a miser counts coins mid-conversation,
+  a liar looks you in the eye too steadily, a soldier speaks in clipped orders
+
+=== FREE INDIRECT DISCOURSE (adapt to narrative style) ===
+
+When the story uses close POV, write closer to the character's mind:
+- Drop thought tags: "He thought this was wrong" → "This was wrong."
+- Use character's vocabulary: Soldier thinks "Clusterfuck." Professor thinks "Untenable."
+- Rhetorical questions without attribution: "Why now? Why here?"
+- Sentence fragments mirror how minds work: "Not here. Not like this."
+- Color description with character's mood and their sensory_bias
+NOTE: Adapt intensity to genre — not every story needs deep first-person-style POV.
+
+=== TRY-FAIL CYCLE DRAMATIZATION ===
+
+Scene outcomes MUST be dramatized through action and consequence. Never summarize.
+
+YES_BUT (progress + setback) -- Two beats:
+  Beat 1: Character achieves partial goal (moment of relief)
+  Beat 2: Complication lands FROM the success itself (the "but")
+
+NO_AND (failure + escalation) -- Three beats:
+  Beat 1: Character attempts their approach
+  Beat 2: It fails (setback)
+  Beat 3: Something ELSE goes wrong because of the failure (the "and")
+
+YES_AND (resolution scenes) -- Smooth progress. Relief is earned. Things work and keep working.
+NO_BUT (turning point scenes) -- Failure, but unexpected gain emerges from it.
+
+MATCH OBSTACLES TO MICE TYPE:
+- MILIEU obstacles: physical barriers, hostile terrain, getting lost, spatial confusion
+- INQUIRY obstacles: lies, red herrings, destroyed evidence, dead ends, misunderstanding
+- CHARACTER obstacles: self-doubt, pressure to regress, change backfiring socially
+- EVENT obstacles: cascading failures, new threats, insufficient resources, collateral damage
+
+Each try-fail MUST show VISIBLE CONSEQUENCES in the prose. The reader should see what got better or worse.
+
+FLASH FICTION TRICK: Some try-fail cycles can be IMPLIED as having happened before the scene starts.
+Useful for scenes that need to enter late: "None of the troubleshooter's suggestions had worked."
+
+=== PYRAMID OF ABSTRACTION (Sanderson) ===
+
+Default to CONCRETE, sensory-specific language. Abstract words (love, fear, power, evil,
+beauty, hope, justice) are EARNED — they may only appear after concrete details have
+anchored the reader in the physical scene. For every abstract statement, ask: "Can I
+replace this with a specific image, action, or sensory detail that SHOWS this?"
+Best concrete details serve triple duty: setting + character + plot in one image.
+"The queen's corgi" > "royal pet." "Metallic taste flooding her mouth" > "she felt the magic."
+
+=== EMBEDDED SEQUELS (Butcher Mature Technique) ===
+
+Do NOT write separate reflection paragraphs after action. Embed the sequel processing
+(emotion → logic → anticipation → choice) INSIDE ongoing action. The character processes
+their broken wrist WHILE being attacked again. Emotional reaction happens between sword
+strokes, not in a quiet room afterward. This eliminates pacing sag and makes interiority
+feel urgent rather than self-indulgent.
+
+=== CONSEQUENCE OVER CHOREOGRAPHY (Sanderson) ===
+
+Never write blow-by-blow fight choreography. Structure action scenes around:
+1. What is at STAKE emotionally for the POV character?
+2. What RESOURCES and LIMITATIONS does the character bring?
+3. What PROBLEM must they solve under pressure?
+Interleave 2-3 sentences of physical action with internal reaction, dialogue, or sensory
+detail. The reader should feel fear, exhaustion, and desperate calculation — not watch a
+camera pan across a battlefield. Consequence and emotional cost > who punches whom.
+
+=== MICRO-TENSION: RELIEF WITHDRAWAL (Butcher) ===
+
+When a scene offers the POV character a moment of relief (healer arrives, enemy retreats,
+door opens), WITHDRAW it within 1-2 paragraphs. The healer picks up a weapon. The enemy
+was a decoy. The door leads to a worse room. Relief that sticks is resolution. Relief
+yanked away is micro-tension. Save real relief for scene endings only.
+The reader's driving question should CHANGE every 2-3 paragraphs — each new question
+more interesting than the last.
+
+=== SENSORY DETAILS AS CONSEQUENCES (Butcher) ===
+
+Sensory input should arrive because something HAPPENED to the POV character, not as
+atmosphere painting.
+WRONG: "The training yard smelled of dust and leather." (atmosphere)
+RIGHT: "The world went suddenly scarlet with pain." (consequence of broken wrist)
+For extreme sensations, cross senses (synesthesia): pain becomes color, sound becomes
+pressure, heat becomes taste. One synesthetic word > a full sentence of literal description.
+When a character notices NOTHING about their environment, that IS the sensory detail —
+their attention is completely consumed.
+
 2. Middle paragraphs (1200-1600 words, 3-10 paragraphs)
-   - Goal → Conflict → Complications
+   - Goal → Conflict → Complications (dramatized via MICE try-fail cycles)
    - Character interiority woven throughout
    - Dialogue exchanges (if applicable)
    - World details embedded in action
@@ -403,6 +586,7 @@ Goal: {scene_data.get('goal', 'N/A')}
 Conflict: {scene_data.get('conflict', 'N/A')}
 Disaster/Resolution: {scene_data.get('disaster_or_resolution', 'N/A')}
 Ticking Clock: {scene_data.get('ticking_clock', 'N/A')}
+HOURS REMAINING: {scene_context.get('ticking_clock', {}).get('hours_remaining', '???')} — ANY time references in the synthesized prose MUST be ≤ this number. Do NOT allow references to more time than this.
 
 === POV CHARACTER & PRONOUNS ===
 POV: {pov_name} ({pov_gender})

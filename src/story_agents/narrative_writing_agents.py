@@ -112,6 +112,107 @@ SHOW EMOTION THROUGH ACTION (Motivation-Reaction Unit order):
 - NEVER write "[Character] felt [emotion]" or "[Character] was [emotion]"
 - "Her knuckles whitened around the pen." NOT "She was furious."
 - "He set a second plate at the table, then put it back." NOT "He missed her."
+
+=== IMMERSIVE PROSE CHECKLIST (adapt intensity to genre/style) ===
+
+1. FILTER WORDS: Minimize "heard/saw/felt/noticed/realized" — write the perception directly
+   "She heard footsteps" → "Footsteps echoed off the stone."
+2. CONCRETE OVER ABSTRACT: Don't summarize what can be dramatized
+   "A commanding voice" → Write what was SAID: "'Halt! Weapons down!'"
+   "The scent of spices" → ONE smell: "Cardamom. Like Mother's kitchen."
+3. SHOW VIA ACTION: Emotion → character's stress_tell, idle_habit, dialogue_avoidance
+   from their behavioral_signature (if available in character data)
+4. CHARACTER PERCEPTION: What a character notices must connect to their sensory_bias
+   and experience_tells — earned knowledge, not random skill
+5. EARNED COMPETENCE: If a character acts skilled, imply WHY through casual detail
+   "He tested the rope with two sharp tugs." (implies experience, never states it)
+
+=== POV-COLORED PROSE ===
+
+- Vocabulary matches character's education/class (a street kid doesn't think in SAT words)
+- Metaphors come from character's life experience ONLY
+  Sailor: "The crowd parted like a bow wave." NOT "like a curtain."
+  Farmer: "Patience. Same as waiting for rain." NOT "like a chess master."
+- Familiarity filter: known things get ZERO explanation, new things get detail
+  A soldier doesn't explain what a flank is. A civilian does.
+- Sentence rhythm matches temperament:
+  Anxious = short, choppy. Contemplative = flowing, layered. Angry = blunt, staccato.
+
+=== DIALOGUE VOICE ARCHITECTURE ===
+
+Each character's speech should differ across 5 dimensions:
+1. Sentence complexity → education level (simple vs compound-complex)
+2. Speech quantity → power/confidence (powerful = fewer words; insecure = over-explains)
+3. Honesty pattern → direct vs manipulative vs evasive
+4. Emotional expression → repressed vs explosive vs intellectualized
+5. Signature construction → one recurring syntactic habit per character
+   (e.g., always starts with "Look,", never uses contractions, ends with questions)
+
+=== ANTI-INFODUMP: Exposition Through Emotional Stake ===
+
+Before including ANY world-building or backstory exposition, pass this test:
+1. WHO is thinking/saying it? (must be a specific character, not the narrator)
+2. WHY NOW? (what just happened that triggered this thought?)
+3. WHAT do they FEEL about it? (nostalgia, dread, anger, longing?)
+
+If you can't answer all three → it's an infodump. Restructure as:
+- A memory triggered by a sensory detail
+- An argument between characters who disagree about it
+- A lesson being taught under pressure
+
+=== DIALOGUE LENGTH DISCIPLINE (Butcher Rule) ===
+
+Most dialogue lines should be FIVE WORDS OR FEWER. This is how humans actually talk.
+
+CALIBRATION:
+- 70% of dialogue lines: 1-5 words
+- 20% of dialogue lines: 6-10 words
+- 10% of dialogue lines: 11+ words (reserved for revelations, confessions, arguments)
+
+WRONG (AI default — complete sentences):
+"I believe that we should probably consider leaving before the guards arrive," Marcus said.
+
+RIGHT (Butcher rhythm):
+Marcus grabbed his pack. "We need to go."
+"The guards--"
+"Now."
+
+People interrupt. People trail off. People answer questions with questions.
+Contractions always: "don't", "can't", "I'm" (never "do not" unless formal/alien).
+Fragments are natural: "Over there." "Not a chance." "Since yesterday."
+
+=== ACTION BEAT ORDERING (Butcher Technique) ===
+
+Place the action beat BEFORE the dialogue line, not after. The reader sees the physical
+action, then hears the words. This grounds speech in the body.
+
+RIGHT: "Max tossed his shield down in disgust. 'It was your own fault.'"
+WRONG: "'It was your own fault,' Max said, tossing his shield down."
+
+The first version shows disgust BEFORE words arrive. The second explains after the fact.
+Action beats must be CHARACTER-SPECIFIC (filtered through tags/traits/profession), not
+generic gestures anyone could make.
+
+=== INTERIORITY PLACEMENT (Butcher Rule) ===
+
+Internal thoughts and reflection belong in SEQUEL beats (after action), NOT during action.
+
+DURING ACTION (external only):
+- Stimulus-response-stimulus-response. No "he realized", no weighing options mid-fight.
+- Short, punchy sentences. One action per sentence. Fragments for impact.
+
+DURING SEQUEL (interiority allowed — order is MANDATORY):
+1. EMOTIONAL REACTION: Involuntary body response (gut clench, shaking hands)
+2. LOGIC/REVIEW: Character analyzes what happened, weighs options
+3. ANTICIPATION: Character imagines consequences of each option
+4. CHOICE: Character commits to new goal (becomes next scene's goal)
+
+WRONG (thinking during action):
+"The blade came at his head. He thought about how his father had taught him to parry."
+
+RIGHT (pure action, save thinking for sequel):
+"The blade came at his head. He ducked, felt steel clip his ear, and drove his shoulder
+into the attacker's ribs."
 """
 
 
@@ -320,6 +421,7 @@ LOCATION DETAILS:
 
 TICKING CLOCK (maintain urgency):
 {ticking_clock.get('ticking_clock', 'Time is running out')}
+HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — time references MUST NOT exceed this
 
 PREVIOUS SCENE ENDING (for continuity):
 {previous_prose[-500:] if previous_prose else 'This is the opening scene.'}
@@ -396,7 +498,7 @@ IMPORTANT: ALL FIELDS ARE REQUIRED. DO NOT OMIT ANY FIELD."""
 
     def _format_character_for_prompt(self, char: dict) -> str:
         """Format character data for prompt."""
-        return f"""- Name: {char.get('name', 'Unknown')}
+        base = f"""- Name: {char.get('name', 'Unknown')}
 - Gender: {char.get('gender', 'unknown')} (USE CORRECT PRONOUNS)
 - Personality Traits: {', '.join(char.get('personality_traits', []))}
 - Backstory Points: {'; '.join(char.get('backstory_points', [])[:3])}
@@ -405,6 +507,32 @@ IMPORTANT: ALL FIELDS ARE REQUIRED. DO NOT OMIT ANY FIELD."""
 - Motivation: {char.get('motivation', '')}
 - Physical Build: {char.get('physical', {}).get('build', '')}
 - Distinguishing Features: {', '.join(char.get('physical', {}).get('distinguishing_features', []))}"""
+
+        # Add behavioral signature if available
+        bs = char.get("behavioral_signature")
+        if bs and isinstance(bs, dict):
+            base += f"""
+- BEHAVIORAL SIGNATURE (use these for consistent character-specific actions):
+  - Stress tell: {bs.get('stress_tell', '')}
+  - Idle habit: {bs.get('idle_habit', '')}
+  - Dialogue avoidance: {bs.get('dialogue_avoidance', '')}
+  - Comfort action: {bs.get('comfort_micro_action', '')}
+  - Staccato pattern: {bs.get('staccato_pattern', '')}
+  - Environmental displacement: {bs.get('environmental_displacement', '')}
+  - Sensory bias: {bs.get('sensory_bias', '')}
+  - Experience tells: {bs.get('experience_tells', '')}"""
+
+        # Add tags and traits if available (Butcher technique)
+        tt = char.get("tags_and_traits")
+        if tt and isinstance(tt, dict):
+            base += f"""
+- TAGS & TRAITS (repeat these for instant character recognition):
+  - Appearance tags: {', '.join(tt.get('appearance_tags', []))}
+  - Prop traits: {', '.join(tt.get('prop_traits', []))}
+  - Mannerism: {tt.get('mannerism_trait', '')}
+  - Speech fingerprint: {tt.get('speech_fingerprint', '')}"""
+
+        return base
 
     def critique_prose(
         self,
@@ -717,6 +845,7 @@ POV CHARACTER:
 
 TICKING CLOCK:
 {ticking_clock.get('ticking_clock', 'Time is running out')}
+HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — time references MUST NOT exceed this
 
 PREVIOUS SCENE ENDING:
 {previous_prose[-400:] if previous_prose else 'This is the opening scene.'}
@@ -1090,6 +1219,7 @@ WORLD DETAILS (MUST INTEGRATE NATURALLY):
 
 TICKING CLOCK:
 {ticking_clock.get('ticking_clock', 'Time is running out')}
+HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — time references MUST NOT exceed this
 
 PREVIOUS SCENE ENDING:
 {previous_prose[-400:] if previous_prose else 'This is the opening scene.'}
@@ -1372,6 +1502,10 @@ POV CHARACTER:
 TICKING CLOCK (MUST REFERENCE):
 - Clock: {ticking_clock.get('ticking_clock', 'Time is running out')}
 - Deadline: {ticking_clock.get('ticking_clock_deadline', 'Soon')}
+- HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} hours
+  CRITICAL: Any time references in the prose MUST be consistent with this number.
+  Do NOT write more hours remaining than {ticking_clock.get('hours_remaining', '???')}.
+  Do NOT mention "days" if hours remaining is less than 24.
 - Consequence: {ticking_clock.get('ticking_clock_consequence', 'Disaster')}
 
 PREVIOUS SCENE ENDING:
@@ -1379,7 +1513,7 @@ PREVIOUS SCENE ENDING:
 
 YOUR TASK:
 Write 1500-2000 words of prose (INCREASED from 750-1000) that:
-1. REFERENCES the ticking clock explicitly at least ONCE
+1. REFERENCES the ticking clock explicitly at least ONCE — use the HOURS REMAINING above
 2. Makes the scene GOAL clear in the first quarter
 3. Shows CONFLICT actively opposing the goal
 4. Demonstrates the OUTCOME (don't summarize it)
@@ -1387,10 +1521,9 @@ Write 1500-2000 words of prose (INCREASED from 750-1000) that:
 6. Ends with a HOOK that demands the next scene
 
 URGENCY TECHNIQUES:
-- Deadline reminders in dialogue or narration
+- Deadline reminders using the HOURS REMAINING number (e.g., "{ticking_clock.get('hours_remaining', '???')} hours until...")
 - Physical symptoms of stress (racing heart, sweat, shallow breath)
 - Difficult choices with no good options
-- Time markers ("Three hours until...")
 - Interrupted plans, complications
 
 STRUCTURE:
@@ -1448,6 +1581,7 @@ PROSE TO CRITIQUE:
 
 TICKING CLOCK TO REFERENCE:
 {ticking_clock.get('ticking_clock', 'Time pressure')}
+HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — flag if prose references MORE time than this
 
 CRITIQUE FROM PLOT URGENCY PERSPECTIVE:
 Score each dimension 1-10:
@@ -1739,6 +1873,7 @@ LOCATION:
 
 TICKING CLOCK:
 {ticking_clock.get('ticking_clock', 'Time is running out')}
+HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — time references MUST NOT exceed this
 
 PREVIOUS SCENE ENDING (MUST CONNECT TO):
 {previous_prose[-600:] if previous_prose else 'This is the OPENING scene - establish voice and tone.'}

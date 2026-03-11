@@ -82,6 +82,12 @@ THE 7 BASIC PLOTS (Christopher Booker):
    - Emotional Promise: Change through sacrifice/love
    - Best For: Redemption arcs, Emotional drama
 
+MAJOR DRAMATIC QUESTION (Sanderson): Every story must have a single, clear MDQ stated as a
+yes/no question. "Will [protagonist] achieve [goal] despite [central obstacle]?" This question
+must be clear to the reader by end of Chapter 1. Every chapter must advance, complicate, or
+threaten the answer. If a chapter doesn't connect to the MDQ, it's structural dead weight.
+The MDQ is the spine that unifies all subplots.
+
 Focus on the JOURNEY STRUCTURE in the logline."""
 
     def propose_story_shape(

@@ -52,6 +52,7 @@ def upload_video(
     tags: list[str] = None,
     category_id: str = None,
     privacy_status: str = None,
+    publish_at: str = None,
 ) -> UploadResult:
     """
     Upload a video to YouTube with metadata.
@@ -64,6 +65,9 @@ def upload_video(
         tags: List of keyword tags
         category_id: YouTube category ID (default: 24 = Entertainment)
         privacy_status: 'public', 'private', or 'unlisted'
+        publish_at: ISO 8601 datetime for scheduled publishing. When set,
+                    privacy is forced to 'private' and YouTube auto-publishes
+                    at the specified time.
 
     Returns:
         UploadResult with video_id and url on success
@@ -83,6 +87,10 @@ def upload_video(
     privacy_status = privacy_status or DEFAULT_YOUTUBE_PRIVACY
     tags = tags or []
 
+    # Scheduled publishing requires private status
+    if publish_at:
+        privacy_status = "private"
+
     # Truncate title to 100 chars (YouTube limit)
     if len(title) > 100:
         title = title[:97] + "..."
@@ -100,6 +108,10 @@ def upload_video(
             'selfDeclaredMadeForKids': False,
         }
     }
+
+    # Set scheduled publish time (YouTube auto-publishes at this time)
+    if publish_at:
+        body['status']['publishAt'] = publish_at
 
     # Create MediaFileUpload with resumable=True for large files
     media = MediaFileUpload(
@@ -260,3 +272,42 @@ def add_to_playlist(youtube, video_id: str, playlist_id: str) -> bool:
     except HttpError as e:
         print(f">>> Failed to add to playlist: {e}")
         return False
+
+
+def create_playlist(
+    youtube,
+    title: str,
+    description: str = "",
+    privacy_status: str = "public",
+) -> str | None:
+    """
+    Create a new YouTube playlist.
+
+    Args:
+        youtube: Authenticated YouTube API service
+        title: Playlist title (e.g., the book name)
+        description: Playlist description
+        privacy_status: 'public', 'private', or 'unlisted'
+
+    Returns:
+        Playlist ID on success, None on failure
+    """
+    try:
+        response = youtube.playlists().insert(
+            part='snippet,status',
+            body={
+                'snippet': {
+                    'title': title[:150],  # YouTube playlist title limit
+                    'description': description[:5000],
+                },
+                'status': {
+                    'privacyStatus': privacy_status,
+                }
+            }
+        ).execute()
+        playlist_id = response['id']
+        print(f">>> Created playlist: {title} ({playlist_id})")
+        return playlist_id
+    except HttpError as e:
+        print(f">>> Failed to create playlist: {e}")
+        return None

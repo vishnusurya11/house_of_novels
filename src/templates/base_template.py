@@ -23,6 +23,7 @@ class GenerationResult:
     video_count: int
     audio_count: int
     success: bool
+    chapter_card_count: int = 0
     error: Optional[str] = None
     step_timings: dict = field(default_factory=dict)
 

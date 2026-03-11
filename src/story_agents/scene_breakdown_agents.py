@@ -55,7 +55,46 @@ When proposing chapter/scene structure:
 5. Assign clear scene purposes (e.g., "Establish ordinary world", "First confrontation with antagonist")
 6. Identify which beats are covered in each chapter
 
-Be specific and concrete in your proposals."""
+Be specific and concrete in your proposals.
+
+## MICE QUOTIENT THREADING (MANDATORY)
+
+Every scene MUST advance at least one MICE thread. Classify each thread:
+
+MILIEU: Opens when character enters unfamiliar space -> closes when they exit/escape.
+  Try-fail obstacles PREVENT LEAVING: physical barriers, getting lost, hostile terrain.
+  YES_BUT = spatial progress + environmental complication.
+  NO_AND = escape attempt fails + space becomes more hostile.
+
+INQUIRY: Opens when a question is raised ("Huh?") -> closes when answered ("Aha!").
+  Try-fail obstacles PREVENT KNOWING: lies, red herrings, destroyed evidence, dead ends.
+  YES_BUT = information gained + bigger question raised.
+  NO_AND = investigation blocked + evidence path destroyed.
+
+CHARACTER: Opens when character is dissatisfied with SELF (INTERNAL) -> closes when identity solidifies.
+  Try-fail obstacles PREVENT BECOMING: self-loathing, external pressure to stay same, change backfires.
+  YES_BUT = internal growth + external punishment for change.
+  NO_AND = regression to old self + relationship damage.
+  NOTE: Character is ALWAYS internal. If the conflict is external, it's Event, not Character.
+
+EVENT: Opens when status quo is disrupted (EXTERNAL) -> closes when new status quo established.
+  Try-fail obstacles PREVENT RESTORING ORDER: cascading consequences, new threats.
+  YES_BUT = immediate fix + cascading new problem from the fix.
+  NO_AND = fix fails + situation deteriorates in new dimension.
+
+NESTING RULES:
+- Threads close in REVERSE order of opening (FILO like nested code blocks).
+- The dominant thread opens first, closes last, spans 80%+ of scenes.
+
+RESOLUTION (final ~25% of scenes):
+- Switch from YES_BUT/NO_AND to YES_AND (success + continuation) or NO_BUT (failure + unexpected gain).
+
+## SCENE/SEQUEL STRUCTURE
+
+Each scene follows: GOAL → CONFLICT → SETBACK (action pattern)
+Each sequel follows: EMOTION → REASON → ANTICIPATION → CHOICE (reaction pattern, order invariable)
+- Can abbreviate sequels for fast pacing but CANNOT reorder
+- End chapters at SETBACK or EMOTION peak — never after Choice (reader has closure, may stop)"""
 
     def propose_chapter_outline(
         self,
@@ -288,6 +327,16 @@ RULE: Every scene MUST have at least 2 characters in characters_present.
 No solo/introspection-only scenes. Even reflective moments need another
 character present to create tension through dialogue or interaction.
 
+MICE QUOTIENT FIELDS (MANDATORY for each scene):
+12. mice_threads: List of MICE threads this scene develops. Each thread needs:
+    - thread_type: milieu, inquiry, character, or event
+    - thread_id: unique ID like 'escape_the_city' or 'who_killed_marcus'
+    - position: opener, developer, or closer
+    - try_fail_type: yes_but, no_and, yes_and, no_but, or none
+    - try_fail_description: concrete description of what was tried and how it failed/succeeded
+    - escalation_note: how stakes are higher than previous scene on this thread
+13. dominant_mice_type: The PRIMARY MICE type for this scene (milieu, inquiry, character, or event)
+
 Focus on beat distribution and trope integration across all scenes.
 Create {chapter_skeleton.get('num_scenes')} scenes that execute the chapter plan effectively.
 Provide reasoning for how these scenes serve the chapter's goals and integrate tropes/character arcs.
@@ -465,7 +514,58 @@ When proposing chapter/scene structure:
 6. Build maximum tension before "All Is Lost"
 7. Create a satisfying climactic sequence
 
-Your goal is maximum reader engagement through expertly managed pacing."""
+Your goal is maximum reader engagement through expertly managed pacing.
+
+## MICE QUOTIENT THREADING (MANDATORY)
+
+Every scene MUST advance at least one MICE thread. Classify each thread:
+
+MILIEU: Opens when character enters unfamiliar space -> closes when they exit/escape.
+  YES_BUT = spatial progress + environmental complication.
+  NO_AND = escape attempt fails + space becomes more hostile.
+
+INQUIRY: Opens when a question is raised -> closes when answered.
+  YES_BUT = information gained + bigger question raised.
+  NO_AND = investigation blocked + evidence path destroyed.
+
+CHARACTER: Opens when character is dissatisfied with SELF (INTERNAL) -> closes when identity solidifies.
+  YES_BUT = internal growth + external punishment for change.
+  NO_AND = regression to old self + relationship damage.
+
+EVENT: Opens when status quo is disrupted (EXTERNAL) -> closes when new status quo established.
+  YES_BUT = immediate fix + cascading new problem from the fix.
+  NO_AND = fix fails + situation deteriorates in new dimension.
+
+NESTING & ELASTIC BAND:
+- Threads close in REVERSE order of opening (FILO). Dominant thread spans 80%+ of scenes.
+- Longer a thread is stretched open, the more tension builds = bigger cathartic release on close.
+- If you close a thread too early, you can't build a replacement to the same tension.
+- Resolution (final ~25%): switch from YES_BUT/NO_AND to YES_AND or NO_BUT.
+
+## SCENE/SEQUEL STRUCTURE (Jim Butcher Method)
+
+Every scene follows one of two patterns:
+
+SCENE (action/conflict):
+  GOAL → CONFLICT → SETBACK (disaster that changes the situation)
+  - The character enters with a goal, faces opposition, and the situation changes
+  - Setbacks should be YES_BUT or NO_AND from MICE framework
+
+SEQUEL (reaction/decision):
+  EMOTION → REASON → ANTICIPATION → CHOICE
+  - ORDER IS INVARIABLE. A character who skips emotion feels robotic.
+  - Can ABBREVIATE (skip Reason/Anticipation for fast pacing) but CANNOT reorder.
+
+GENRE-TUNED SEQUEL PACING:
+- Action/Thriller: Emotion (1 line) → Choice. Skip middle. Keep momentum.
+- Mystery/Inquiry: Emotion → Reason (DETAILED, show the deduction) → Choice.
+- Romance/Character: Emotion (DETAILED) → Anticipation (DETAILED, hope/dread) → Choice.
+- Horror/Suspense: Emotion → Anticipation (EXTENDED, milk the dread) → Choice.
+
+CHAPTER ENDING RULES:
+- End chapters at SETBACK (from Scene) or EMOTION peak (from Sequel)
+- NEVER end a chapter after Choice — the reader has closure and may stop reading
+- The best chapter endings leave the character in crisis: the old plan failed, no new plan yet"""
 
     def propose_chapter_outline(
         self,
@@ -687,6 +787,16 @@ RULE: Every scene MUST have at least 2 characters in characters_present.
 No solo/introspection-only scenes. Even reflective moments need another
 character present to create tension through dialogue or interaction.
 
+MICE QUOTIENT FIELDS (MANDATORY for each scene):
+12. mice_threads: List of MICE threads this scene develops. Each thread needs:
+    - thread_type: milieu, inquiry, character, or event
+    - thread_id: unique ID like 'escape_the_city' or 'who_killed_marcus'
+    - position: opener, developer, or closer
+    - try_fail_type: yes_but, no_and, yes_and, no_but, or none
+    - try_fail_description: concrete description of what was tried and how it failed/succeeded
+    - escalation_note: how stakes are higher than previous scene on this thread
+13. dominant_mice_type: The PRIMARY MICE type for this scene (milieu, inquiry, character, or event)
+
 Focus on scene type variety and word count pacing for maximum reader engagement.
 Vary scene types and intensities to maintain engagement.
 Provide reasoning for the pacing strategy of these scenes and how scene types create rhythm.
@@ -829,7 +939,25 @@ When proposing chapter/scene structure:
 6. Create scenes that test characters and show growth
 7. Show character relationships evolving across chapters
 
-Your goal is rich character development integrated into compelling structure."""
+Your goal is rich character development integrated into compelling structure.
+
+## MICE QUOTIENT THREADING (MANDATORY)
+
+Every scene MUST advance at least one MICE thread. Classify each thread:
+
+MILIEU: Opens when character enters unfamiliar space -> closes when they exit/escape.
+INQUIRY: Opens when a question is raised -> closes when answered.
+CHARACTER: Opens when character is dissatisfied with SELF (INTERNAL) -> closes when identity solidifies.
+  NOTE: Character is ALWAYS internal. If the conflict is external, it's Event, not Character.
+EVENT: Opens when status quo is disrupted (EXTERNAL) -> closes when new status quo established.
+
+For CHARACTER threads specifically:
+  Try-fail obstacles PREVENT BECOMING: self-loathing, external pressure to stay same, change backfires.
+  YES_BUT = internal growth + external punishment for change.
+  NO_AND = regression to old self + relationship damage from the attempt.
+
+NESTING: Threads close in REVERSE order of opening (FILO). Dominant thread spans 80%+ of scenes.
+RESOLUTION (final ~25%): Switch from YES_BUT/NO_AND to YES_AND or NO_BUT."""
 
     def propose_chapter_outline(
         self,
@@ -1045,6 +1173,16 @@ RULE: Every scene MUST have at least 2 characters in characters_present.
 No solo/introspection-only scenes. Even reflective moments need another
 character present to create tension through dialogue or interaction.
 
+MICE QUOTIENT FIELDS (MANDATORY for each scene):
+12. mice_threads: List of MICE threads this scene develops. Each thread needs:
+    - thread_type: milieu, inquiry, character, or event
+    - thread_id: unique ID like 'escape_the_city' or 'who_killed_marcus'
+    - position: opener, developer, or closer
+    - try_fail_type: yes_but, no_and, yes_and, no_but, or none
+    - try_fail_description: concrete description of what was tried and how it failed/succeeded
+    - escalation_note: how stakes are higher than previous scene on this thread
+13. dominant_mice_type: The PRIMARY MICE type for this scene (milieu, inquiry, character, or event)
+
 Focus on character arc progression and POV choice for maximum character development.
 Assign POV strategically - whose perspective best serves each scene?
 Show character growth and relationships developing.
@@ -1172,3 +1310,127 @@ Choose and explain your reasoning.
             for c in critique_list:
                 lines.append(f"  - {c.get('agent_name', 'Unknown')}: {c.get('overall_assessment', 'N/A')[:100]}...")
         return "\n".join(lines)
+
+
+class MiceNestingValidator(BaseStoryAgent):
+    """Validates MICE thread nesting (FILO order) and elastic band tension across a chapter.
+
+    Methodology: Mary Robinette Kowal's MICE Quotient nesting rules.
+    Checks: FILO nesting order, dominant thread span, elastic stretch (no thread idle >3 scenes),
+    try-fail balance (~60:40 YES_BUT:NO_AND), dangling threads, resolution mode switch.
+    """
+
+    @property
+    def name(self) -> str:
+        return "MICE_NESTING_VALIDATOR"
+
+    @property
+    def role(self) -> str:
+        return "MICE Thread Nesting Validator"
+
+    @property
+    def system_prompt(self) -> str:
+        return """You are a structural validator specializing in MICE Quotient thread nesting.
+
+YOUR MISSION: Analyze all scenes in a chapter and validate that MICE threads are properly
+nested, balanced, and resolved.
+
+=== FILO NESTING (Like Code Blocks) ===
+
+Threads must close in REVERSE order of opening. If you open milieu, then open inquiry inside it,
+you must close inquiry before closing milieu.
+
+CORRECT: Character -> Event -> Milieu -> Inquiry -> close Inquiry -> close Milieu -> close Event -> close Character
+WRONG: Character -> Event -> close Character -> close Event (character closed before event, but event opened after character)
+
+=== DOMINANT THREAD ===
+
+The outermost thread (first opened, last closed) is the dominant thread.
+It should span 80%+ of scenes. It delivers the biggest cathartic release because
+reader attention has been "stretched" the longest (elastic band principle).
+
+=== ELASTIC BAND PRINCIPLE ===
+
+Each open thread is like a stretched elastic band of reader attention.
+- Longer stretch = more tension = bigger payoff on close
+- If a thread is open but idle (no try-fail activity) for >3 scenes, it loses tension
+- If you close a thread too early, you can't build a replacement to the same tension
+
+=== TRY-FAIL BALANCE ===
+
+Across a chapter, try-fail types should be roughly:
+- 60% YES_BUT (progress + complication) -- keeps reader hopeful
+- 40% NO_AND (failure + escalation) -- keeps reader worried
+- Resolution scenes (~final 25%) switch to YES_AND or NO_BUT
+
+=== DANGLING THREADS ===
+
+Every thread that opens MUST close. Dangling threads = reader dissatisfaction.
+Exception: a thread that opens in this chapter may close in a later chapter (flag but don't penalize).
+
+=== RESOLUTION MODE ===
+
+Final ~25% of scenes should shift from YES_BUT/NO_AND to YES_AND (success) or NO_BUT (acceptance).
+This "mode change" signals the story is closing. Missing it makes endings feel abrupt."""
+
+    def validate(
+        self,
+        chapter_scenes: list[dict],
+        chapter_number: int,
+    ) -> "MiceNestingReport":
+        """Validate MICE thread nesting across all scenes in a chapter.
+
+        Args:
+            chapter_scenes: List of scene dicts for one chapter (each should have mice_threads, dominant_mice_type)
+            chapter_number: Chapter number for reporting
+
+        Returns:
+            MiceNestingReport with nesting validation results
+        """
+        # Format all scenes with their MICE data
+        scenes_text = []
+        for i, scene in enumerate(chapter_scenes):
+            mice_threads = scene.get("mice_threads", [])
+            threads_info = ""
+            if mice_threads:
+                threads_info = "\n".join([
+                    f"      [{t.get('thread_type', '?')}] {t.get('thread_id', '?')} "
+                    f"(position: {t.get('position', '?')}, try-fail: {t.get('try_fail_type', 'none')})"
+                    for t in (mice_threads if isinstance(mice_threads, list) else [])
+                ])
+            else:
+                threads_info = "      (No MICE threads defined)"
+
+            scenes_text.append(
+                f"  SCENE {scene.get('scene_number', i + 1)}:\n"
+                f"    Summary: {scene.get('scene_summary', scene.get('happens', 'N/A'))[:100]}\n"
+                f"    Dominant MICE: {scene.get('dominant_mice_type', 'unknown')}\n"
+                f"    Outcome: {scene.get('outcome', 'N/A')}\n"
+                f"    MICE Threads:\n{threads_info}"
+            )
+
+        all_scenes_text = "\n\n".join(scenes_text)
+
+        prompt = f"""Validate MICE thread nesting for Chapter {chapter_number}.
+
+CHAPTER {chapter_number} SCENES ({len(chapter_scenes)} scenes):
+
+{all_scenes_text}
+
+Validate:
+1. FILO NESTING: Do threads close in reverse order of opening?
+   Build a stack: each opener pushes, each closer pops. Closers must match stack top.
+2. DOMINANT THREAD: Which thread spans the most scenes? Does it span 80%+?
+3. ELASTIC STRETCH: Are any threads idle for >3 scenes without try-fail activity?
+4. TRY-FAIL BALANCE: What's the YES_BUT:NO_AND ratio? (Target: ~60:40)
+5. DANGLING THREADS: Are there threads opened but never closed?
+6. RESOLUTION MODE: Do final scenes use YES_AND/NO_BUT instead of YES_BUT/NO_AND?
+
+Set chapter_number to {chapter_number} in your response."""
+
+        from ..story_schemas import MiceNestingReport
+        return self.invoke_structured(
+            prompt,
+            MiceNestingReport,
+            max_tokens=get_step_config("step5_scene_breakdown").get("token_limits", {}).get("general", 8000),
+        )

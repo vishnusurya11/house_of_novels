@@ -23,6 +23,7 @@ from src.story_schemas import (
     ContinuityCritique,
     PacingTensionCritique,
     EmotionalResonanceCritique,
+    ShowDontTellCritique,
 )
 
 
@@ -78,6 +79,24 @@ Flag emotion words used as shortcuts:
 - "He was sad" -> Show his slumped posture, avoided eye contact
 - "She was nervous" -> Show her fidgeting, stuttering
 - Any "[character] was [emotion]" construction
+
+FILTER WORD TRANSFORMATION TABLE (verify these are eliminated):
+"[Char] heard X" → X should be written directly
+"[Char] felt X" → The sensation should be described
+"[Char] saw X" → The visual should be described
+"[Char] realized X" → Insight shown through fragments
+"[Char] noticed X" → X should be written directly
+
+=== REINFORCEMENT TELLING ===
+Flag paragraphs that restate what was already shown through action or dialogue.
+If a character just slammed a door (shown), "She was furious" after it is redundant.
+If dialogue revealed information, narration re-explaining it is redundant.
+
+=== CINEMATIC TEST ===
+Flag anything a camera couldn't capture:
+- "Little did she know..." / "What he didn't realize was..." (narrator intrusion)
+- "In that moment, everything changed." (abstract summary)
+- "A [adj] voice [verbed]" without writing what was actually SAID
 
 === PASSIVE VOICE IN ACTION ===
 Action scenes need active voice:
@@ -142,7 +161,19 @@ Be thorough. Miss nothing.
 Flag narration that reads like stage directions — short one-sentence lines that should be
 merged into flowing paragraphs. Novel prose uses immersive narration blocks of 3-8 sentences,
 not rapid-fire single lines. Also flag any dialogue not properly embedded in prose (missing
-quotation marks, script-style "Character: line" format, or "Narrator:" labels)."""
+quotation marks, script-style "Character: line" format, or "Narrator:" labels).
+
+=== ABSTRACTION CHECK (Sanderson Pyramid) ===
+Flag any paragraph where abstract words (love, fear, power, evil, beauty, hope, justice)
+appear WITHOUT a preceding concrete anchor in the same paragraph or the one before it.
+Abstract language must be EARNED by concrete detail first. If >30% of a paragraph's nouns
+are abstract, mark for revision with: "ABSTRACTION: [paragraph] — needs concrete anchor."
+
+=== DIALOGUE LENGTH CHECK (Butcher Rule) ===
+Count words per dialogue line. If >40% of dialogue lines exceed 10 words, flag as
+"AI_DIALOGUE_LENGTH: [N]% of lines exceed 10 words. Real people speak in 3-7 word bursts."
+Flag any single dialogue line >20 words as: "MONOLOGUE: '[first 10 words]...' — break into
+shorter exchanges or action-interrupted fragments.\""""
 
     def critique(self, prose: str, scene_id: str = "unknown") -> ProsePolishCritique:
         """
@@ -281,7 +312,14 @@ Flag when a character's observations, thoughts, or metaphors don't match their b
 and expertise. A botanist notices plants before books. A soldier notices exits before decor.
 A thief notices locks before artwork. Flag generic perception that could belong to ANY
 character — observations should be filtered through the character's unique lens of
-experience, profession, and personality."""
+experience, profession, and personality.
+
+=== DIALOGUE LENGTH CHECK (Butcher Rule) ===
+Count words per dialogue line. Most real dialogue is 3-7 words.
+- If >40% of lines exceed 10 words, flag: "DIALOGUE_INFLATION: [N]% of lines >10 words."
+- Flag any single line >20 words: "MONOLOGUE: break into shorter exchanges or interrupt."
+- Check for AI-default complete sentences — real people use fragments, contractions,
+  interruptions, and non-answers. "Yeah" instead of "I agree with what you're saying.\""""
 
     def critique(
         self,
@@ -425,6 +463,19 @@ Characters shouldn't know things they can't know:
 - Future events
 - Other characters' thoughts
 
+=== CONTRIVANCE CHECK (Sanderson Lantern) ===
+Flag plot conveniences that break immersion:
+- Coincidental meetings ("just happened to be there")
+- Lucky timing ("arrived just in time")
+- Characters who conveniently know exactly the right thing
+- Problems solved by previously unmentioned abilities
+
+For each contrivance, recommend one of:
+(A) Restructure cause-and-effect so it feels earned
+(B) Foreshadow it earlier so it doesn't feel random
+(C) Hang a lantern — have a character notice the improbability ("That's convenient.")
+Option C sparingly — it acknowledges the issue but doesn't fix it.
+
 For each inconsistency, cite:
 1. What the prose says
 2. What the codex says
@@ -476,6 +527,10 @@ SCENE ID: {scene_id}
 === TICKING CLOCK (verify time references match!) ===
 {clock_context}
 
+HOURS REMAINING FOR THIS SCENE: {ticking_clock.get('hours_remaining', '???') if isinstance(ticking_clock, dict) else '???'}
+Any time reference in the prose that states MORE hours/time remaining than this is an ERROR.
+The timeline must only move FORWARD (hours decrease scene by scene, never increase).
+
 === PROSE TO CHECK ===
 {prose}
 
@@ -483,6 +538,7 @@ Check for:
 1. CHARACTER INCONSISTENCIES - traits, appearance, personality not matching codex
 2. LOCATION INCONSISTENCIES - description not matching codex
 3. TIMELINE ISSUES - events out of order, impossible timing
+   - **HOURS REMAINING CHECK**: This scene has {ticking_clock.get('hours_remaining', '???') if isinstance(ticking_clock, dict) else '???'} hours left. Any mention of MORE hours is WRONG.
    - **TIME UNIT CHECK**: If clock says "72 hours", prose must say "3 days" NOT "3 hours"!
    - Verify all time references are consistent with ticking clock
 4. WORLD RULE VIOLATIONS - magic system, customs, taboos broken
@@ -609,7 +665,8 @@ movement, environmental detail) to keep the scene grounded and identify speakers
         if isinstance(ticking_clock, dict):
             clock_text = f"""- Clock: {ticking_clock.get('ticking_clock', 'Unknown')}
 - Deadline: {ticking_clock.get('deadline', 'Unknown')}
-- Consequence: {ticking_clock.get('consequence', 'Unknown')}"""
+- Consequence: {ticking_clock.get('consequence', 'Unknown')}
+- HOURS REMAINING: {ticking_clock.get('hours_remaining', '???')} — time references must not exceed this"""
         else:
             clock_text = str(ticking_clock)
 
@@ -770,3 +827,128 @@ Score micro-tension and overall emotional resonance 1-10."""
 
         from src.config import get_token_limit
         return self.invoke_structured(prompt, EmotionalResonanceCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))
+
+
+# =============================================================================
+# Persona 6: Show Don't Tell Critic
+# =============================================================================
+
+class ShowDontTellCritic(BaseStoryAgent):
+    """
+    Dedicated critic for show-don't-tell violations with specific rewrite suggestions.
+
+    Goes beyond flagging filter words — identifies abstract narrator commentary,
+    emotion labeling, reinforcement telling, and missing dialogue opportunities.
+    Every violation comes with a concrete rewrite suggestion.
+    """
+
+    @property
+    def name(self) -> str:
+        return "SHOW_DONT_TELL_CRITIC"
+
+    @property
+    def role(self) -> str:
+        return "Show Don't Tell Specialist"
+
+    @property
+    def system_prompt(self) -> str:
+        return """You are a show-don't-tell specialist. Your ONLY job is finding places where
+the prose TELLS the reader instead of SHOWING them, and providing specific rewrites.
+
+=== FILTER WORD VIOLATIONS ===
+Find every instance where a filter word creates narrator distance.
+For each, provide the original line AND a specific rewrite:
+
+FILTER WORD → REWRITE PATTERN:
+"[Char] heard X" → Write X directly: "Footsteps echoed off the stone."
+"[Char] felt X" → Write the sensation: "Cold crawled up her spine."
+"[Char] saw X" → Write the visual: "The blade glinted in the torchlight."
+"[Char] realized X" → Show insight as fragments: "The lock. Same make as the vault."
+"[Char] knew X" → State as narration: "The north gate would be unguarded."
+"[Char] wondered X" → Ask directly: "Why now? Why here?"
+"[Char] noticed X" → Write X: "A scratch on the doorframe. Fresh."
+"[Char] remembered X" → Drop into memory: "Last time, the rope had snapped."
+
+=== ABSTRACT NARRATOR COMMENTARY ===
+Flag lines where the narrator summarizes instead of dramatizing:
+- "Tension filled the room" → What are the characters' hands/eyes/feet doing?
+- "Every second counted" → Show the clock, the obstacle, the sweat
+- "A sense of unease settled over them" → Show fidgeting, glancing, grip tightening
+- "The atmosphere was oppressive" → Show specific sensory details
+- "A [adj] voice [verbed]" → Write what was ACTUALLY SAID
+
+=== EMOTION LABELS ===
+Flag every instance of naming an emotion instead of showing it:
+- "She was angry" → "Her fingers whitened on the cup handle."
+- "He was afraid" → "His mouth went dry. The key slipped in his grip."
+- "She felt sad" → "She set a second plate at the table, then put it back."
+- "He was nervous" → Show specific physical tells from character's behavioral_signature
+
+=== REINFORCEMENT TELLING ===
+Flag paragraphs that restate what the scene already showed through action/dialogue:
+- If a character just slammed a door (SHOWN), a following line saying "She was furious" (TOLD) is redundant
+- If dialogue revealed a secret, narration explaining "the secret was now out" is redundant
+- Trust the reader. If you showed it, don't tell it again.
+
+=== MISSING DIALOGUE OPPORTUNITIES ===
+Flag places where the narrator explains something that could be a brief exchange:
+- "She told him about the plan" → Write the actual conversation
+- "They argued about the route" → Show 2-3 lines of the argument
+- "He convinced her to stay" → Show the persuasion happening
+
+=== GENERIC SENSORY CATALOGS ===
+Flag laundry lists of sensory details without character anchoring:
+- "The scent of pine, earth, and woodsmoke" → Pick ONE, anchor to character memory
+  "Pine. Like the cabin where they'd hidden that winter."
+
+=== CINEMATIC TEST ===
+Flag anything a camera couldn't capture — internal narrator commentary disguised as prose:
+- "Little did she know..." (narrator intrusion)
+- "What he didn't realize was..." (omniscient distance)
+- "In that moment, everything changed." (abstract summary)
+
+For each violation, provide:
+1. The exact offending text
+2. Which category it falls under
+3. A SPECIFIC rewrite suggestion (not just "show don't tell")
+
+Score the overall show-don't-tell quality 1-10."""
+
+    def critique(
+        self,
+        prose: str,
+        scene_id: str = "unknown",
+    ) -> ShowDontTellCritique:
+        """
+        Critique show-don't-tell quality with specific rewrite suggestions.
+
+        Args:
+            prose: The scene prose to critique
+            scene_id: Scene identifier
+
+        Returns:
+            ShowDontTellCritique with violations and specific rewrites
+        """
+        prompt = f"""Analyze this prose for show-don't-tell violations. For EVERY violation,
+provide the exact text AND a specific rewrite suggestion.
+
+SCENE ID: {scene_id}
+
+PROSE TO CRITIQUE:
+{prose}
+
+Find ALL instances of:
+1. FILTER WORDS (heard/saw/felt/noticed/realized/knew/wondered/remembered) — provide rewrite for each
+2. ABSTRACT NARRATOR LINES (tension filled, sense of, atmosphere was) — provide concrete replacement
+3. EMOTION LABELS (was angry/afraid/sad/nervous) — provide behavioral alternative
+4. REINFORCEMENT TELLS (narrator restating what was already shown)
+5. MISSING DIALOGUE OPPORTUNITIES (narrator summarizing what could be a conversation)
+
+For filter_word_violations, abstract_narrator_lines, and emotion_labels:
+Format each as: "ORIGINAL: [exact text] → REWRITE: [specific suggestion]"
+
+Score overall show-don't-tell quality 1-10 (10 = fully dramatized, no telling).
+Provide top 3-5 highest-impact suggestions."""
+
+        from src.config import get_token_limit
+        return self.invoke_structured(prompt, ShowDontTellCritique, max_tokens=get_token_limit("step6_prose_generation", "prose_critique"))

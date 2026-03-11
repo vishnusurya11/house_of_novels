@@ -12,6 +12,54 @@ from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 
 # =============================================================================
+# Phase 0: Plot Expansion Schemas
+# =============================================================================
+
+class GenrePlotSchema(BaseModel):
+    """A single genre interpretation of the core conflict seed."""
+    genre: str = Field(..., description="Genre: Horror, Sci-Fi, Mystery, Thriller, Cyberpunk, Dystopian, or Fantasy")
+    title: str = Field(..., description="Evocative story title (3-8 words)")
+    setting_integration: str = Field(..., description="How the microsetting merges with this genre (1-2 sentences)")
+    protagonist: str = Field(..., description="Protagonist described by role, occupation, and defining trait — NO character names (1-2 sentences)")
+    inciting_event: str = Field(..., description="The event that disrupts the status quo (1-2 sentences)")
+    hidden_truth: str = Field(..., description="A secret that recontextualizes everything (1-2 sentences)")
+    stakes: str = Field(..., description="Personal AND world-level consequences of failure (1-2 sentences)")
+    escalation: str = Field(..., description="How conflict intensifies beyond the initial problem (1-2 sentences)")
+    moral_dilemma: str = Field(..., description="The impossible choice the protagonist must face (1 sentence)")
+    plot: str = Field(..., description="Rich narrative paragraph weaving all elements (150-300 words)")
+
+
+class PlotExpansionSchema(BaseModel):
+    """Full structured output from the plot expansion LLM call."""
+    core_conflict: str = Field(..., description="Dramatic core conflict from seed + microsetting (2-3 sentences)")
+    genre_plots: list[GenrePlotSchema] = Field(..., description="6 genre interpretations of the core conflict", min_length=6, max_length=7)
+
+
+class PlotReviewSchema(BaseModel):
+    """Review of a single genre plot by an evaluation agent."""
+    genre: str = Field(..., description="Genre being reviewed")
+    narrative_coherence: int = Field(..., ge=1, le=10, description="How well plot elements fit together")
+    originality: int = Field(..., ge=1, le=10, description="How fresh and surprising the interpretation is")
+    emotional_resonance: int = Field(..., ge=1, le=10, description="How emotionally compelling the stakes are")
+    story_potential: int = Field(..., ge=1, le=10, description="How much runway for a full novel")
+    strengths: str = Field(..., description="Key strengths of this interpretation")
+    weaknesses: str = Field(..., description="Key weaknesses or concerns")
+
+
+class PlotExpansionCritiqueSchema(BaseModel):
+    """Critique of all genre plots from one evaluation agent."""
+    agent_name: str = Field(..., description="Name of the critiquing agent")
+    reviews: list[PlotReviewSchema] = Field(..., description="Review of each genre plot")
+
+
+class PlotExpansionVoteSchema(BaseModel):
+    """Vote for the best genre plot."""
+    agent_name: str = Field(..., description="Name of the voting agent")
+    voted_for_genre: str = Field(..., description="Genre name voted for")
+    reasoning: str = Field(..., description="Why this genre plot is the strongest choice")
+
+
+# =============================================================================
 # Phase 1: Story Outline Schemas
 # =============================================================================
 
@@ -379,6 +427,78 @@ class CharacterSheetSchema(BaseModel):
         default="",
         description="Character's occupation or social role (e.g., 'attending surgeon', 'homicide detective')"
     )
+    behavioral_signature: Optional["CharacterBehavioralSignature"] = Field(
+        default=None,
+        description="Structured behavioral patterns unique to this character. Generated in Step 2."
+    )
+    tags_and_traits: Optional["CharacterTagsAndTraits"] = Field(
+        default=None,
+        description="Butcher's Tags & Traits — recurring appearance words and signature props. Generated in Step 2."
+    )
+
+
+class CharacterBehavioralSignature(BaseModel):
+    """Observable behavioral patterns unique to this character, used by prose agents."""
+    stress_tell: str = Field(
+        ...,
+        description="Involuntary physical tell under stress (e.g., 'cracks knuckles one by one', 'jaw clenches, neck vein pulses')"
+    )
+    idle_habit: str = Field(
+        ...,
+        description="What they do when thinking/waiting (e.g., 'turns ring. Twice.', 'taps index finger in morse rhythm')"
+    )
+    dialogue_avoidance: str = Field(
+        ...,
+        description="How they dodge emotional topics (e.g., 'deflects with sarcasm', 'changes subject to logistics', 'answers a question with a question')"
+    )
+    comfort_micro_action: str = Field(
+        ...,
+        description="Self-soothing gesture (e.g., 'touches locket at throat', 'runs thumb along blade handle')"
+    )
+    staccato_pattern: str = Field(
+        ...,
+        description="Internal thought pattern under pressure (e.g., 'The door. Locked. No — jammed.', 'Three guards. Two exits. One chance.')"
+    )
+    environmental_displacement: str = Field(
+        ...,
+        description="How they express emotion through noticing objects (e.g., 'The coffee had gone cold.', 'The flowers needed water.')"
+    )
+    sensory_bias: str = Field(
+        ...,
+        description="Which sense they default to and WHY from their backstory (e.g., 'sound-first — grew up blind until age 8', 'smell-first — trained as perfumer')"
+    )
+    experience_tells: str = Field(
+        ...,
+        description="Casual competence that implies backstory without stating it (e.g., 'checked the exits before sitting', 'counted the guards without looking up')"
+    )
+
+
+class CharacterTagsAndTraits(BaseModel):
+    """Butcher's Tags & Traits — recurring identifiers for instant character recognition in prose."""
+    appearance_tags: list[str] = Field(
+        ...,
+        min_length=2,
+        max_length=3,
+        description="2-3 specific descriptive words repeated whenever this character appears (e.g., ['wiry', 'sun-darkened', 'hawk-nosed']). EXCLUSIVE to this character."
+    )
+    prop_traits: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=2,
+        description="1-2 signature physical items always associated with this character (e.g., ['cracked leather satchel', 'bone-handled knife'])"
+    )
+    mannerism_trait: str = Field(
+        ...,
+        description="One habitual gesture or behavior (e.g., 'drums fingers when thinking', 'stands with feet wider than shoulders')"
+    )
+    speech_fingerprint: str = Field(
+        ...,
+        description="Sentence length tendency + formality + metaphor source domain (e.g., 'terse, casual, military metaphors')"
+    )
+
+
+# Update forward reference for CharacterSheetSchema
+CharacterSheetSchema.model_rebuild()
 
 
 class LocationSchema(BaseModel):
@@ -1436,6 +1556,14 @@ class CharacterBackstoryProposal(BaseModel):
         ...,
         description="5-7 specific character qualities/quirks (e.g., 'obsessively organized', 'speaks in metaphors', 'never makes eye contact')"
     )
+    behavioral_signature: Optional[CharacterBehavioralSignature] = Field(
+        default=None,
+        description="Structured behavioral patterns unique to this character"
+    )
+    tags_and_traits: Optional[CharacterTagsAndTraits] = Field(
+        default=None,
+        description="Butcher's Tags & Traits — recurring appearance words and signature props"
+    )
     gender: str = Field(
         ...,
         description="Character's gender: 'male' or 'female'"
@@ -1847,6 +1975,65 @@ class LayeredSceneImageCritiqueSchema(BaseModel):
 
 
 # =============================================================================
+# Chapter Title Card Schemas
+# =============================================================================
+
+class ChapterTitleCardPromptSchema(BaseModel):
+    """Structured output for chapter title card background prompt generation."""
+    background_prompt: str = Field(
+        ...,
+        description="150-250 word atmospheric background prompt for AI image generation. "
+        "Describes a cinematic scene from the book's world with placeholder text in the center. "
+        "Must include font style description and 'clean center space' composition."
+    )
+    placeholder_text: str = Field(
+        ...,
+        description="The placeholder text rendered on the base image, e.g., 'CHAPTER I'"
+    )
+    font_style_description: str = Field(
+        ...,
+        description="Description of the font style for the placeholder text, "
+        "e.g., 'elegant gold Cinzel serif, centered, with subtle glow'"
+    )
+    qwen_edit_prompt: str = Field(
+        ...,
+        description="The exact Qwen Edit instruction to replace placeholder text with the actual "
+        "chapter number and title, e.g., 'Replace the text CHAPTER I in the center with "
+        "Chapter 1 in the same font style, and below it in larger font write The Awakening'"
+    )
+    mood: str = Field(..., description="Overall mood/atmosphere of the title card")
+    color_palette: str = Field(..., description="Dominant colors for the title card background")
+
+
+class ChapterTitleCardCritiqueSchema(BaseModel):
+    """Critique output for chapter title card prompts."""
+    atmosphere_score: float = Field(
+        ..., ge=1, le=10,
+        description="How atmospheric and evocative is the background scene"
+    )
+    text_space_score: float = Field(
+        ..., ge=1, le=10,
+        description="Does the background leave clean center space for text overlay"
+    )
+    style_consistency_score: float = Field(
+        ..., ge=1, le=10,
+        description="Does the design match the book's visual style"
+    )
+    genre_fit_score: float = Field(
+        ..., ge=1, le=10,
+        description="Does the design suit the story genre"
+    )
+    needs_revision: bool = Field(
+        ...,
+        description="True if any score < 7"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Specific improvements needed"
+    )
+
+
+# =============================================================================
 # DEPRECATED: Use LayeredSceneImagePromptSchema instead
 # Kept for backward compatibility with existing codex files
 # =============================================================================
@@ -1909,6 +2096,46 @@ class SceneImageCritiqueSchema(BaseModel):
 # Phase 1 Step 4: Scene/Chapter Outline Schemas (GMC + Swain Structure)
 # =============================================================================
 
+
+class MiceThreadReference(BaseModel):
+    """Tracks a MICE Quotient thread within a scene.
+
+    MICE types (Mary Robinette Kowal):
+    - milieu: opens when character enters unfamiliar space, closes on exit
+    - inquiry: opens when question raised, closes when answered
+    - character: opens on identity dissatisfaction (INTERNAL), closes when identity solidifies
+    - event: opens when status quo disrupted (EXTERNAL), closes on new equilibrium
+    """
+
+    thread_type: str = Field(
+        ...,
+        description="One of: milieu, inquiry, character, event"
+    )
+    thread_id: str = Field(
+        ...,
+        description="Unique thread ID e.g. 'escape_the_city' or 'who_killed_marcus'"
+    )
+    position: str = Field(
+        ...,
+        description="One of: opener, developer, closer"
+    )
+    try_fail_type: str = Field(
+        "none",
+        description="One of: yes_but, no_and, yes_and, no_but, none"
+    )
+    try_fail_description: str = Field(
+        "",
+        description="What was tried and how it failed/succeeded — concrete, not abstract"
+    )
+    escalation_note: str = Field(
+        "",
+        description="How stakes are higher than previous scene on this thread"
+    )
+
+    class Config:
+        extra = "ignore"
+
+
 class DetailedSceneSchema(BaseModel):
     """Extended scene schema following GMC + Swain scene/sequel structure."""
 
@@ -1960,6 +2187,16 @@ class DetailedSceneSchema(BaseModel):
     scene_purpose: str = Field(
         ...,
         description="Why this scene exists: what it accomplishes for plot/character"
+    )
+
+    # MICE Quotient Threading
+    mice_threads: list[MiceThreadReference] = Field(
+        default_factory=list,
+        description="MICE threads this scene develops. Every scene must advance at least one."
+    )
+    dominant_mice_type: str = Field(
+        "event",
+        description="Primary MICE type: milieu, inquiry, character, or event. Guides opening/closing pattern."
     )
 
 
@@ -2593,11 +2830,198 @@ class EmotionalResonanceCritique(BaseModel):
         )
 
 
+class MiceStructureCritique(BaseModel):
+    """MICE Quotient structural validation of a prose scene.
+
+    Methodology: Mary Robinette Kowal's MICE Quotient.
+    Validates opening pattern (who/where/genre ordered by MICE type),
+    closing mirror, try-fail dramatization, obstacle-type matching, and escalation.
+    """
+
+    scene_id: str = Field(..., description="Scene identifier")
+
+    # Opening (first 2-3 sentences)
+    opening_establishes_who: bool = Field(
+        ...,
+        description="First 3 sentences establish WHO via action + attitude"
+    )
+    opening_establishes_where: bool = Field(
+        ...,
+        description="First 3 sentences establish WHERE via sensory detail (not just a label)"
+    )
+    opening_establishes_mood: bool = Field(
+        ...,
+        description="First 3 sentences establish GENRE/MOOD via specific unique detail"
+    )
+    opening_sentences_needed: int = Field(
+        ..., ge=1, le=10,
+        description="Sentences before all 3 elements established (target: <=3)"
+    )
+    opening_matches_mice_type: bool = Field(
+        ...,
+        description="Opening order matches dominant MICE type (milieu=where first, inquiry=question first, character=who first, event=action first)"
+    )
+
+    # Closing (mirror)
+    closing_mirrors_opening: bool = Field(
+        ...,
+        description="Closing paragraph references/mirrors an element from the opening"
+    )
+    closing_shows_shift: bool = Field(
+        ...,
+        description="Mirrored element shows how character's relationship to it changed"
+    )
+    closing_is_concrete: bool = Field(
+        ...,
+        description="Ending is image/action/dialogue/sensory — NOT thematic summary"
+    )
+    closing_type: str = Field(
+        ...,
+        description="Type: image, action, dialogue, sensory (good) vs thematic_summary, rhetorical_question (bad)"
+    )
+
+    # Try-fail
+    try_fail_dramatized: bool = Field(
+        ...,
+        description="Outcome shown through action/consequence, not summarized"
+    )
+    try_fail_matches_mice_type: bool = Field(
+        ...,
+        description="Obstacles match MICE type (milieu=spatial, inquiry=informational, character=identity, event=cascading)"
+    )
+    outcome_consequences_visible: bool = Field(
+        ...,
+        description="Concrete consequences of YES_BUT/NO_AND visible in prose"
+    )
+    escalation_from_previous: bool = Field(
+        ...,
+        description="Stakes visibly higher than previous scene on same thread"
+    )
+
+    # Overall
+    overall_mice_score: float = Field(
+        ..., ge=1, le=10,
+        description="Overall MICE structural quality (1-10)"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Specific improvement suggestions"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return self.overall_mice_score < 7
+
+
+class MiceNestingReport(BaseModel):
+    """Validates MICE thread nesting across all scenes in a chapter.
+
+    Checks FILO nesting order, dominant thread span, elastic band tension,
+    try-fail balance, dangling threads, and resolution mode transition.
+    """
+
+    chapter_number: int = Field(..., description="Chapter number validated")
+    threads_found: list[str] = Field(
+        ...,
+        description="All thread IDs with their MICE types (e.g. 'escape_city:milieu')"
+    )
+    dominant_thread: str = Field(
+        ...,
+        description="Thread ID spanning most scenes (should be outermost)"
+    )
+    nesting_valid: bool = Field(
+        ...,
+        description="True if threads close in FILO order (like nested code blocks)"
+    )
+    nesting_violations: list[str] = Field(
+        default_factory=list,
+        description="Thread IDs closed out of order"
+    )
+    dangling_threads: list[str] = Field(
+        default_factory=list,
+        description="Threads opened but never closed"
+    )
+    elastic_stretch_warnings: list[str] = Field(
+        default_factory=list,
+        description="Threads idle >3 scenes without try-fail activity"
+    )
+    try_fail_balance: str = Field(
+        ...,
+        description="YES_BUT:NO_AND ratio across chapter (target: ~60:40)"
+    )
+    resolution_mode_check: bool = Field(
+        ...,
+        description="True if final scenes use YES_AND/NO_BUT instead of YES_BUT/NO_AND"
+    )
+    overall_nesting_score: float = Field(
+        ..., ge=1, le=10,
+        description="Overall nesting quality (1-10)"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Structural fix suggestions"
+    )
+
+    class Config:
+        extra = "ignore"
+
+
+class ShowDontTellCritique(BaseModel):
+    """Dedicated show-don't-tell critique for a prose scene.
+
+    Focuses on identifying narrator distance, filter words, abstract summaries,
+    and emotion labeling — with SPECIFIC rewrite suggestions for each violation.
+    """
+    scene_id: str = Field(..., description="Scene identifier")
+    filter_word_violations: list[str] = Field(
+        default_factory=list,
+        description="Each entry: the offending line + specific rewrite suggestion (e.g., 'He heard footsteps → Footsteps echoed off the stone.')"
+    )
+    abstract_narrator_lines: list[str] = Field(
+        default_factory=list,
+        description="Lines that summarize instead of dramatize (e.g., 'Tension filled the room' → suggest concrete replacement)"
+    )
+    emotion_labels: list[str] = Field(
+        default_factory=list,
+        description="Emotion naming violations with behavioral alternatives (e.g., 'she was angry' → 'Her fingers whitened on the cup handle')"
+    )
+    reinforcement_tells: list[str] = Field(
+        default_factory=list,
+        description="Paragraphs that restate what was already shown through action/dialogue"
+    )
+    missing_dialogue_opportunities: list[str] = Field(
+        default_factory=list,
+        description="Where narrator explains what could be shown through a brief exchange of dialogue"
+    )
+    overall_show_score: float = Field(
+        ..., ge=1, le=10,
+        description="Overall show-don't-tell quality (1=all telling, 10=fully dramatized)"
+    )
+    suggestions: list[str] = Field(
+        default_factory=list,
+        description="Top 3-5 highest-impact rewrite suggestions"
+    )
+
+    class Config:
+        extra = "ignore"
+
+    @property
+    def needs_revision(self) -> bool:
+        return (
+            self.overall_show_score < 7 or
+            len(self.filter_word_violations) > 3 or
+            len(self.abstract_narrator_lines) > 2
+        )
+
+
 class SceneCritiqueBundle(BaseModel):
     """All critiques for a single scene, bundled for revision."""
     scene_id: str = Field(..., description="Scene identifier")
 
-    # All 5 critiques
+    # All critiques
     prose_critique: ProsePolishCritique = Field(
         ..., description="Prose polish critique"
     )
@@ -2612,6 +3036,12 @@ class SceneCritiqueBundle(BaseModel):
     )
     emotional_critique: EmotionalResonanceCritique = Field(
         ..., description="Emotional resonance critique"
+    )
+    mice_critique: Optional[MiceStructureCritique] = Field(
+        None, description="MICE Quotient structural critique"
+    )
+    show_dont_tell_critique: Optional[ShowDontTellCritique] = Field(
+        None, description="Show-don't-tell critique with specific rewrite suggestions"
     )
 
     # Aggregate
@@ -3534,6 +3964,16 @@ class Scene(BaseModel):
     time_of_day: str = Field(
         ...,
         description="Time of day: 'dawn', 'morning', 'midday', 'afternoon', 'dusk', 'night'"
+    )
+
+    # MICE Quotient Threading
+    mice_threads: list[MiceThreadReference] = Field(
+        default_factory=list,
+        description="MICE threads this scene develops. Every scene must advance at least one."
+    )
+    dominant_mice_type: str = Field(
+        "event",
+        description="Primary MICE type: milieu, inquiry, character, or event. Guides opening/closing pattern."
     )
 
     # Enhanced Chekhov's Gun / Rule of Three tracking

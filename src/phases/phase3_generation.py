@@ -56,8 +56,8 @@ def run_phase3_generation(
     Step 1: Location Images (1280x720 landscape)
     Step 2: Scene Images (1280x720 landscape, one per scene)
     Step 3: Thumbnails/Posters
-    Step 4: Audio (Qwen TTS Voice Clone)
-    Step 5: Video (future, disabled)
+    Step 4: Chapter Title Cards (two-pass: base image + Qwen Edit)
+    Step 5: Audio (Qwen3-TTS Direct Inference)
 
     Args:
         codex_path: Path to codex.json (must have prompts from Phase 4)
@@ -122,7 +122,7 @@ def main():
         nargs="+",
         type=int,
         choices=[0, 1, 2, 3, 4, 5],
-        help="Run specific steps (0: Characters, 1: Locations, 2: Scenes, 3: Thumbnails, 4: Audio, 5: Video)"
+        help="Run specific steps (0: Characters, 1: Locations, 2: Scenes, 3: Thumbnails, 4: Chapter Cards, 5: Audio)"
     )
     parser.add_argument(
         "--timeout",

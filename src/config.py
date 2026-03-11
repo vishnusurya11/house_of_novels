@@ -204,6 +204,7 @@ COMFYUI_WORKFLOWS = {
     "scene": "workflows/z_image_turbo_example.json",         # 1280x720 landscape (flat prompt fallback)
     "scene_location_edit": "workflows/image_qwen_image_edit_location.json",        # single-image location edit
     "scene_character_edit": "workflows/image_qwen_image_edit_2511_two_images.json", # two-image character composite
+    "chapter_title_card": "workflows/z_image_turbo_example.json",    # 1280x720 shared template (matching E3)
     "thumbnail": "workflows/z_image_turbo_example.json",     # 1280x720 landscape
     "audio": "workflows/Qwen_tts_voice_clone.json",
     "video": "workflows/video_ltx2_i2v_distilled.json",
@@ -217,18 +218,21 @@ COMFYUI_OUTPUT_DIR = _env_config["comfyui_output_dir"]
 VIDEO_GENERATION_TIMEOUT = 1800  # seconds
 
 # Generation step control (binary string)
-# Position: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=audio, 5=video
+# Position: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=chapter_cards, 5=audio, 6=video
 # Value: 1=run, 0=skip
 # Examples:
-#   "111110" = Run everything except video (default)
-#   "100000" = Only character portraits
-#   "011000" = Locations + scene images
-#   "000010" = Only audio generation
-#   "111111" = Run everything including video
-GENERATION_STEPS = "111110"
+#   "1111110" = Run everything except video (default)
+#   "1000000" = Only character portraits
+#   "0110000" = Locations + scene images
+#   "0000010" = Only audio generation
+#   "1111111" = Run everything including video
+GENERATION_STEPS = "1111110"
 
 # Audio generation timeout (30 minutes per generation)
 AUDIO_GENERATION_TIMEOUT = 1800  # seconds
+
+# Phase 0: Plot Expansion Configuration
+PHASE0_PLOT_CONFIG = YAML_CONFIG.get("phase0_plot_expansion", {})
 
 # TTS Configuration (Qwen3-TTS direct inference)
 TTS_CONFIG = YAML_CONFIG.get("tts", {})
@@ -267,6 +271,9 @@ YOUTUBE_SCOPES = ['https://www.googleapis.com/auth/youtube.upload', 'https://www
 DEFAULT_YOUTUBE_CATEGORY = "24"  # Entertainment
 DEFAULT_YOUTUBE_PRIVACY = "public"  # public by default
 DEFAULT_YOUTUBE_PLAYLIST = _env_config["playlist_id"]
+
+# Schedule Database (shared across alpha/prod for time slot management)
+SCHEDULE_DB_PATH = Path(r"D:\Projects\GlobalDatabases\visurena_studio.db")
 
 
 def get_workflow_path(workflow_type: str) -> Path:
@@ -310,7 +317,7 @@ def should_run_step(step_index: int) -> bool:
     """Check if a generation step should run based on GENERATION_STEPS config.
 
     Args:
-        step_index: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=audio, 5=video
+        step_index: 0=characters, 1=locations, 2=scenes, 3=thumbnails, 4=chapter_cards, 5=audio, 6=video
 
     Returns:
         True if the step should run, False otherwise
